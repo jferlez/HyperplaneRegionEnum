@@ -15,7 +15,7 @@ import pickle
 
 def f(W,b,pt,fixedConstraintsA,fixedConstraintsb,queue):
     global regionsDirect
-    constraints = posetFast.constraints( \
+    constraints = posetFastPyMulti.constraints( \
             np.array(W), \
             np.array(b), \
             np.array([pt]).transpose(), \
@@ -23,7 +23,7 @@ def f(W,b,pt,fixedConstraintsA,fixedConstraintsb,queue):
             np.array(fixedConstraintsb) \
         )
     t = time.time()
-    regEnum = posetFast.RegionEnumerator(queue)
+    regEnum = posetFastPyMulti.RegionEnumerator(queue)
     # print('Time to intialize RegionEnumerator class is: ' + str(time.time()-t))
 
     t = time.time()
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         # as long as the worker thread is open
         while len(regions) == 0 or worker.is_alive():
             while not resQueue.empty():
-                item = posetFast.makeList(resQueue.get(block=True),len(W))
+                item = posetFastPyMulti.makeList(resQueue.get(block=True),len(W))
                 regions.append(item)
                 arrivals[arrIdx] = time.time()
                 arrIdx += 1
@@ -112,7 +112,7 @@ if __name__ == "__main__":
         # # ***************************************************
         # worker.join()
         # startTime = arrivals[0]
-        # regions = [posetFast.makeList(it,len(W)) for it in regionsDirect]
+        # regions = [posetFastPyMulti.makeList(it,len(W)) for it in regionsDirect]
 
         t = time.time()-startTime
         print('Region computation + transfer time: ' + str(t))
