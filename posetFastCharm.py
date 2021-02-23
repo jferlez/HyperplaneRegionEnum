@@ -34,15 +34,6 @@ class Poset(Chare):
             self.succGroup = Group(successorWorker)
         else:
             self.succGroup = Group(successorWorker, onPEs=self.posetPEs)
-        
-        # transferStatus = Future()
-        # self.succGroup.initList([0])
-        # self.succGroup.collectXferStats(transferStatus)
-        # stat = transferStatus.get()
-        # print('Initialization of group finished')
-
-
-        # print(self.succGroup[0].__dict__)
 
         if not self.useParNodeSched:
             self.nodeSchedInst = Chare(checkNodesSchedulerInt, onPE=charm.myPe())
@@ -90,6 +81,7 @@ class Poset(Chare):
         self.root.regionLeveled = True
         self.incomplete = True
         self.populated = False
+
     @coro
     def setConstraint(self,lb,out=0):
         self.populated = False
@@ -112,12 +104,7 @@ class Poset(Chare):
         self.populated = False
         
         return 1
-        
-    def seeConstraints(self):
-        print('****************************************')
-        print('Using constraints object : ')
-        print(self.constraints.fullConstraints)
-        print('****************************************')
+
 
     @coro
     def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None ):
@@ -211,9 +198,8 @@ class Poset(Chare):
 
             
             if parallelCode:
-                
+
                 for k in range(charm.numPes()):
-                    # print([ i.INTrep.iINT for i in thisLevel[k:len(thisLevel):charm.numPes()] ])
                     self.succGroup[k].initList( \
                                 [ i.INTrep.iINT for i in thisLevel[k:len(thisLevel):charm.numPes()] ], \
                             )
@@ -223,7 +209,9 @@ class Poset(Chare):
                 successorList = Future()
                 self.succGroup.computeSuccessors(successorList)
                 nextLevel = list(successorList.get())
+
             else:
+
                 successorList = map(processNodeSuccessors, \
                             [node.INTrep.iINT for node in thisLevel], \
                             repeat(self.N), \
@@ -245,7 +233,7 @@ class Poset(Chare):
                 self.nodeCheckChannel.send([self.peCounter,self.stackCounter,copy(self.workGroup)])
                 self.nodeCheckChannel.send([])
                 nodeReceiverFut.get()
-        # print('made it to here')
+
         # Tell the channel endpoint that no more nodes are coming
         if emitNodes:
             retChannel.send(-1)
@@ -277,7 +265,6 @@ class successorWorker(Chare):
 
     @coro
     def computeSuccessors(self, callback):
-        # print(self.fullConstraints)
         successorList = map(processNodeSuccessors, \
                         self.workInts, \
                         repeat(self.N), \
@@ -285,14 +272,6 @@ class successorWorker(Chare):
                     ) if len(self.workInts) > 0 else [set([])]
         self.workInts = []
         self.reduce(callback, set([]).union(*successorList), Reducer.Union)
-    
-    @coro
-    def sayHi(self):
-        print('-----------------------------')
-        print('Hi from PE '+str(charm.myPe()))
-        print('My workInts are:')
-        print(self.workInts)
-        print('-----------------------------')
 
 
 
@@ -319,8 +298,6 @@ class checkNodesSchedulerInt(Chare):
             return
 
         for peIdx in range(len(self.pes)):
-            # print('Transferring worklist to PE ' + str(peIdx))
-            # print(workGroup[peIdx][ 0:(stackCounter+1 if peIdx < peCounter else stackCounter) ])
             self.checkNodeChareGroup[self.pes[peIdx]].initList( \
                     workGroup[peIdx][ 0:(stackCounter+1 if peIdx < peCounter else stackCounter) ]
                 )
@@ -345,13 +322,11 @@ class checkNodesScheduler(Chare):
         self.nodeChannel = Channel(self,remote=channelEndpoint)
     
     def initialize(self, stackNum, checkNodeGroup, groupPEs, retFuture):
-        # super().__init__(stackNum, checkNodeGroup, groupPEs, retFuture, False)
+        
         self.stackNum = stackNum
         self.checkNodeChareGroup = checkNodeGroup
         self.retFuture = retFuture
         self.pes = groupPEs
-        # Specific to this class:
-        # self.waitOn = False
         
         self.wrkGrpFuture = None
         self.found = False
@@ -368,8 +343,6 @@ class checkNodesScheduler(Chare):
             return
 
         for peIdx in range(len(self.pes)):
-            # print('Transferring worklist to PE ' + str(peIdx))
-            # print(workGroup[peIdx][ 0:(stackCounter+1 if peIdx < peCounter else stackCounter) ])
             self.checkNodeChareGroup[self.pes[peIdx]].initList( \
                     workGroup[peIdx][ 0:(stackCounter+1 if peIdx < peCounter else stackCounter) ] \
                 )
@@ -406,29 +379,6 @@ class checkNodesScheduler(Chare):
 
 
 
-
-
-
-# class CheckNodes(Chare):
-#     def __init__(self,N,fullConstraints):
-#         self.N = N
-#         self.fullConstraints = fullConstraints
-#         self.workInts = None
-    
-#     @coro
-#     def initList(self,workInts):
-#         self.workInts = workInts
-
-#     @coro
-#     def doCheckNode(self,fn,args,chunkFuture):
-#         found = self.found
-#         if found:
-#             return False
-#         val = fn(self.workInts,self.fullConstraints,*args)
-#         if val and not self.found:
-#             self.found = True
-#             self.foundFuture.sent(True)
-#         self.reduce(chunkFuture, val, Reducer.logical_or)
 
 
         

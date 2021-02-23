@@ -85,13 +85,18 @@ class Main(Chare):
         # charm.awaitCreation(tllReach)
 
         t = time.time()
-        lbFut = tllReach.searchBound(0.1354321,lb=True,awaitable=True,ret=True)
+        lbFut = tllReach.searchBound(0.1354321,lb=True,verbose=True,awaitable=True,ret=True)
         lb = lbFut.get()
         t = time.time()-t
 
-        print('Found lower bound:')
+        print(' ')
+        print('--------------  FOUND LOWER BOUND:  --------------')
         print(lb)
-        print('Time needed: ' + str(t) + ' (sec)')
+        print('Total time elapsed: ' + str(t) + ' (sec)')
+        print('--------------------------------------------------')
+        print(' ')
+
+        charm.sleep(1)
 
         charm.exit()
         

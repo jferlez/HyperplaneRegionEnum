@@ -8,6 +8,7 @@ import cdd
 import posetFastCharm
 import NodeCheckerLowerBdVerify
 from copy import copy,deepcopy
+import time
 
 # All hyperplanes assumes to be specified as A x >= b
 
@@ -37,14 +38,17 @@ class TLLHypercubeReach(Chare):
 
         self.checkerGroup = Group(NodeCheckerLowerBdVerify.NodeCheckerLowerBdVerify)
 
-        # stat = self.checkerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
-        # stat.get()
+        stat = self.checkerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
+        stat.get()
 
         self.poset = Chare(posetFastCharm.Poset,args=[self.checkerGroup,[],False,None],onPE=charm.myPe())
         
         stat = self.poset.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
         stat.get()
 
+        self.copyTime = 0
+        self.posetTime = 0
+        self.workerInitTime = 0
         
 
 
@@ -52,10 +56,7 @@ class TLLHypercubeReach(Chare):
         pass
 
     @coro
-    def searchBound(self,seedBd,out=0,lb=True,tol=1e-3):
-        stat = self.checkerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
-        stat.get()
-
+    def searchBound(self,seedBd,out=0,lb=True,tol=1e-3,verbose=False):
         # lb2ub = 1
         # if not lb:
         #     lb2ub = -1
@@ -67,13 +68,11 @@ class TLLHypercubeReach(Chare):
         itCnt = self.maxIts
         
         while itCnt > 0:
-            print(itCnt)
-            print([windLB,windUB])
             bdToCheck = windUB if windLB==-np.inf else 0.5*(windLB + windUB)
-            ver = self.verifyLB( bdToCheck, itCnt, out=out) if lb else not self.verifyUB( bdToCheck,out=out)
-            # ver = verF.get()
-            # ver = bdToCheck < 0.5 if lb else not (bdToCheck > 6.214587)
-            print('Found ver = ' + str(ver) + ' on iteration ' + str(itCnt))
+            ver = self.verifyLB( bdToCheck, out=out) if lb else not self.verifyUB( bdToCheck,out=out)
+            
+            if verbose:
+                print( 'Iteration ' + str(itCnt) +  ': ' + str(bdToCheck) + ' is ' + ('a VALID' if ver else 'an INVALID') + ' lower bound!')
             if windLB == -np.inf:
                 # If this is the first pass, decide which way to start looking
                 # based on ver:
@@ -118,12 +117,24 @@ class TLLHypercubeReach(Chare):
                 windLB = -np.inf if searchDir < 0 else windUB
             else:
                 windUB = np.inf if searchDir > 0 else windUB
-        print('Iterations used: ' + str(self.maxIts - itCnt))
+        if verbose:
+            print('**********    verifyLB on LB processing times:   **********')
+            print('Total time required to initialize the new lb problem: ' + str(self.copyTime))
+            collectTimeFut = Future()
+            self.checkerGroup.workerInitTime(collectTimeFut)
+            self.workerInitTime = collectTimeFut.get()
+            print('Total time required for region check workers to initialize: ' + str(self.workerInitTime))
+            print('Total time required for (partial) poset calculation: ' + str(self.posetTime))
+            print('Iterations used: ' + str(self.maxIts - itCnt))
+            print('***********************************************************')
         return windLB if lb else windUB
 
     @coro
-    def verifyLB(self,lb, it, out=0):
-        # print('my PE: ' + str(charm.myPe()))
+    def verifyLB(self,lb, out=0):
+        
+        # Alternate method of resetting poset problem for the new lower bound:
+        # ** BETTER DOUBLE CHECK THESE METHODS -- THEY MAY BE OUT OF DATE **
+
         # constraints = posetFastCharm.constraints( \
         #     -1*self.localLinearFns[out][0], \
         #     self.localLinearFns[out][1] - lb*np.ones((self.N,1)), \
@@ -131,28 +142,26 @@ class TLLHypercubeReach(Chare):
         #     self.inputConstraintsA, \
         #     self.inputConstraintsb \
         # )
-        # print(constraints.fullConstraints)
-        
-        print('Verifying lower bound of ' + str(lb))
         # stat = self.checkerGroup.initializeFromConstraints(constraints, self.selectorMats[out],awaitable=True)
+        # stat.get()
+        # stat = self.poset.initializeFromConstraintObject(constraints)
+        # stat.get()
+        
+        t = time.time()
+        
         stat = self.checkerGroup.setConstraint(lb, awaitable=True)
         stat.get()
-        # charm.sleep(1)
-        # print(stat)
-        # stat.get()        
-        # self.poset.initializeFromConstraintObject(constraints)
         stat = self.poset.setConstraint(lb, awaitable=True)
         stat.get()
-        # self.poset.seeConstraints()
-        # charm.awaitCreation(self.checkerGroup,poset)
-        # charm.sleep(1)
-        
+
+        self.copyTime += time.time() - t # Total time across all PEs to set up a new problem
+
+        t = time.time()
         checkFut = Future()
         self.poset.populatePoset(checkNodesFuture=checkFut) # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
-        # retChannel = Channel(self, remote=poset)
         retVal = checkFut.get()
-        
-        # print('*** Running verifyLB on LB = ' + str(lb) + ' ; on itCnt = ' + str(it))
+        self.posetTime += time.time() - t
+
         return not retVal
     
     def verifyUB(self,ub,out=0):

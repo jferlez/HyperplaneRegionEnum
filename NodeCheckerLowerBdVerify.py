@@ -5,21 +5,21 @@ import numpy as np
 from posetFastCharm import unflipInt, posHyperplaneSet
 import posetFastCharm
 from copy import copy
+import time
 
 class NodeCheckerLowerBdVerify(Chare):
-    # Not strictlly necessary
-    # @coro
-    def initializeFromConstraints(self, constraints, selectorMats):
+    
+    def initializeFromConstraintObject(self, constraints, selectorMats):
         self.constraints = constraints
         self.selectorMats = selectorMats
-        # Converve the matrices to sets of 'used' hyperplanes
+        # Convert the matrices to sets of 'used' hyperplanes
         self.selectorSets = list( \
                 map( \
                     lambda x: frozenset(np.flatnonzero(np.count_nonzero(x, axis=0)>0)), \
                     self.selectorMats \
                 ) \
             )
-        # print(self.selectorSets)
+        
         self.myWorkList = []
     
     def initialize(self, AbPairs, pt, fixedA, fixedb, selectorMats):
@@ -30,7 +30,7 @@ class NodeCheckerLowerBdVerify(Chare):
         self.fixedb = fixedb
         self.N = len(self.AbPairs[0][0])
         self.selectorMatsFull = selectorMats
-        # self.selectorMats = selectorMats
+        
         self.selectorSetsFull = [[] for k in range(len(selectorMats))]
         # Converve the matrices to sets of 'used' hyperplanes
         for k in range(len(selectorMats)):
@@ -40,10 +40,12 @@ class NodeCheckerLowerBdVerify(Chare):
                         self.selectorMatsFull[k] \
                     ) \
                 )
-        # print(self.selectorSets)
+        
         self.myWorkList = []
-    # @coro
+        self.initTime = 0
+    
     def setConstraint(self,lb,out=0):
+        t = time.time()
         self.selectorSets = self.selectorSetsFull[out]
         self.constraints = posetFastCharm.constraints( \
                 -1*self.AbPairs[out][0], \
@@ -54,7 +56,12 @@ class NodeCheckerLowerBdVerify(Chare):
             )
         self.lb = lb
         self.myWorkList = []
+        self.initTime += time.time() - t
         return 1
+    
+    @coro
+    def workerInitTime(self, stat_result):
+        self.reduce(stat_result, self.initTime, Reducer.sum)
     
     @coro
     def initList(self, myWorkList):
@@ -68,12 +75,6 @@ class NodeCheckerLowerBdVerify(Chare):
 
     @coro
     def check(self, reduceCallback):
-        # print('Trying to verify LB = ' + str(self.lb) + ' using the following workList:')
-        # print(self.myWorkList)
-        # print('****************************************')
-        # print('Using constraints object : ')
-        # print(self.constraints.fullConstraints)
-        # print('****************************************')
         if len(self.myWorkList) > 0:
             val = True
             for regSet in map( lambda x: frozenset(posHyperplaneSet(unflipInt(x,self.constraints.flipMapSet),self.constraints.N)) , self.myWorkList ):
@@ -89,5 +90,4 @@ class NodeCheckerLowerBdVerify(Chare):
         # # Set 'val' to the LOGICAL OR of the truth value for each node integer in self.myWorkList
         # val = True if 0 in self.myWorkList else False
         # Leave this line alone
-        # print('NodeChecker on ' + str(charm.myPe()) + ' returning ' + str(val) + ' for its workgroup')
         self.reduce(reduceCallback, val , Reducer.logical_or)
