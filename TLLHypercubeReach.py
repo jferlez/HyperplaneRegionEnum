@@ -13,7 +13,7 @@ from copy import copy,deepcopy
 
 
 class TLLHypercubeReach(Chare):
-    @coro
+    # @coro
     def __init__(self, localLinearFns, selectorMats, inputConstraints, maxIts):
         self.maxIts = maxIts
 
@@ -35,12 +35,27 @@ class TLLHypercubeReach(Chare):
         # Find a point in the middle of the polyhedron
         self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
 
+        self.checkerGroup = Group(NodeCheckerLowerBdVerify.NodeCheckerLowerBdVerify)
+
+        # stat = self.checkerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
+        # stat.get()
+
+        self.poset = Chare(posetFastCharm.Poset,args=[self.checkerGroup,[],False,None],onPE=charm.myPe())
+        
+        stat = self.poset.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
+        stat.get()
+
+        
+
 
     def computeReach(self, lbSeed=-1, ubSeed=1, tol=1e-3):
         pass
 
     @coro
     def searchBound(self,seedBd,out=0,lb=True,tol=1e-3):
+        stat = self.checkerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
+        stat.get()
+
         # lb2ub = 1
         # if not lb:
         #     lb2ub = -1
@@ -50,11 +65,15 @@ class TLLHypercubeReach(Chare):
         searchDir = 0
         prevBD = seedBd
         itCnt = self.maxIts
+        
         while itCnt > 0:
+            print(itCnt)
+            print([windLB,windUB])
             bdToCheck = windUB if windLB==-np.inf else 0.5*(windLB + windUB)
             ver = self.verifyLB( bdToCheck, itCnt, out=out) if lb else not self.verifyUB( bdToCheck,out=out)
-            # ver = ver.get()
+            # ver = verF.get()
             # ver = bdToCheck < 0.5 if lb else not (bdToCheck > 6.214587)
+            print('Found ver = ' + str(ver) + ' on iteration ' + str(itCnt))
             if windLB == -np.inf:
                 # If this is the first pass, decide which way to start looking
                 # based on ver:
@@ -105,22 +124,34 @@ class TLLHypercubeReach(Chare):
     @coro
     def verifyLB(self,lb, it, out=0):
         # print('my PE: ' + str(charm.myPe()))
-        constraints = posetFastCharm.constraints( \
-            -1*self.localLinearFns[out][0], \
-            self.localLinearFns[out][1] - lb*np.ones((self.N,1)), \
-            self.pt, \
-            self.inputConstraintsA, \
-            self.inputConstraintsb \
-        )
-
-        # print('Verifying lower bound of ' + str(lb))
-        checkerGroup = Group(NodeCheckerLowerBdVerify.NodeCheckerLowerBdVerify, args=[constraints, self.selectorMats[out]])
+        # constraints = posetFastCharm.constraints( \
+        #     -1*self.localLinearFns[out][0], \
+        #     self.localLinearFns[out][1] - lb*np.ones((self.N,1)), \
+        #     self.pt, \
+        #     self.inputConstraintsA, \
+        #     self.inputConstraintsb \
+        # )
+        # print(constraints.fullConstraints)
+        
+        print('Verifying lower bound of ' + str(lb))
+        # stat = self.checkerGroup.initializeFromConstraints(constraints, self.selectorMats[out],awaitable=True)
+        stat = self.checkerGroup.setConstraint(lb, awaitable=True)
+        stat.get()
+        # charm.sleep(1)
+        # print(stat)
+        # stat.get()        
+        # self.poset.initializeFromConstraintObject(constraints)
+        stat = self.poset.setConstraint(lb, awaitable=True)
+        stat.get()
+        # self.poset.seeConstraints()
+        # charm.awaitCreation(self.checkerGroup,poset)
+        # charm.sleep(1)
+        
         checkFut = Future()
-        poset = Chare(posetFastCharm.Poset,args=[constraints],onPE=charm.myPe())
-        charm.awaitCreation(checkerGroup,poset)
-        poset.populatePoset(checkNodesFuture=checkFut, checkNodeGroup=checkerGroup) # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
+        self.poset.populatePoset(checkNodesFuture=checkFut) # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
         # retChannel = Channel(self, remote=poset)
         retVal = checkFut.get()
+        
         # print('*** Running verifyLB on LB = ' + str(lb) + ' ; on itCnt = ' + str(it))
         return not retVal
     

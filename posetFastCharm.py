@@ -20,8 +20,38 @@ class PosetNode:
 
 
 class Poset(Chare):
-    @coro
-    def __init__(self, constraints):
+    
+    def __init__(self, checkNodeGroup, groupPEs, useParNodeSched, posetPEs):
+        
+        self.checkNodeGroup = checkNodeGroup
+        self.useParNodeSched = useParNodeSched
+        self.groupPEs = groupPEs
+        self.posetPEs = posetPEs
+
+        # Create a group to paralellize the computation of successors
+        # (Use all PEs unless a list was explicitly passed to us)
+        if self.posetPEs == None:
+            self.succGroup = Group(successorWorker)
+        else:
+            self.succGroup = Group(successorWorker, onPEs=self.posetPEs)
+        
+        # transferStatus = Future()
+        # self.succGroup.initList([0])
+        # self.succGroup.collectXferStats(transferStatus)
+        # stat = transferStatus.get()
+        # print('Initialization of group finished')
+
+
+        # print(self.succGroup[0].__dict__)
+
+        if not self.useParNodeSched:
+            self.nodeSchedInst = Chare(checkNodesSchedulerInt, onPE=charm.myPe())
+        else:
+            self.nodeSchedInst = Chare(checkNodesScheduler, args=[self.thisProxy], onPE=charm.myPe())
+            self.nodeCheckChannel = Channel(self, remote=self.nodeSchedInst)
+
+    # @coro
+    def initializeFromConstraintObject(self, constraints):
         self.constraints = constraints
         self.N = len(self.constraints.nA)
         # The number of nodes (regions) in a poset level that are requried to trigger
@@ -37,11 +67,62 @@ class Poset(Chare):
         self.root.regionLeveled = True
         self.incomplete = True
         self.stackNum = 10
-        
+        self.populated = False
     
-    @coro
-    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, checkNodeGroup=None, groupPEs=[], useParNodeSched=False, posetPEs=None):
+    def initialize(self, AbPairs, pt, fixedA, fixedb):
+        self.AbPairs = AbPairs
+        self.pt = pt
+        self.fixedA = fixedA
+        self.fixedb = fixedb
 
+        self.N = len(self.AbPairs[0][0])
+        # The number of nodes (regions) in a poset level that are requried to trigger
+        # the parallelized code to compute all of the successors:
+        self.parallelThreshold = 0
+        self.stackNum = 10
+
+        self.hashTable = {}
+        self.levelArray = [[] for i in range(self.N)]
+
+        self.root = PosetNode(intSet(0,self.N),0)
+        self.hashTable[self.root.INTrep] = self.root
+        self.levelArray[0].append(self.root)
+        self.root.regionLeveled = True
+        self.incomplete = True
+        self.populated = False
+    @coro
+    def setConstraint(self,lb,out=0):
+        self.populated = False
+        self.incomplete = True
+        self.constraints = constraints( \
+                -1*self.AbPairs[out][0], \
+                self.AbPairs[out][1] - lb*np.ones((self.N,1)), \
+                self.pt, \
+                self.fixedA, \
+                self.fixedb \
+            )
+        self.hashTable = {}
+        self.levelArray = [[] for i in range(self.N)]
+
+        self.root = PosetNode(intSet(0,self.N),0)
+        self.hashTable[self.root.INTrep] = self.root
+        self.levelArray[0].append(self.root)
+        self.root.regionLeveled = True
+        self.incomplete = True
+        self.populated = False
+        
+        return 1
+        
+    def seeConstraints(self):
+        print('****************************************')
+        print('Using constraints object : ')
+        print(self.constraints.fullConstraints)
+        print('****************************************')
+
+    @coro
+    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None ):
+        if self.populated:
+            return
         emitNodes = False
         if not retChannelEndPoint==None:
             emitNodes = True
@@ -51,31 +132,27 @@ class Poset(Chare):
         if not checkNodesFuture==None:
 
 
-            if checkNodeGroup==None: # or not isinstance(checkNodeGroup,Group):
+            if self.checkNodeGroup==None: # or not isinstance(checkNodeGroup,Group):
                 raise ValueError('Must supply a Chare Group node-check group via \'checkNodesGroup\' argument!')
             self.peCounter = 0
             self.stackCounter = 0
-            self.pes = [i for i in range(charm.numPes())] if len(groupPEs)==0 else groupPEs
+            self.pes = [i for i in range(charm.numPes())] if len(self.groupPEs)==0 else self.groupPEs
             self.workGroup = [[-1 for i in range(self.stackNum)] for j in range(len(self.pes))]
 
             checkNodes = True
             returned = False
 
-            if not useParNodeSched:
-                nodeSchedInst = Chare(checkNodesSchedulerInt, args=[self.stackNum, checkNodeGroup, self.pes, checkNodesFuture, True], onPE=charm.myPe())
-            else:
-                nodeSchedInst = Chare(checkNodesScheduler, args=[self.stackNum, checkNodeGroup, self.pes, checkNodesFuture, self.thisProxy], onPE=charm.myPe())
-                nodeCheckChannel = Channel(self, remote=nodeSchedInst)
+            # (Re-)Initialize the node checker group with the new data
+            
+            stat = self.nodeSchedInst.initialize(self.stackNum, self.checkNodeGroup, self.pes, checkNodesFuture,awaitable=True)
+            stat.get()
+            if  self.useParNodeSched:                
                 # This version of nodeSchedInst recieves nodes on a channel, so we need to bring
                 # up that channel on the Chare, so it will start processing nodes when we send them on nodeCheckChannel
-                nodeReceiverFut = nodeSchedInst.receiveNodes(awaitable=True)
+                nodeReceiverFut = self.nodeSchedInst.receiveNodes(awaitable=True)
 
-        # Create a group to paralellize the computation of successors
-        # (Use all PEs unless a list was explicitly passed to us)
-        if posetPEs == None:
-            succGroup = Group(successorWorker,args=[self.N,self.constraints.fullConstraints])
-        else:
-            succGroup = Group(successorWorker,args=[self.N,self.constraints.fullConstraints], onPEs=posetPEs)
+        stat = self.succGroup.initialize(self.N,self.constraints.fullConstraints,awaitable=True)
+        stat.get()
 
         level = 0
         thisLevel = [0]
@@ -108,12 +185,12 @@ class Poset(Chare):
                             self.stackCounter += 1
                             self.peCounter = 0
                         if doProcessing:
-                            if not useParNodeSched:
-                                f = nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
+                            if not self.useParNodeSched:
+                                f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
                                 f.get()
                             else:
-                                nodeCheckChannel.send([self.peCounter,self.stackCounter,copy(self.workGroup)])
-                            f = nodeSchedInst.foundQ(awaitable=True) 
+                                self.nodeCheckChannel.send([self.peCounter,self.stackCounter,copy(self.workGroup)])
+                            f = self.nodeSchedInst.foundQ(awaitable=True) 
                             if f.get():
                                 self.incomplete = True
                                 # We found a 'True' on some poset node, so shut everything down
@@ -134,17 +211,17 @@ class Poset(Chare):
 
             
             if parallelCode:
+                
                 for k in range(charm.numPes()):
                     # print([ i.INTrep.iINT for i in thisLevel[k:len(thisLevel):charm.numPes()] ])
-                    succGroup[k].initList( \
-                                [ i.INTrep.iINT for i in thisLevel[k:len(thisLevel):charm.numPes()] ] \
+                    self.succGroup[k].initList( \
+                                [ i.INTrep.iINT for i in thisLevel[k:len(thisLevel):charm.numPes()] ], \
                             )
                 transferStatus = Future()
-                succGroup.collectXferStats(transferStatus)
-                cnt = transferStatus.get()
-
+                self.succGroup.collectXferStats(transferStatus)
+                stat = transferStatus.get()
                 successorList = Future()
-                succGroup.computeSuccessors(successorList)
+                self.succGroup.computeSuccessors(successorList)
                 nextLevel = list(successorList.get())
             else:
                 successorList = map(processNodeSuccessors, \
@@ -155,20 +232,18 @@ class Poset(Chare):
                 nextLevel = list(set([]).union(*successorList))
             
             
-
-            
             thisLevel = nextLevel
             level += 1
 
         if checkNodes:
-            if not useParNodeSched:
-                f = nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
+            if not self.useParNodeSched:
+                f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
                 finalVal = f.get()
                 if not finalVal:
                     checkNodesFuture.send(False)
             else:
-                nodeCheckChannel.send([self.peCounter,self.stackCounter,copy(self.workGroup)])
-                nodeCheckChannel.send([])
+                self.nodeCheckChannel.send([self.peCounter,self.stackCounter,copy(self.workGroup)])
+                self.nodeCheckChannel.send([])
                 nodeReceiverFut.get()
         # print('made it to here')
         # Tell the channel endpoint that no more nodes are coming
@@ -177,6 +252,7 @@ class Poset(Chare):
         self.incomplete = False
         print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
         # return [i.iINT for i in self.hashTable.keys()]
+        self.populated = True
         return 0
 
 
@@ -184,7 +260,7 @@ class Poset(Chare):
 
 class successorWorker(Chare):
 
-    def __init__(self,N,fullConstraints):
+    def initialize(self,N,fullConstraints):
         self.workInts = []
         self.N = N
         self.fullConstraints = fullConstraints
@@ -197,30 +273,38 @@ class successorWorker(Chare):
 
     @coro
     def collectXferStats(self, stat_result):
-        self.reduce(stat_result, self.status.get(), Reducer.sum)
+        self.reduce(stat_result, self.status.get() , Reducer.sum)
 
     @coro
     def computeSuccessors(self, callback):
+        # print(self.fullConstraints)
         successorList = map(processNodeSuccessors, \
                         self.workInts, \
                         repeat(self.N), \
                         repeat(self.fullConstraints) \
                     ) if len(self.workInts) > 0 else [set([])]
         self.workInts = []
-
         self.reduce(callback, set([]).union(*successorList), Reducer.Union)
+    
+    @coro
+    def sayHi(self):
+        print('-----------------------------')
+        print('Hi from PE '+str(charm.myPe()))
+        print('My workInts are:')
+        print(self.workInts)
+        print('-----------------------------')
 
 
 
 
 class checkNodesSchedulerInt(Chare):
     
-    def __init__(self, stackNum, checkNodeGroup, groupPEs, retFuture, waitOn):
+    def initialize(self, stackNum, checkNodeGroup, groupPEs, retFuture):
         self.stackNum = stackNum
         self.checkNodeChareGroup = checkNodeGroup
         self.retFuture = retFuture
         self.pes = groupPEs
-        self.waitOn = waitOn
+        # self.waitOn = waitOn
         
         self.wrkGrpFuture = None
         self.found = False
@@ -257,18 +341,20 @@ class checkNodesSchedulerInt(Chare):
 # Shares several methods wtih checkNodesSchedulerInt, but subclassing Chares doesn't seem to work
 class checkNodesScheduler(Chare):
 
-    def __init__(self, stackNum, checkNodeGroup, groupPEs, retFuture, channelEndpoint):
+    def __init__(self, channelEndpoint):
+        self.nodeChannel = Channel(self,remote=channelEndpoint)
+    
+    def initialize(self, stackNum, checkNodeGroup, groupPEs, retFuture):
         # super().__init__(stackNum, checkNodeGroup, groupPEs, retFuture, False)
         self.stackNum = stackNum
         self.checkNodeChareGroup = checkNodeGroup
         self.retFuture = retFuture
         self.pes = groupPEs
         # Specific to this class:
-        self.waitOn = False
+        # self.waitOn = False
         
         self.wrkGrpFuture = None
         self.found = False
-        self.nodeChannel = Channel(self,remote=channelEndpoint)
 
     # Should be the same method as checkNodesSchedulerInt
     @coro
@@ -323,26 +409,26 @@ class checkNodesScheduler(Chare):
 
 
 
-class CheckNodes(Chare):
-    def __init__(self,N,fullConstraints):
-        self.N = N
-        self.fullConstraints = fullConstraints
-        self.workInts = None
+# class CheckNodes(Chare):
+#     def __init__(self,N,fullConstraints):
+#         self.N = N
+#         self.fullConstraints = fullConstraints
+#         self.workInts = None
     
-    @coro
-    def initList(self,workInts):
-        self.workInts = workInts
+#     @coro
+#     def initList(self,workInts):
+#         self.workInts = workInts
 
-    @coro
-    def doCheckNode(self,fn,args,chunkFuture):
-        found = self.found
-        if found:
-            return False
-        val = fn(self.workInts,self.fullConstraints,*args)
-        if val and not self.found:
-            self.found = True
-            self.foundFuture.sent(True)
-        self.reduce(chunkFuture, val, Reducer.logical_or)
+#     @coro
+#     def doCheckNode(self,fn,args,chunkFuture):
+#         found = self.found
+#         if found:
+#             return False
+#         val = fn(self.workInts,self.fullConstraints,*args)
+#         if val and not self.found:
+#             self.found = True
+#             self.foundFuture.sent(True)
+#         self.reduce(chunkFuture, val, Reducer.logical_or)
 
 
         

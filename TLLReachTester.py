@@ -15,7 +15,7 @@ import time
 
 
 class Main(Chare):
-    @coro
+    # @coro
     def __init__(self,args):
 
         # Simple Example #1:
@@ -78,10 +78,11 @@ class Main(Chare):
         # Specify the contraints for a 1-d input:
         constraints = [ \
                 np.array([ [1 , -1]  ]),
-                np.array([-1, -1.5])
+                np.array([0, -1.5])
             ]
 
         tllReach = Chare(TLLHypercubeReach.TLLHypercubeReach, args=[localLinearFns, selectorMats, constraints, 100])
+        # charm.awaitCreation(tllReach)
 
         t = time.time()
         lbFut = tllReach.searchBound(0.1354321,lb=True,awaitable=True,ret=True)
