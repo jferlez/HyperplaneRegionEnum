@@ -518,10 +518,13 @@ def convertToList(INT,n):
 
 def unflipInt(INT, flipSet,N):
     retInt = INT
-    shift = 2**max(N+1,65)
+    if N >= 63:
+        shift = 2**(2*N+2)
+    else:
+        shift = 0
     for k in flipSet:
         # Force sel to be considered a long integer
-        sel = shift + 1 << k
+        sel = shift + (1 << k)
         if INT & sel > 0:
             retInt -= sel
         else:
