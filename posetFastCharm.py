@@ -163,6 +163,7 @@ class Poset(Chare):
                         # First update self.workGroup with the new node
                         if self.peCounter == len(self.pes)-1 and self.stackCounter == self.stackNum - 1:
                             self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT
+                            self.peCounter += 1
                             doProcessing = True
                         elif self.peCounter < len(self.pes)-1 and self.stackCounter < self.stackNum:
                             self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT
