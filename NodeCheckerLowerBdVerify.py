@@ -32,7 +32,7 @@ class NodeCheckerLowerBdVerify(Chare):
         self.selectorMatsFull = selectorMats
         
         self.selectorSetsFull = [[] for k in range(len(selectorMats))]
-        # Converve the matrices to sets of 'used' hyperplanes
+        # Convert the matrices to sets of 'used' hyperplanes
         for k in range(len(selectorMats)):
             self.selectorSetsFull[k] = list( \
                     map( \
