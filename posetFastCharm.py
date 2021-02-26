@@ -515,10 +515,12 @@ def convertToList(INT,n):
         idx = idx << 1
     return retList
 
-def unflipInt(INT, flipSet):
+def unflipInt(INT, flipSet,N):
     retInt = INT
+    shift = 2**max(N+1,65)
     for k in flipSet:
-        sel = 1 << k
+        # Force sel to be considered a long integer
+        sel = shift + 1 << k
         if INT & sel > 0:
             retInt -= sel
         else:
