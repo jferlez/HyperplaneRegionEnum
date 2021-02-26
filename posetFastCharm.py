@@ -403,7 +403,7 @@ def processNodeSuccessors(INTrep,N,H2):
             H[i] = -1*H[i]
         idx = idx << 1
     
-    mat = cdd.Matrix(H)
+    mat = cdd.Matrix(H,number_type='float')
     mat.rep_type = cdd.RepType.INEQUALITY
     ret = mat.canonicalize()
     to_keep = sorted(list(frozenset(range(len(H))) - ret[1]))
