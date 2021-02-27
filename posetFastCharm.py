@@ -21,12 +21,13 @@ class PosetNode:
 
 class Poset(Chare):
     
-    def __init__(self, checkNodeGroup, groupPEs, useParNodeSched, posetPEs):
+    def __init__(self, checkNodeGroup, groupPEs, useParNodeSched, posetPEs, batchSize):
         
         self.checkNodeGroup = checkNodeGroup
         self.useParNodeSched = useParNodeSched
         self.groupPEs = groupPEs
         self.posetPEs = posetPEs
+        self.stackNum = batchSize
 
         # Create a group to paralellize the computation of successors
         # (Use all PEs unless a list was explicitly passed to us)

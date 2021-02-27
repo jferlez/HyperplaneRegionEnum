@@ -44,7 +44,7 @@ class TLLHypercubeReach(Chare):
         stat = self.checkerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
         stat.get()
 
-        self.poset = Chare(posetFastCharm.Poset,args=[self.checkerGroup,[],False,None],onPE=charm.myPe())
+        self.poset = Chare(posetFastCharm.Poset,args=[self.checkerGroup,[],False,None,10],onPE=charm.myPe())
         
         stat = self.poset.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
         stat.get()
