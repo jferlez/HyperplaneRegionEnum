@@ -10,11 +10,11 @@ from itertools import repeat
 
 class PosetNode:
 
-    def __init__(self, INTrep, level):
+    def __init__(self, INTrep, level, facesInt=-1):
         self.INTrep = INTrep
         self.level = level
         self.regionProcessed = False
-        self.facesInt = 0
+        self.facesInt = facesInt
         self.facesList = []
         self.successors = []
 
@@ -211,6 +211,13 @@ class Poset(Chare):
                 self.succGroup.computeSuccessors(successorList)
                 nextLevel = list(successorList.get())
 
+                # Retrieve faces for all the nodes in the current level
+                for k in range(charm.numPes()):
+                    facesListFut = self.succGroup[k].retrieveFaces(awaitable=True)
+                    facesList = facesListFut.get()
+                    for i in range(k,len(thisLevel),charm.numPes()):
+                        thisLevel[i].facesInt = facesList[int((i-k)/charm.numPes())]
+
             else:
 
                 successorList = map(processNodeSuccessors, \
@@ -266,13 +273,18 @@ class successorWorker(Chare):
 
     @coro
     def computeSuccessors(self, callback):
-        successorList = map(processNodeSuccessors, \
+        successorList = list(map(processNodeSuccessors, \
                         self.workInts, \
                         repeat(self.N), \
                         repeat(self.fullConstraints) \
-                    ) if len(self.workInts) > 0 else [set([])]
-        self.workInts = []
+                    )) if len(self.workInts) > 0 else [[set([]),-1]]
+        self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
+        successorList = [successorList[ii][0] for ii in range(len(successorList))]
         self.reduce(callback, set([]).union(*successorList), Reducer.Union)
+
+    @coro
+    def retrieveFaces(self):
+        return self.workInts
 
 
 
@@ -419,11 +431,11 @@ def processNodeSuccessors(INTrep,N,H2):
                 )
     
     # Use this if we need to keep track of the region's faces
-    # facesInt = 0
-    # for k in to_keep:
-    #     facesInt = facesInt + (1 << k)
+    facesInt = 0
+    for k in to_keep:
+        facesInt = facesInt + (1 << k)
     # successors.append(facesInt)
-    return set(successors)
+    return [set(successors), facesInt]
 
 
 
