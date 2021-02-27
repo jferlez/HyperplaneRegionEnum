@@ -62,8 +62,8 @@ class TLLHypercubeReach(Chare):
     def computeReach(self, lbSeed=-1, ubSeed=1, tol=1e-3):
         self.hypercube = np.ones(self.m, 2)
         for out in range(self.m):
-            self.hypercube[out,0] = self.searchBound(lbSeed,out=out,lb=True)
-            self.hypercube[out,1] = self.searchBound(ubSeed,out=out,lb=False)
+            self.hypercube[out,0] = self.searchBound(lbSeed,out=out,lb=True,tol=tol)
+            self.hypercube[out,1] = self.searchBound(ubSeed,out=out,lb=False,tol=tol)
         return self.hypercube
 
     @coro
