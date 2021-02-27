@@ -235,42 +235,6 @@ class Poset(Chare):
                             self.peCounter = 0
                             self.stackCounter = 0
             
-            # Now parallelize the LPs to find the neihboring regions; we won't put them in the poset
-            # yet, though
-            if len(thisLevel) < self.parallelThreshold:
-                parallelCode = False
-            else:
-                parallelCode = True
-
-            
-            if parallelCode:
-
-                for k in range(charm.numPes()):
-                    self.succGroup[k].initList( \
-                                [ i.INTrep.iINT for i in thisLevel[k:len(thisLevel):charm.numPes()] ], \
-                            )
-                transferStatus = Future()
-                self.succGroup.collectXferStats(transferStatus)
-                stat = transferStatus.get()
-                successorList = Future()
-                self.succGroup.computeSuccessors(successorList)
-                nextLevel = list(successorList.get())
-
-                # Retrieve faces for all the nodes in the current level
-                for k in range(charm.numPes()):
-                    facesListFut = self.succGroup[k].retrieveFaces(awaitable=True)
-                    facesList = facesListFut.get()
-                    for i in range(k,len(thisLevel),charm.numPes()):
-                        thisLevel[i].facesInt = facesList[int((i-k)/charm.numPes())]
-
-            else:
-
-                successorList = map(processNodeSuccessors, \
-                            [node.INTrep.iINT for node in thisLevel], \
-                            repeat(self.N), \
-                            repeat(self.constraints.fullConstraints) \
-                        )
-                nextLevel = list(set([]).union(*successorList))
             
             
             thisLevel = nextLevel
