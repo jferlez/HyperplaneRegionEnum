@@ -149,12 +149,53 @@ class Poset(Chare):
 
             # This is the place to put alternative fast processing of nodes -- e.g. ray shooting to find regions
 
+            # Now parallelize the LPs to find the neihboring regions; we won't put them in the poset
+            # yet, though
+            if len(thisLevel) < self.parallelThreshold:
+                parallelCode = False
+            else:
+                parallelCode = True
+
+            
+            if parallelCode:
+
+                for k in range(charm.numPes()):
+                    self.succGroup[k].initList( \
+                                [ i for i in thisLevel[k:len(thisLevel):charm.numPes()] ] \
+                            )
+                transferStatus = Future()
+                self.succGroup.collectXferStats(transferStatus)
+                stat = transferStatus.get()
+                successorList = Future()
+                self.succGroup.computeSuccessors(successorList)
+                nextLevel = list(successorList.get())
+
+                # Retrieve faces for all the nodes in the current level
+                facesList = [0 for i in range(len(thisLevel))]
+                for k in range(charm.numPes()):
+                    facesListFut = self.succGroup[k].retrieveFaces(awaitable=True)
+                    facesListWork = facesListFut.get()
+                    for i in range(k,len(thisLevel),charm.numPes()):
+                        facesList[i] = facesListWork[int((i-k)/charm.numPes())]
+
+            else:
+
+                successorList = map(processNodeSuccessors, \
+                            [node.INTrep.iINT for node in thisLevel], \
+                            repeat(self.N), \
+                            repeat(self.constraints.fullConstraints) \
+                        )
+                nextLevel = list(set([]).union(*successorList))
+
+
+
             for k in range(len(thisLevel)):
                 i = intSet(thisLevel[k],self.N)
                 if i in self.hashTable:
                     thisLevel[k] = self.hashTable[i]
+                    thisLevel[k].facesInt = facesList[k]
                 else:
-                    thisLevel[k] = PosetNode( i, level+1 )
+                    thisLevel[k] = PosetNode( i, level+1, facesInt=facesList[k] )
                     self.hashTable[i] = thisLevel[k]
                 if not thisLevel[k].regionProcessed:
                     if emitNodes:
@@ -162,14 +203,17 @@ class Poset(Chare):
                     if checkNodes:
                         # First update self.workGroup with the new node
                         if self.peCounter == len(self.pes)-1 and self.stackCounter == self.stackNum - 1:
-                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT
+                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].facesInt #thisLevel[k].INTrep.iINT
+                            thisLevel[k].regionProcessed = True
                             self.peCounter += 1
                             doProcessing = True
                         elif self.peCounter < len(self.pes)-1 and self.stackCounter < self.stackNum:
-                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT
+                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].facesInt #thisLevel[k].INTrep.iINT
+                            thisLevel[k].regionProcessed = True
                             self.peCounter += 1
                         elif self.peCounter == len(self.pes)-1 and self.stackCounter < self.stackNum - 1:
-                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT
+                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].facesInt #thisLevel[k].INTrep.iINT
+                            thisLevel[k].regionProcessed = True
                             self.stackCounter += 1
                             self.peCounter = 0
                         if doProcessing:
@@ -189,7 +233,7 @@ class Poset(Chare):
                             doProcessing = False
                             self.peCounter = 0
                             self.stackCounter = 0
-
+            
             # Now parallelize the LPs to find the neihboring regions; we won't put them in the poset
             # yet, though
             if len(thisLevel) < self.parallelThreshold:
