@@ -29,6 +29,7 @@ class NodeCheckerLowerBdVerify(Chare):
         self.fixedA = fixedA
         self.fixedb = fixedb
         self.N = len(self.AbPairs[0][0])
+        self.nodeIntMask = (2**(self.N+1))-1
         self.selectorMatsFull = selectorMats
         
         self.selectorSetsFull = [[] for k in range(len(selectorMats))]
@@ -75,6 +76,9 @@ class NodeCheckerLowerBdVerify(Chare):
 
     @coro
     def check(self, reduceCallback):
+        # Throw away the face information for the node
+        for k in range(len(self.myWorkList)):
+            self.myWorkList[k] = self.myWorkList[k] & self.nodeIntMask
         if len(self.myWorkList) > 0:
             val = True
             # This fixes a nasty integer arithmetic bug -- see also unflipInt
