@@ -5,10 +5,13 @@ import charm4py
 from charm4py import charm, Chare, coro, Reducer, Group, Future, Channel
 import scipy.optimize
 import cdd
+import cvxopt
 import posetFastCharm
 import NodeCheckerLowerBdVerify
 from copy import copy,deepcopy
 import time
+
+cvxopt.solvers.options['show_progress'] = False
 
 # All hyperplanes assumes to be specified as A x >= b
 
@@ -46,6 +49,10 @@ class TLLHypercubeReach(Chare):
         stat = self.poset.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
         stat.get()
 
+        self.ubCheckerGroup = Group(minGroupFeasibleUB)
+        stat = self.ubCheckerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
+        stat.get()
+
         self.copyTime = 0
         self.posetTime = 0
         self.workerInitTime = 0
@@ -53,7 +60,11 @@ class TLLHypercubeReach(Chare):
 
 
     def computeReach(self, lbSeed=-1, ubSeed=1, tol=1e-3):
-        pass
+        self.hypercube = np.ones(self.m, 2)
+        for out in range(self.m):
+            self.hypercube[out,0] = self.searchBound(lbSeed,out=out,lb=True)
+            self.hypercube[out,1] = self.searchBound(ubSeed,out=out,lb=False)
+        return self.hypercube
 
     @coro
     def searchBound(self,seedBd,out=0,lb=True,tol=1e-3,verbose=False):
@@ -69,7 +80,7 @@ class TLLHypercubeReach(Chare):
         
         while itCnt > 0:
             bdToCheck = windUB if windLB==-np.inf else 0.5*(windLB + windUB)
-            ver = self.verifyLB( bdToCheck, out=out) if lb else not self.verifyUB( bdToCheck,out=out)
+            ver = self.verifyLB( bdToCheck, out=out) if lb else self.verifyUB( bdToCheck,out=out)
             
             if verbose:
                 print( 'Iteration ' + str(itCnt) +  ': ' + str(bdToCheck) + ' is ' + ('a VALID' if ver else 'an INVALID') + ' lower bound!')
@@ -164,10 +175,81 @@ class TLLHypercubeReach(Chare):
 
         return not retVal
     
+    @coro
     def verifyUB(self,ub,out=0):
-        pass
+        
+        for ii in range(0, len(self.selectorMats[out]), charm.numPes()):
+            for k in range(charm.numPes()):
+                if ii+k < len(self.selectorMats[out]):
+                    self.ubCheckerGroup[k].checkMinGroup(ub,ii+k,out)
+                else:
+                    self.ubCheckerGroup[k].checkMinGroup(ub,-1, out)
+            minCheckFut = Future()
+            self.ubCheckerGroup.collectMinGroupStats(minCheckFut)
+            val = minCheckFut.get()
+            if val:
+                return True
+        return False
 
 
+
+class minGroupFeasibleUB(Chare):
+
+    def initialize(self, AbPairs, pt, fixedA, fixedb, selectorMats):
+        self.constraints = None
+        self.AbPairs = AbPairs
+        self.pt = pt
+        self.fixedA = fixedA
+        self.fixedb = fixedb
+        self.N = len(self.AbPairs[0][0])
+        self.n = len(self.AbPairs[0][0][0])
+        self.selectorMatsFull = selectorMats
+        
+        self.selectorSetsFull = [[] for k in range(len(selectorMats))]
+        # Convert the matrices to sets of 'used' hyperplanes
+        for k in range(len(selectorMats)):
+            self.selectorSetsFull[k] = list( \
+                    map( \
+                        lambda x: frozenset(np.flatnonzero(np.count_nonzero(x, axis=0)>0)), \
+                        self.selectorMatsFull[k] \
+                    ) \
+                )
+        
+        self.selectorIndex = -1
+    
+    @coro
+    def checkMinGroup(self, ub, mySelector, out):
+        self.status = Future()
+        if mySelector < 0:
+            self.status.send(False)
+            return
+        self.selectorIndex = mySelector
+        # Actually do the feasibility check:
+        ubShift = self.AbPairs[out][1][list(self.selectorSetsFull[out][mySelector]),:]
+        ubShift = ubShift - ub*np.ones(ubShift.shape)
+        bVec = np.vstack([ ubShift , -1*self.fixedb ]).T.flatten()
+        sol = cvxopt.solvers.lp( \
+                cvxopt.matrix(np.ones(self.n),(self.n,1),'d'), \
+                cvxopt.matrix( \
+                        -1*np.vstack([ self.AbPairs[out][0][list(self.selectorSetsFull[out][mySelector]),:], self.fixedA ]),
+                        (len(list(self.selectorSetsFull[out][mySelector]))+len(self.fixedA), self.n), \
+                        'd' \
+                    ), \
+                cvxopt.matrix( \
+                        bVec,
+                        (len(bVec),1),
+                        'd' \
+                    ) \
+            )
+        # TO DO: account for intersections that are on the boundary of the input polytope
+        if sol['status'] == 'optimal':
+            self.status.send(True)
+        else:
+            self.status.send(False)
+
+    @coro
+    def collectMinGroupStats(self, stat_result):
+        self.reduce(stat_result, self.status.get(), Reducer.logical_or)
 
 
 
