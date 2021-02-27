@@ -68,6 +68,8 @@ class TLLHypercubeReach(Chare):
 
     @coro
     def searchBound(self,seedBd,out=0,lb=True,tol=1e-3,verbose=False):
+        if out >= self.m:
+            raise ValueError('Output ' + str(out) + ' is greater than m = ' + str(self.m))
         # lb2ub = 1
         # if not lb:
         #     lb2ub = -1
@@ -142,7 +144,8 @@ class TLLHypercubeReach(Chare):
 
     @coro
     def verifyLB(self,lb, out=0):
-        
+        if out >= self.m:
+            raise ValueError('Output ' + str(out) + ' is greater than m = ' + str(self.m))
         # Alternate method of resetting poset problem for the new lower bound:
         # ** BETTER DOUBLE CHECK THESE METHODS -- THEY MAY BE OUT OF DATE **
 
@@ -160,9 +163,9 @@ class TLLHypercubeReach(Chare):
         
         t = time.time()
         
-        stat = self.checkerGroup.setConstraint(lb, awaitable=True)
+        stat = self.checkerGroup.setConstraint(lb, out=out, awaitable=True)
         stat.get()
-        stat = self.poset.setConstraint(lb, awaitable=True)
+        stat = self.poset.setConstraint(lb, out=out, awaitable=True)
         stat.get()
 
         self.copyTime += time.time() - t # Total time across all PEs to set up a new problem
@@ -177,7 +180,8 @@ class TLLHypercubeReach(Chare):
     
     @coro
     def verifyUB(self,ub,out=0):
-        
+        if out >= self.m:
+            raise ValueError('Output ' + str(out) + ' is greater than m = ' + str(self.m))
         for ii in range(0, len(self.selectorMats[out]), charm.numPes()):
             for k in range(charm.numPes()):
                 if ii+k < len(self.selectorMats[out]):
