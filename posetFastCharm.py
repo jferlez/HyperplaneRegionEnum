@@ -71,7 +71,6 @@ class Poset(Chare):
         # The number of nodes (regions) in a poset level that are requried to trigger
         # the parallelized code to compute all of the successors:
         self.parallelThreshold = 0
-        self.stackNum = 10
 
         self.hashTable = {}
         self.levelArray = [[] for i in range(self.N)]
