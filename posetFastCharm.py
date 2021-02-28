@@ -551,6 +551,7 @@ def unflipInt(INT, flipSet,N):
             retInt += sel
     return retInt
 
+# This function is TOTALLY misnamed: it actually returns the set of NEGATIVE hyperplanes....
 def posHyperplaneSet(INT,n):
     retList = [-1 for i in range(n)]
     retIdx = 0
