@@ -130,10 +130,10 @@ class NodeCheckerGenericReach(Chare):
                         raise ValueError('Couldn\'t find a solution to the LP. Something went wrong!')
                     
                     # If the optimum violates the constraint, then we're done
-                    print('Optimal solution: ' + str(np.array(sol['x'])))
+                    # print('Optimal solution: ' + str(np.array(sol['x'])))
                     if sol['status'] == 'optimal':
                         constTimesBias = self.outA[const,:] @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)])
-                        print('Decision pair: ' + str([(constTimesLin @ np.array(sol['x'])).flatten()[0] + constTimesBias.reshape((1,1))[0,0],  self.outb[const,0]]))
+                        # print('Decision pair: ' + str([(constTimesLin @ np.array(sol['x'])).flatten()[0] + constTimesBias.reshape((1,1))[0,0],  self.outb[const,0]]))
                         if (constTimesLin @ np.array(sol['x'])).reshape((1,1))[0,0] + constTimesBias.reshape((1,1))[0,0] < self.outb[const,0]:
                             val = True
                             break
