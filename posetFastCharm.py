@@ -562,3 +562,15 @@ def posHyperplaneSet(INT,n):
             retIdx += 1
         idx = idx << 1
     return retList[0:retIdx]
+
+
+def activeHyperplaneSet(INT,n):
+    retList = [-1 for i in range(n)]
+    retIdx = 0
+    idx = 1
+    for i in range(n):
+        if INT & idx > 0:
+            retList[retIdx] = i
+            retIdx += 1
+        idx = idx << 1
+    return retList[0:retIdx]
