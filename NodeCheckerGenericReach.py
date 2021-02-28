@@ -126,15 +126,17 @@ class NodeCheckerGenericReach(Chare):
                     # print(list(map(lambda x: np.array(x),cvxArgs)))
                     sol = cvxopt.solvers.lp(*cvxArgs)
                     # print(sol)
-                    if not sol['status'] == 'optimal':
+                    if self.eqA == None and not sol['status'] == 'optimal':
                         raise ValueError('Couldn\'t find a solution to the LP. Something went wrong!')
+                    
                     # If the optimum violates the constraint, then we're done
-                    # print('Optimal solution: ' + str(np.array(sol['x'])))
-                    constTimesBias = self.outA[const,:] @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)])
-                    # print('Decision pair: ' + str([(constTimesLin @ np.array(sol['x'])).flatten()[0] + constTimesBias.reshape((1,1))[0,0],  self.outb[const,0]]))
-                    if (constTimesLin @ np.array(sol['x'])).reshape((1,1))[0,0] + constTimesBias.reshape((1,1))[0,0] < self.outb[const,0]:
-                        val = True
-                        break
+                    print('Optimal solution: ' + str(np.array(sol['x'])))
+                    if sol['status'] == 'optimal':
+                        constTimesBias = self.outA[const,:] @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)])
+                        print('Decision pair: ' + str([(constTimesLin @ np.array(sol['x'])).flatten()[0] + constTimesBias.reshape((1,1))[0,0],  self.outb[const,0]]))
+                        if (constTimesLin @ np.array(sol['x'])).reshape((1,1))[0,0] + constTimesBias.reshape((1,1))[0,0] < self.outb[const,0]:
+                            val = True
+                            break
                 if val:
                     break
         else:
