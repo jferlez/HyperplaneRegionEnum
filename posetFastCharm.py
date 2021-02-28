@@ -145,7 +145,7 @@ class Poset(Chare):
         thisLevel = [0]
 
         doProcessing = False
-        while level < self.N and len(thisLevel) > 0:
+        while level < self.N+1 and len(thisLevel) > 0:
 
             # This is the place to put alternative fast processing of nodes -- e.g. ray shooting to find regions
 
