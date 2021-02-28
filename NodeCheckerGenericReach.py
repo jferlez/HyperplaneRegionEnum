@@ -2,9 +2,10 @@ import charm4py
 from charm4py import charm, Chare, coro, Reducer, Group, Future, Array, Channel
 import cdd
 import numpy as np
-from posetFastCharm import unflipInt, posHyperplaneSet
+from posetFastCharm import unflipInt, posHyperplaneSet, activeHyperplaneSet
 import posetFastCharm
 from copy import copy
+import cvxopt
 import time
 
 class NodeCheckerGenericReach(Chare):
@@ -18,8 +19,10 @@ class NodeCheckerGenericReach(Chare):
         self.fixedb = fixedb
         self.Nstack = len(self.AbPairs[0][0])
         self.nodeIntMask = (2**(self.Nstack+1))-1
+        self.facesMask = (2**(self.Nstack+len(self.fixedA) + 1)-1)
         self.localLinearFns = localLinearFns
         self.N = len(self.localLinearFns[0][0])
+        self.n = len(self.localLinearFns[0][0][0])
         self.selectorMatsFull = selectorMats
         self.m = len(self.selectorMatsFull)
         self.selectorSetsFull = [[] for k in range(len(selectorMats))]
@@ -35,11 +38,13 @@ class NodeCheckerGenericReach(Chare):
         self.myWorkList = []
         self.initTime = 0
     
-    def setConstraint(self,outA,outb):
+    def setConstraint(self,outA,outb,eqA=None,eqb=None):
         out = 0
         t = time.time()
-        self.outA = outA
-        self.outb = outb
+        self.outA = np.array(outA)
+        self.outb = np.array(outb)
+        self.eqA = None if eqA == None else np.array(eqA)
+        self.eqb = None if eqb == None else np.array(eqb)
         self.selectorSets = self.selectorSetsFull[out]
         self.constraints = posetFastCharm.constraints( \
                 -1*self.AbPairs[out][0], \
@@ -71,24 +76,72 @@ class NodeCheckerGenericReach(Chare):
         if len(self.myWorkList) > 0:
             
             self.facesList = [-1 for k in range(len(self.myWorkList))]
-            self.facesSets = list(map( lambda x: frozenset(posHyperplaneSet(x>>(self.Nstack+1),len(self.constraints.fullConstraints))) , self.myWorkList ))
-            print(self.facesSets)
+            self.facesSets = list( \
+                    map( \
+                        lambda x: frozenset( activeHyperplaneSet( self.facesMask & (x>>(self.Nstack+1)),len(self.constraints.fullConstraints) ) ) , \
+                        self.myWorkList \
+                    ) \
+                )
+            # print(len(self.facesSets))
             # now throw away the faces information from the integers
             for k in range(len(self.myWorkList)):
                 self.myWorkList[k] = self.myWorkList[k] & self.nodeIntMask
             self.regSets = list(map( lambda x: frozenset(posHyperplaneSet(unflipInt(x,self.constraints.flipMapSet,self.constraints.N),self.constraints.N)) , self.myWorkList ))
-            print(self.myWorkList)
-            val = True
+            val = False
             for regIdx in range(len(self.regSets)):
                 actFns = self.findActiveFunction(regIdx)
-                print('Region: ' + str(self.regSets[regIdx]) + '... Active functions: ' + str(actFns))
+                # print(actFns)
+                # print('Region: ' + str(self.regSets[regIdx]) + '... Active functions: ' + str(actFns))
                 # actFns now indexes one local linear function for each output, so this can be used to set up the LP
-                val = True
-                val = False # Set val to the result of the LP
+                # print('constTimesLin = '+ str(self.outA[0,:]))
+                for const in range(len(self.outA)):
+                    constTimesLin =  self.outA[const,:] @ np.array([ self.localLinearFns[out][0][actFns[out]] for out in range(self.m)])
+                    G = -1*np.vstack([ self.AbPairs[0][0] , self.fixedA ])
+                    h = np.vstack([ self.AbPairs[0][1] , -self.fixedb ])
+                    # print(G)
+                    # print(h)
+                    for ii in range(len(G)):
+                        if ii in self.regSets[regIdx]:
+                            G[ii,:] = -G[ii,:]
+                            h[ii,:] = -h[ii,:]
+                    cvxArgs = [ \
+                                cvxopt.matrix( \
+                                    constTimesLin.T , \
+                                    (self.n,1), \
+                                    'd' \
+                                ), \
+                                cvxopt.matrix( \
+                                        G[list(self.facesSets[regIdx]),:], \
+                                        (len(self.facesSets[regIdx]), self.n), \
+                                        'd' \
+                                    ) \
+                            ] + \
+                            ([] if self.eqA == None else [ cvxopt.matrix(self.eqA), cvxopt.matrix(self.eqb) ]) + \
+                            [ \
+                                cvxopt.matrix( \
+                                        h[list(self.facesSets[regIdx]),:], \
+                                        (len(self.facesSets[regIdx]),1), \
+                                        'd' \
+                                    ) \
+                            ]
+                    # print(self.facesSets[regIdx])
+                    # print(list(map(lambda x: np.array(x),cvxArgs)))
+                    sol = cvxopt.solvers.lp(*cvxArgs)
+                    # print(sol)
+                    if not sol['status'] == 'optimal':
+                        raise ValueError('Couldn\'t find a solution to the LP. Something went wrong!')
+                    # If the optimum violates the constraint, then we're done
+                    # print('Optimal solution: ' + str(np.array(sol['x'])))
+                    constTimesBias = self.outA[const,:] @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)])
+                    # print('Decision pair: ' + str([(constTimesLin @ np.array(sol['x'])).flatten()[0] + constTimesBias.reshape((1,1))[0,0],  self.outb[const,0]]))
+                    if (constTimesLin @ np.array(sol['x'])).reshape((1,1))[0,0] + constTimesBias.reshape((1,1))[0,0] < self.outb[const,0]:
+                        val = True
+                        break
                 if val:
                     break
         else:
             val = False
+        
         # # Set 'val' to the LOGICAL OR of the truth value for each node integer in self.myWorkList
         # val = True if 0 in self.myWorkList else False
         # Leave this line alone
@@ -147,56 +200,3 @@ class NodeCheckerGenericReach(Chare):
             return -1 * sign
         else:
             return sign
-
-
-
-
-
-
-        # Helper functions:
-
-
-
-
-
-        # actConstraints = [ \
-        #                     self.constraints.fullConstraints[list(facesSets[regIdx]),1:], \
-        #                     self.constraints.fullConstraints[list(facesSets[regIdx]),0] \
-        #                 ]
-        # interiorPoint = findInteriorPoint(*createCDDrep( \
-        #         actConstraints[0], \
-        #         actConstraints[1].reshape((len(actConstraints[1]),1)) \
-        #     ))
-        # li = zip(actConstraints[0] @ interiorPoint + actConstraints[1], range(len(actConstraints[1])))
-        # li.sort()
-        # li = np.sort(np.array(zip(li,range(len(li))))[:,1:3],axis=0)[:,1]
-# def createCDDrep(inputConstraintsA, inputConstraintsb):
-    
-#     inputMat = cdd.Matrix(np.hstack((-1*inputConstraintsb,inputConstraintsA)))
-#     inputMat.rep_type = cdd.RepType.INEQUALITY
-#     inputPolytope = cdd.Polyhedron(inputMat)
-#     vrep = np.array(inputPolytope.get_generators())
-#     if len(vrep) == 0:
-#         raise ValueError('No vertices for input constraint polyhedron!')
-    
-#     if np.sum(vrep[:,0]) < len(vrep):
-#         raise ValueError('Input constraints do not specify a closed, bounded polyhedron!')
-#     inputVrep = vrep[:,1:]
-
-#     return inputMat, inputPolytope, inputVrep
-
-# def findInteriorPoint(inputMat,inputPolytope,inputVrep):
-#     activeConstraints = inputPolytope.get_adjacency()[0]
-#     # Compare vertices that are non-adjacent to vertex 0, and find the furthest one away
-#     d = 0
-#     dIdx = -1
-#     for k in range(1,len(inputVrep)):
-#         if not k in activeConstraints:
-#             di = np.linalg.norm(inputVrep[0] - inputVrep[k])
-#             if di > d:
-#                 d = di
-#                 dIdx = k
-#     pt = 0.5*(inputVrep[0] + inputVrep[dIdx])
-#     pt.reshape( (len(pt),1) )
-
-#     return pt
