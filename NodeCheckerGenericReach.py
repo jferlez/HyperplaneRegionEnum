@@ -34,17 +34,8 @@ class NodeCheckerGenericReach(Chare):
                         self.selectorMatsFull[k] \
                     ) \
                 )
-        
-        self.myWorkList = []
-        self.initTime = 0
-    
-    def setConstraint(self,outA,outb,eqA=None,eqb=None):
+        # Since we're stacking everything the "dummy" problem has only one output
         out = 0
-        t = time.time()
-        self.outA = np.array(outA)
-        self.outb = np.array(outb)
-        self.eqA = None if eqA == None else np.array(eqA)
-        self.eqb = None if eqb == None else np.array(eqb)
         self.selectorSets = self.selectorSetsFull[out]
         self.constraints = posetFastCharm.constraints( \
                 -1*self.AbPairs[out][0], \
@@ -53,6 +44,16 @@ class NodeCheckerGenericReach(Chare):
                 self.fixedA, \
                 self.fixedb \
             )
+        self.myWorkList = []
+        self.initTime = 0
+    
+    def setConstraint(self,outA,outb,eqA=None,eqb=None):
+        t = time.time()
+        self.outA = np.array(outA)
+        self.outb = np.array(outb)
+        self.eqA = None if eqA == None else np.array(eqA)
+        self.eqb = None if eqb == None else np.array(eqb)
+        print(self.eqA)
         self.myWorkList = []
         self.initTime += time.time() - t
         return 1
