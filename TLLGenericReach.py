@@ -73,11 +73,11 @@ class TLLGenericReach(Chare):
 
 
     @coro
-    def verifyOutputConstraints(self,A,b):
+    def verifyOutputConstraints(self,A,b,Aeq=None,beq=None):
         
         t = time.time()
         
-        stat = self.checkerGroup.setConstraint(A,b,awaitable=True)
+        stat = self.checkerGroup.setConstraint(A,b,Aeq,beq, awaitable=True)
         stat.get()
         stat = self.poset.setConstraint(0, out=0, awaitable=True)
         stat.get()
