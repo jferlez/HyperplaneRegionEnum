@@ -115,16 +115,13 @@ class NodeCheckerGenericReach(Chare):
                                         G[list(self.facesSets[regIdx]),:], \
                                         (len(self.facesSets[regIdx]), self.n), \
                                         'd' \
-                                    ) \
-                            ] + \
-                            ([] if self.eqA == None else [ cvxopt.matrix(self.eqA), cvxopt.matrix(self.eqb) ]) + \
-                            [ \
+                                    ), \
                                 cvxopt.matrix( \
                                         h[list(self.facesSets[regIdx]),:], \
                                         (len(self.facesSets[regIdx]),1), \
                                         'd' \
                                     ) \
-                            ]
+                            ] + ([] if self.eqA == None else [ cvxopt.matrix(self.eqA,self.eqA.shape,'d'), cvxopt.matrix(self.eqb,self.eqb.shape,'d') ])
                     # print(self.facesSets[regIdx])
                     # print(list(map(lambda x: np.array(x),cvxArgs)))
                     sol = cvxopt.solvers.lp(*cvxArgs)
