@@ -55,15 +55,16 @@ class TLLGenericReach(Chare):
                         for k in range(1,len(self.stackedLocalLinearFns[0][0])) \
                     ] \
                 )
-        
+        print(self.localLinearFns)
+        print(self.pairedLocalLinearFns)
         self.checkerGroup = Group(NodeCheckerGenericReach.NodeCheckerGenericReach)
 
-        stat = self.checkerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
+        stat = self.checkerGroup.initialize(self.pairedLocalLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.localLinearFns, self.selectorMats, awaitable=True)
         stat.get()
 
         self.poset = Chare(posetFastCharm.Poset,args=[self.checkerGroup,[],False,None,50],onPE=charm.myPe())
         
-        stat = self.poset.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
+        stat = self.poset.initialize(self.pairedLocalLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
         stat.get()
 
         self.copyTime = 0
@@ -71,7 +72,25 @@ class TLLGenericReach(Chare):
         self.workerInitTime = 0
 
 
+    @coro
+    def verifyOutputConstraints(self,A,b):
+        
+        t = time.time()
+        
+        stat = self.checkerGroup.setConstraint(A,b,awaitable=True)
+        stat.get()
+        stat = self.poset.setConstraint(0, out=0, awaitable=True)
+        stat.get()
 
+        self.copyTime += time.time() - t # Total time across all PEs to set up a new problem
+
+        t = time.time()
+        checkFut = Future()
+        self.poset.populatePoset(checkNodesFuture=checkFut) # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
+        retVal = checkFut.get()
+        self.posetTime += time.time() - t
+
+        return not retVal
 
 
 
