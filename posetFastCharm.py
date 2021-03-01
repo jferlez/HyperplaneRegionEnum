@@ -441,7 +441,6 @@ def processNodeSuccessors(INTrep,N,H2):
             successors.append( \
                     INTrep + idx \
                 )
-    
     # Use this if we need to keep track of the region's faces
     facesInt = 0
     for k in to_keep:
