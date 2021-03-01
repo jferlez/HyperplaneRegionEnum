@@ -9,7 +9,6 @@ import TLLnet
 import posetFastCharm
 import TLLGenericReach
 from TLLGenericReach import createCDDrep, findInteriorPoint
-import NodeCheckerLowerBdVerify
 import time
 
 
