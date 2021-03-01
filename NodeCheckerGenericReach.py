@@ -132,7 +132,7 @@ class NodeCheckerGenericReach(Chare):
                                         # (len(h),1), \
                                         'd' \
                                     ) \
-                            ] + ([] if self.eqA == None else [ cvxopt.matrix(self.eqA,self.eqA.shape,'d'), cvxopt.matrix(self.eqb,self.eqb.shape,'d') ])
+                            ] + ([] if self.eqA == None or self.eqb == None else [ cvxopt.matrix(self.eqA,self.eqA.shape,'d'), cvxopt.matrix(self.eqb,self.eqb.shape,'d') ])
                     # print(list(map(lambda x: np.array(x),cvxArgs)))
                     # sol = cvxopt.solvers.lp(*cvxArgs) # built-in cvx solver, which is slightly slower in this case
                     sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
