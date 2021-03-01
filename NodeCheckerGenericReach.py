@@ -56,12 +56,14 @@ class NodeCheckerGenericReach(Chare):
         #     )
         # print('Special poset processed ---------------')
     
-    def setConstraint(self,outA,outb,eqA=None,eqb=None):
+    def setConstraint(self,outA,outb,eqA=None,eqb=None,Asys=None,Bsys=None):
         t = time.time()
         self.outA = np.array(outA)
         self.outb = np.array(outb)
         self.eqA = None if eqA == None else np.array(eqA)
         self.eqb = None if eqb == None else np.array(eqb)
+        self.Asys = None if Asys == None else np.array(Asys)
+        self.Bsys = None if Bsys == None else np.array(Bsys)
         self.myWorkList = []
         self.initTime += time.time() - t
         return 1
@@ -105,7 +107,10 @@ class NodeCheckerGenericReach(Chare):
                 actFns = self.findActiveFunction(regIdx)
                 # actFns now indexes one local linear function for each output, so this can be used to set up the LP
                 for const in range(len(self.outA)):
-                    constTimesLin =  self.outA[const,:] @ np.array([ self.localLinearFns[out][0][actFns[out]] for out in range(self.m)])
+                    if self.Asys == None or self.Bsys == None:
+                        constTimesLin =  self.outA[const,:] @ np.array([ self.localLinearFns[out][0][actFns[out]] for out in range(self.m)])
+                    else:
+                        constTimesLin =  self.outA[const,:] @ ( self.Asys + self.Bsys @ np.array([ self.localLinearFns[out][0][actFns[out]] for out in range(self.m)]) )
                     G = -1*np.vstack([ self.AbPairs[0][0] , self.fixedA ])
                     h = np.vstack([ self.AbPairs[0][1] , -self.fixedb ])
 
@@ -152,7 +157,10 @@ class NodeCheckerGenericReach(Chare):
                     # If the optimum violates the constraint, then we're done
                     # print('Optimal solution: ' + str(np.array(sol['x'])))
                     if sol['status'] == 'optimal':
-                        constTimesBias = self.outA[const,:] @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)])
+                        if self.Asys == None or self.Bsys == None:
+                            constTimesBias = self.outA[const,:] @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)])
+                        else:
+                            constTimesBias = self.outA[const,:] @ (self.Bsys @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)]))
                         if (constTimesLin @ np.array(sol['x'])).reshape((1,1))[0,0] + constTimesBias.reshape((1,1))[0,0] < self.outb[const,0]:
                             print('Violation at point ' + str(sol['x']))
                             print('Value of active function ' + \
