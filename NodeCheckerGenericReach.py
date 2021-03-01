@@ -104,12 +104,10 @@ class NodeCheckerGenericReach(Chare):
                     constTimesLin =  self.outA[const,:] @ np.array([ self.localLinearFns[out][0][actFns[out]] for out in range(self.m)])
                     G = -1*np.vstack([ self.AbPairs[0][0] , self.fixedA ])
                     h = np.vstack([ self.AbPairs[0][1] , -self.fixedb ])
-                    # print(G)
-                    # print(h)
-                    for ii in range(len(G)):
-                        if ii in self.regSets[regIdx]:
-                            G[ii,:] = -G[ii,:]
-                            h[ii,:] = -h[ii,:]
+
+                    for fc in self.regSets[regIdx]:
+                        G[fc,:] = -G[fc,:]
+                        h[fc,:] = -h[fc,:]
                     cvxArgs = [ \
                                 cvxopt.matrix( \
                                     constTimesLin.T , \
