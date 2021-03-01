@@ -91,6 +91,10 @@ class NodeCheckerGenericReach(Chare):
             self.regSets = list(map( lambda x: frozenset(activeHyperplaneSet(unflipIntFixed(x,self.constraints.flipMapSet,self.constraints.N),self.constraints.N)) , self.myWorkList ))
             val = False
             for regIdx in range(len(self.regSets)):
+                if len(self.facesSets[regIdx]) == 0:
+                    # We got a region that is less than full dimensional, so skip it
+                    continue
+                
                 actFns = self.findActiveFunction(regIdx)
                 # print(actFns)
                 # print('Region: ' + str(self.regSets[regIdx]) + '... Active functions: ' + str(actFns))

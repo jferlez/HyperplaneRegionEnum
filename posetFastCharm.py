@@ -426,6 +426,10 @@ def processNodeSuccessors(INTrep,N,H2):
     mat = cdd.Matrix(H,number_type='float')
     mat.rep_type = cdd.RepType.INEQUALITY
     ret = mat.canonicalize()
+    if len(ret[0]) > 0:
+        # There is some degeneracy, so we can skip this region because we only care about
+        # full-dimensional ones
+        return [set([]), 0]
     to_keep = sorted(list(frozenset(range(len(H))) - ret[1]))
     # successors[idxOut].clear()
     successors = []
