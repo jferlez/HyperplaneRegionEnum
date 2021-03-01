@@ -2,7 +2,8 @@ import charm4py
 from charm4py import charm, Chare, coro, Reducer, Group, Future, Array, Channel
 import cdd
 import numpy as np
-from posetFastCharm import unflipInt, posHyperplaneSet, activeHyperplaneSet
+import posetFastCharm
+from posetFastCharm import unflipInt, posHyperplaneSet, activeHyperplaneSet, unflipIntFixed
 import posetFastCharm
 from copy import copy
 import cvxopt
@@ -61,7 +62,6 @@ class NodeCheckerGenericReach(Chare):
         self.outb = np.array(outb)
         self.eqA = None if eqA == None else np.array(eqA)
         self.eqb = None if eqb == None else np.array(eqb)
-        print(self.eqA)
         self.myWorkList = []
         self.initTime += time.time() - t
         return 1
@@ -84,14 +84,13 @@ class NodeCheckerGenericReach(Chare):
     def check(self, reduceCallback):
         if len(self.myWorkList) > 0:
             
-            self.facesList = [-1 for k in range(len(self.myWorkList))]
+            self.facesList = [ self.facesMask & (self.myWorkList[k]>>(self.Nstack+1)) for k in range(len(self.myWorkList))]
             self.facesSets = list( \
                     map( \
                         lambda x: frozenset( activeHyperplaneSet( self.facesMask & (x>>(self.Nstack+1)),len(self.constraints.fullConstraints) ) ) , \
                         self.myWorkList \
                     ) \
                 )
-            # print(len(self.facesSets))
             # now throw away the faces information from the integers
             for k in range(len(self.myWorkList)):
                 self.myWorkList[k] = self.myWorkList[k] & self.nodeIntMask
@@ -104,10 +103,7 @@ class NodeCheckerGenericReach(Chare):
                     continue
                 
                 actFns = self.findActiveFunction(regIdx)
-                # print(actFns)
-                # print('Region: ' + str(self.regSets[regIdx]) + '... Active functions: ' + str(actFns))
                 # actFns now indexes one local linear function for each output, so this can be used to set up the LP
-                # print('constTimesLin = '+ str(self.outA[0,:]))
                 for const in range(len(self.outA)):
                     constTimesLin =  self.outA[const,:] @ np.array([ self.localLinearFns[out][0][actFns[out]] for out in range(self.m)])
                     G = -1*np.vstack([ self.AbPairs[0][0] , self.fixedA ])
@@ -125,27 +121,45 @@ class NodeCheckerGenericReach(Chare):
                                 cvxopt.matrix( \
                                         G[list(self.facesSets[regIdx]),:], \
                                         (len(self.facesSets[regIdx]), self.n), \
+                                        # G, \
+                                        # (len(G), self.n), \
                                         'd' \
                                     ), \
                                 cvxopt.matrix( \
                                         h[list(self.facesSets[regIdx]),:], \
                                         (len(self.facesSets[regIdx]),1), \
+                                        # h, \
+                                        # (len(h),1), \
                                         'd' \
                                     ) \
                             ] + ([] if self.eqA == None else [ cvxopt.matrix(self.eqA,self.eqA.shape,'d'), cvxopt.matrix(self.eqb,self.eqb.shape,'d') ])
-                    # print(self.facesSets[regIdx])
                     # print(list(map(lambda x: np.array(x),cvxArgs)))
-                    sol = cvxopt.solvers.lp(*cvxArgs)
-                    # print(sol)
+                    # sol = cvxopt.solvers.lp(*cvxArgs) # built-in cvx solver, which is slightly slower in this case
+                    sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
                     if self.eqA == None and not sol['status'] == 'optimal':
+                        print('Faces int = ' + str(self.facesList[regIdx] >> (self.Nstack + 1)))
+                        print('Faces on PE ' + str(charm.myPe()) + ' ' + str(self.facesSets[regIdx]) + '... Active functions: ' + str(actFns))
+                        print('Region: ' + str(self.regSets[regIdx]) + '... Active functions: ' + str(actFns))
+                        print('sol on PE ' + str(charm.myPe()) + ' ' + str(sol))
+                        print(sol['x'])
+                        print( \
+                            '\n\n****************************************************************************************************\n' + \
+                            'ERROR on PE ' + str(charm.myPe()) + '! Found non-optimal solution despite having no input constraints!' +  \
+                            '\n****************************************************************************************************\n\n' 
+                            )
                         raise ValueError('Couldn\'t find a solution to the LP. Something went wrong!')
                     
                     # If the optimum violates the constraint, then we're done
                     # print('Optimal solution: ' + str(np.array(sol['x'])))
                     if sol['status'] == 'optimal':
                         constTimesBias = self.outA[const,:] @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)])
-                        # print('Decision pair: ' + str([(constTimesLin @ np.array(sol['x'])).flatten()[0] + constTimesBias.reshape((1,1))[0,0],  self.outb[const,0]]))
                         if (constTimesLin @ np.array(sol['x'])).reshape((1,1))[0,0] + constTimesBias.reshape((1,1))[0,0] < self.outb[const,0]:
+                            print('Violation at point ' + str(sol['x']))
+                            print('Value of active function ' + \
+                                    str(np.array([ self.localLinearFns[out][0][actFns[out]] for out in range(self.m)]) @ sol['x'] \
+                                        + np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)]))
+                                )
+                            print('Decision pair: ' + str([(constTimesLin @ np.array(sol['x'])).flatten()[0] + constTimesBias.reshape((1,1))[0,0],  self.outb[const,0]]))
                             val = True
                             break
                 if val:

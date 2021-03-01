@@ -1,3 +1,4 @@
+
 import TLLnet
 import numpy as np
 import charm4py
@@ -11,6 +12,7 @@ from copy import copy,deepcopy
 import time
 
 cvxopt.solvers.options['show_progress'] = False
+cvxopt.solvers.options['maxiters'] = 500
 
 # All hyperplanes assumes to be specified as A x >= b
 
@@ -37,7 +39,7 @@ class TLLGenericReach(Chare):
         self.inputMat, self.inputPolytope, self.inputVrep = createCDDrep(self.inputConstraintsA, self.inputConstraintsb)
         # Find a point in the middle of the polyhedron
         self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
-
+        print(self.pt)
         # In the generic verifier, we need to consider the intersections between PAIRS of local linear functions,
         # so we will generate these 'auxilliary' hyperplanes
         # THIS ASSUMES THAT N is the SAME for each output/min group!!!
@@ -55,8 +57,14 @@ class TLLGenericReach(Chare):
                         for k in range(1,len(self.stackedLocalLinearFns[0][0])) \
                     ] \
                 )
-        print(self.localLinearFns)
-        print(self.pairedLocalLinearFns)
+        # print(self.localLinearFns)
+        # print(self.pairedLocalLinearFns)
+        # print(len(self.pairedLocalLinearFns[0]))
+        # idxIn = lambda x,y: [x[0][0][y], x[0][1][y]]
+        # print(idxIn(self.pairedLocalLinearFns,1285))
+        # print(idxIn(self.pairedLocalLinearFns,1829))
+        # print(idxIn(self.pairedLocalLinearFns,501))
+        # print(idxIn(self.pairedLocalLinearFns,199))
         self.checkerGroup = Group(NodeCheckerGenericReach.NodeCheckerGenericReach)
 
         stat = self.checkerGroup.initialize(self.pairedLocalLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.localLinearFns, self.selectorMats, awaitable=True)
@@ -67,9 +75,14 @@ class TLLGenericReach(Chare):
         stat = self.poset.initialize(self.pairedLocalLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
         stat.get()
 
+        stat = self.poset.setConstraint(0, out=0, awaitable=True)
+        stat.get()
+
         self.copyTime = 0
         self.posetTime = 0
         self.workerInitTime = 0
+
+        
 
 
     @coro
@@ -78,8 +91,6 @@ class TLLGenericReach(Chare):
         t = time.time()
         
         stat = self.checkerGroup.setConstraint(A,b,Aeq,beq, awaitable=True)
-        stat.get()
-        stat = self.poset.setConstraint(0, out=0, awaitable=True)
         stat.get()
 
         self.copyTime += time.time() - t # Total time across all PEs to set up a new problem
