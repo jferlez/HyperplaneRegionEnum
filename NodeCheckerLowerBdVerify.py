@@ -2,7 +2,7 @@ import charm4py
 from charm4py import charm, Chare, coro, Reducer, Group, Future, Array, Channel
 import cdd
 import numpy as np
-from posetFastCharm import unflipInt, posHyperplaneSet
+from posetFastCharm import activeHyperplaneSet, unflipInt, posHyperplaneSet, unflipIntFixed
 import posetFastCharm
 from copy import copy
 import time
