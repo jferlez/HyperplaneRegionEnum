@@ -82,7 +82,7 @@ class NodeCheckerLowerBdVerify(Chare):
         if len(self.myWorkList) > 0:
             val = True
             # This fixes a nasty integer arithmetic bug -- see also unflipInt
-            for regSet in map( lambda x: frozenset(posHyperplaneSet(unflipInt(x,self.constraints.flipMapSet,self.constraints.N),self.constraints.N)) , self.myWorkList ):
+            for regSet in map( lambda x: frozenset(activeHyperplaneSet(unflipIntFixed(x,self.constraints.flipMapSet,self.constraints.N),self.constraints.N)) , self.myWorkList ):
                 val = True
                 for sSet in self.selectorSets:
                     if len(sSet & regSet) == 0:

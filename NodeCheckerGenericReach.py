@@ -87,7 +87,8 @@ class NodeCheckerGenericReach(Chare):
             # now throw away the faces information from the integers
             for k in range(len(self.myWorkList)):
                 self.myWorkList[k] = self.myWorkList[k] & self.nodeIntMask
-            self.regSets = list(map( lambda x: frozenset(posHyperplaneSet(unflipInt(x,self.constraints.flipMapSet,self.constraints.N),self.constraints.N)) , self.myWorkList ))
+
+            self.regSets = list(map( lambda x: frozenset(activeHyperplaneSet(unflipIntFixed(x,self.constraints.flipMapSet,self.constraints.N),self.constraints.N)) , self.myWorkList ))
             val = False
             for regIdx in range(len(self.regSets)):
                 actFns = self.findActiveFunction(regIdx)

@@ -549,7 +549,24 @@ def unflipInt(INT, flipSet,N):
             retInt -= sel
         else:
             retInt += sel
-    return retInt
+    return retInt & (2**(N+2) - 1)
+
+def unflipIntFixed(INT, flipSet,N):
+    retInt = 0
+    mask = (2**(N+1) - 1)
+    if N >= 63:
+        shift = 2**(2*N+2)
+    else:
+        shift = 0
+    for k in range(N):
+        sel = shift + (1 << k)
+        if k in flipSet:
+            if (sel & INT & mask) > 0:
+                retInt += sel
+        else:
+            if (sel & INT & mask) == 0:
+                retInt += sel
+    return retInt & mask
 
 # This function is TOTALLY misnamed: it actually returns the set of NEGATIVE hyperplanes....
 def posHyperplaneSet(INT,n):
