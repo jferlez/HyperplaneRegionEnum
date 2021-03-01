@@ -101,7 +101,7 @@ class TLLGenericReach(Chare):
         retVal = checkFut.get()
         self.posetTime += time.time() - t
 
-        return not retVal
+        return {'result':(not retVal), 'timeElapsed':self.posetTime}
 
 
 
