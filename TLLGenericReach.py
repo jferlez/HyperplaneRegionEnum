@@ -110,6 +110,25 @@ class TLLGenericReach(Chare):
 
 
 
+    @coro
+    def enumerateRegions(self,A,b,Aeq=None,beq=None,Asys=None,Bsys=None):
+        
+        # t = time.time()
+        
+        # stat = self.checkerGroup.setConstraint(A,b,Aeq=Aeq,beq=beq,Asys=Asys,Bsys=Bsys, awaitable=True)
+        # stat.get()
+
+        # self.copyTime += time.time() - t # Total time across all PEs to set up a new problem
+
+        t = time.time()
+        # checkFut = Future()
+        checkFut = self.poset.populatePoset(awaitable=True) # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
+        retVal = checkFut.get()
+        self.posetTime += time.time() - t
+
+        return {'result':(not retVal), 'timeElapsed':self.posetTime}
+
+
 
 
 
