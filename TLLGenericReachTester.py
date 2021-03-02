@@ -62,7 +62,7 @@ class Main(Chare):
         localLinearFns = [[kern,bias]]
 
         e = np.eye(7)
-        selectorMats = [[] for k in range(8)]
+        selectorMats = [[] for k in range(7)]
         selectorMats[0] = np.vstack([ e[:,0], e[:,2], e[:,4], e[:,6], e[:,6], e[:,6], e[:,6] ]).T
         selectorMats[1] = np.vstack([ e[:,1], e[:,2], e[:,4], e[:,6], e[:,6], e[:,6], e[:,6] ]).T
         selectorMats[2] = np.vstack([ e[:,1], e[:,2], e[:,6], e[:,6], e[:,6], e[:,6], e[:,6] ]).T
@@ -70,27 +70,27 @@ class Main(Chare):
         selectorMats[4] = np.vstack([ e[:,1], e[:,3], e[:,4], e[:,5], e[:,6], e[:,6], e[:,6] ]).T
         selectorMats[5] = np.vstack([ e[:,1], e[:,3], e[:,4], e[:,6], e[:,6], e[:,6], e[:,6] ]).T
         selectorMats[6] = np.vstack([ e[:,1], e[:,3], e[:,5], e[:,6], e[:,6], e[:,6], e[:,6] ]).T
-        selectorMats[7] = np.vstack([ e[:,1], e[:,3], e[:,6], e[:,6], e[:,6], e[:,6], e[:,6] ]).T
+        # selectorMats[7] = np.vstack([ e[:,1], e[:,3], e[:,6], e[:,6], e[:,6], e[:,6], e[:,6] ]).T
         selectorMats = [selectorMats]
 
 
         # Specify the contraints for a 1-d input:
         constraints = [ \
                 np.array([ [1 , -1]  ]),
-                np.array([0, -1.5])
+                np.array([1.681, -2.111])
             ]
 
-        tllReach = Chare(TLLGenericReach.TLLGenericReach, args=[localLinearFns, selectorMats, constraints, 100])
+        tllReach = Chare(TLLGenericReach.TLLGenericReach, args=[localLinearFns, selectorMats, constraints, 10])
         # charm.awaitCreation(tllReach)
 
         t = time.time()
-        # lbFut = tllReach.searchBound(0.1354321,lb=False,verbose=True,awaitable=True,ret=True)
-        # lb = lbFut.get()
+        lbFut = tllReach.verifyOutputConstraints([[1]],[[0.33]],awaitable=True,ret=True)
+        lb = lbFut.get()
         t = time.time()-t
 
         print(' ')
         print('--------------  FOUND LOWER BOUND:  --------------')
-        # print(lb)
+        print(lb)
         print('Total time elapsed: ' + str(t) + ' (sec)')
         print('--------------------------------------------------')
         print(' ')
@@ -99,4 +99,4 @@ class Main(Chare):
 
         charm.exit()
         
-charm.start(Main,modules=['posetFastCharm','TLLGenericReach','NodeCheckerLowerBdVerify'])
+charm.start(Main,modules=['posetFastCharm','TLLGenericReach','NodeCheckerGenericReach'])
