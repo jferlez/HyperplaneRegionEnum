@@ -33,12 +33,17 @@ class TLLGenericReach(Chare):
         self.M = len(selectorMats[0])
         self.m = len(localLinearFns)
 
-        self.inputConstraintsA = np.array(inputConstraints[0]).T
-        self.inputConstraintsb = np.array(inputConstraints[1]).reshape( (len(inputConstraints[1]),1) )
-        # Create CDD representations for the input constraints
-        self.inputMat, self.inputPolytope, self.inputVrep = createCDDrep(self.inputConstraintsA, self.inputConstraintsb)
-        # Find a point in the middle of the polyhedron
-        self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
+        if inputConstraints is None:
+            self.pt = np.zeros((self.n,1))
+            self.inputConstraintsA = None
+            self.inputConstraintsb = None
+        else:
+            self.inputConstraintsA = np.array(inputConstraints[0]).T
+            self.inputConstraintsb = np.array(inputConstraints[1]).reshape( (len(inputConstraints[1]),1) )
+            # Create CDD representations for the input constraints
+            self.inputMat, self.inputPolytope, self.inputVrep = createCDDrep(self.inputConstraintsA, self.inputConstraintsb)
+            # Find a point in the middle of the polyhedron
+            self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
         print(self.pt)
         # In the generic verifier, we need to consider the intersections between PAIRS of local linear functions,
         # so we will generate these 'auxilliary' hyperplanes

@@ -20,7 +20,8 @@ class NodeCheckerGenericReach(Chare):
         self.fixedb = fixedb
         self.Nstack = len(self.AbPairs[0][0])
         self.nodeIntMask = (2**(self.Nstack+1))-1
-        self.facesMask = (2**(self.Nstack+len(self.fixedA) + 1)-1)
+        self.nFixedConstraints = 0 if self.fixedA is None else len(self.fixedA)
+        self.facesMask = (2**(self.Nstack+self.nFixedConstraints + 1)-1)
         self.localLinearFns = localLinearFns
         self.N = len(self.localLinearFns[0][0])
         self.n = len(self.localLinearFns[0][0][0])
