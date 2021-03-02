@@ -60,10 +60,10 @@ class NodeCheckerGenericReach(Chare):
         t = time.time()
         self.outA = np.array(outA)
         self.outb = np.array(outb)
-        self.eqA = None if eqA == None else np.array(eqA)
-        self.eqb = None if eqb == None else np.array(eqb)
-        self.Asys = None if Asys == None else np.array(Asys)
-        self.Bsys = None if Bsys == None else np.array(Bsys)
+        self.eqA = None if eqA is None else np.array(eqA)
+        self.eqb = None if eqb is None else np.array(eqb)
+        self.Asys = None if Asys is None else np.array(Asys)
+        self.Bsys = None if Bsys is None else np.array(Bsys)
         self.myWorkList = []
         self.initTime += time.time() - t
         return 1
@@ -107,7 +107,7 @@ class NodeCheckerGenericReach(Chare):
                 actFns = self.findActiveFunction(regIdx)
                 # actFns now indexes one local linear function for each output, so this can be used to set up the LP
                 for const in range(len(self.outA)):
-                    if self.Asys == None or self.Bsys == None:
+                    if self.Asys is None or self.Bsys is None:
                         constTimesLin =  self.outA[const,:] @ np.array([ self.localLinearFns[out][0][actFns[out]] for out in range(self.m)])
                     else:
                         constTimesLin =  self.outA[const,:] @ ( self.Asys + self.Bsys @ np.array([ self.localLinearFns[out][0][actFns[out]] for out in range(self.m)]) )
@@ -137,11 +137,11 @@ class NodeCheckerGenericReach(Chare):
                                         # (len(h),1), \
                                         'd' \
                                     ) \
-                            ] + ([] if self.eqA == None or self.eqb == None else [ cvxopt.matrix(self.eqA,self.eqA.shape,'d'), cvxopt.matrix(self.eqb,self.eqb.shape,'d') ])
+                            ] + ([] if self.eqA is None or self.eqb is None else [ cvxopt.matrix(self.eqA,self.eqA.shape,'d'), cvxopt.matrix(self.eqb,self.eqb.shape,'d') ])
                     # print(list(map(lambda x: np.array(x),cvxArgs)))
                     # sol = cvxopt.solvers.lp(*cvxArgs) # built-in cvx solver, which is slightly slower in this case
                     sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-                    if self.eqA == None and not sol['status'] == 'optimal':
+                    if self.eqA is None and not sol['status'] == 'optimal':
                         print('Faces int = ' + str(self.facesList[regIdx] >> (self.Nstack + 1)))
                         print('Faces on PE ' + str(charm.myPe()) + ' ' + str(self.facesSets[regIdx]) + '... Active functions: ' + str(actFns))
                         print('Region: ' + str(self.regSets[regIdx]) + '... Active functions: ' + str(actFns))
@@ -157,7 +157,7 @@ class NodeCheckerGenericReach(Chare):
                     # If the optimum violates the constraint, then we're done
                     # print('Optimal solution: ' + str(np.array(sol['x'])))
                     if sol['status'] == 'optimal':
-                        if self.Asys == None or self.Bsys == None:
+                        if self.Asys is None or self.Bsys is None:
                             constTimesBias = self.outA[const,:] @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)])
                         else:
                             constTimesBias = self.outA[const,:] @ (self.Bsys @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)]))
