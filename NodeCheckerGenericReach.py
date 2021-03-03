@@ -162,13 +162,13 @@ class NodeCheckerGenericReach(Chare):
                             constTimesBias = self.outA[const,:] @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)])
                         else:
                             constTimesBias = self.outA[const,:] @ (self.Bsys @ np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)]))
-                        if (constTimesLin @ np.array(sol['x'])).reshape((1,1))[0,0] + constTimesBias.reshape((1,1))[0,0] < self.outb[const,0]:
-                            print('Violation at point ' + str(sol['x']))
-                            print('Value of active function ' + \
+                        if (constTimesLin @ np.array(sol['x'])).reshape((1,1))[0,0] + constTimesBias.reshape((1,1))[0,0] < self.outb.reshape((len(self.outb),1))[const,0]:
+                            print('PE' + str(charm.myPe()) + ' --> Violation at point ' + str(sol['x']))
+                            print('PE' + str(charm.myPe()) + ' --> Value of active function ' + \
                                     str(np.array([ self.localLinearFns[out][0][actFns[out]] for out in range(self.m)]) @ sol['x'] \
                                         + np.array([ self.localLinearFns[out][1][actFns[out]] for out in range(self.m)]))
                                 )
-                            print('Decision pair: ' + str([(constTimesLin @ np.array(sol['x'])).flatten()[0] + constTimesBias.reshape((1,1))[0,0],  self.outb[const,0]]))
+                            print('PE' + str(charm.myPe()) + ' --> Decision pair: ' + str([(constTimesLin @ np.array(sol['x'])).flatten()[0] + constTimesBias.reshape((1,1))[0,0],  self.outb.reshape((len(self.outb),1))[const,0]]))
                             val = True
                             break
                 if val:
