@@ -254,10 +254,15 @@ class Poset(Chare):
         if emitNodes:
             retChannel.send(-1)
         self.incomplete = False
+        posetLen = 0
+        for ii in self.hashTable.keys():
+            if self.hashTable[ii].facesInt > 0:
+                posetLen += 1
         print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
+        print('Computed a (partial) poset of size (nontrivial regions): ' + str(posetLen))
         # return [i.iINT for i in self.hashTable.keys()]
         self.populated = True
-        return 0
+        return posetLen
 
 
 
