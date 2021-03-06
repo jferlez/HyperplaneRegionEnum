@@ -5,7 +5,7 @@ import numpy as np
 from copy import copy
 import time
 from itertools import repeat
-
+import cvxopt
 
 
 class PosetNode:
@@ -431,12 +431,39 @@ def processNodeSuccessors(INTrep,N,H2):
     mat = cdd.Matrix(H,number_type='float')
     mat.rep_type = cdd.RepType.INEQUALITY
     ret = mat.canonicalize()
-    if len(ret[0]) > 0:
-        # There is some degeneracy, so we can skip this region because we only care about
-        # full-dimensional ones
-        return [set([]), 0]
     to_keep = sorted(list(frozenset(range(len(H))) - ret[1]))
-    # successors[idxOut].clear()
+    if len(ret[0]) > 0:
+        print('CDD-obtained to_keep was:')
+        print(to_keep)
+        # There is some degeneracy, which means CDD screwed up (numerical ill-conditioning?)
+        # Hence, we will use a direct implementation to find a minimal H-Representation
+        # (i.e. from Fukuda's FAQs about Poltyope computation)
+        idx = 0
+        e = np.zeros((len(H),1))
+        to_keep = list(range(len(H)))
+        while idx < len(H):
+            e[idx,0] = 1
+            cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0]+e[0:len(H),0])]
+            e[idx,0] = 0
+            sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+            if sol['status'] != 'optimal':
+                print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+                print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node: ' + str(INTrep))
+                print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
+                return [set([]), 0]
+            if -H[idx,1:]@sol['x'] < H[idx,0]:
+                # inequality is redundant, so remove it
+                H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
+                to_keep.pop(idx)
+            else:
+                idx += 1
+        print('GLPK Simplex-based Minimal H-Representation yielded to_keep of:')
+        print(to_keep)
+    # Use this to keep track of the region's faces
+    facesInt = 0
+    for k in to_keep:
+        facesInt = facesInt + (1 << k)
+    
     successors = []
     for i in range(len(to_keep)):
         if to_keep[i] >= N:
@@ -446,11 +473,7 @@ def processNodeSuccessors(INTrep,N,H2):
             successors.append( \
                     INTrep + idx \
                 )
-    # Use this if we need to keep track of the region's faces
-    facesInt = 0
-    for k in to_keep:
-        facesInt = facesInt + (1 << k)
-    # successors.append(facesInt)
+    
     return [set(successors), facesInt]
 
 
