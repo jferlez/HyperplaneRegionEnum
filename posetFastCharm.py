@@ -482,6 +482,56 @@ def processNodeSuccessors(INTrep,N,H2):
     return [set(successors), facesInt]
 
 
+def processNodeSuccessorsSimpleLP(INTrep,N,H2):
+    H = copy(H2)
+    # global H2
+    # H = np.array(H2)
+    # H = np.array(processNodeSuccessors.H)
+    idx = 1
+    for i in range(N):
+        if INTrep & idx > 0:
+            H[i] = -1*H[i]
+        idx = idx << 1
+    
+    idx = 0
+    loc = 0
+    e = np.zeros((len(H),1))
+    to_keep = list(range(len(H)))
+    while idx < len(H):
+        e[idx,0] = 1
+        cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
+        e[idx,0] = 0
+        sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+        if sol['status'] != 'optimal':
+            print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+            print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node: ' + str(INTrep))
+            print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
+            return [set([]), 0]
+        if -H[idx,1:]@sol['x'] < H[idx,0]:
+            # inequality is redundant, so remove it
+            # H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
+            to_keep.remove(loc)
+        else:
+            loc += 1
+        idx += 1
+    # Use this to keep track of the region's faces
+    facesInt = 0
+    for k in to_keep:
+        facesInt = facesInt + (1 << k)
+    
+    successors = []
+    for i in range(len(to_keep)):
+        if to_keep[i] >= N:
+            break
+        idx = 1 << to_keep[i]
+        if idx & INTrep <= 0:
+            successors.append( \
+                    INTrep + idx \
+                )
+    
+    return [set(successors), facesInt]
+
+
 
 def prepareGlobal(pe,constraints,myId):
     pe.updateGlobals({'FULLCONSTRAINTS_'+str(myId): constraints}, module_name='posetFastCharm', awaitable=True)
