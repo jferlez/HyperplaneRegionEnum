@@ -433,17 +433,17 @@ def processNodeSuccessors(INTrep,N,H2):
     ret = mat.canonicalize()
     to_keep = sorted(list(frozenset(range(len(H))) - ret[1]))
     if len(ret[0]) > 0:
-        print('CDD-obtained to_keep was:')
-        print(to_keep)
+        orig_to_keep = to_keep
         # There is some degeneracy, which means CDD screwed up (numerical ill-conditioning?)
         # Hence, we will use a direct implementation to find a minimal H-Representation
         # (i.e. from Fukuda's FAQs about Poltyope computation)
         idx = 0
+        loc = 0
         e = np.zeros((len(H),1))
         to_keep = list(range(len(H)))
         while idx < len(H):
             e[idx,0] = 1
-            cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0]+e[0:len(H),0])]
+            cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
             e[idx,0] = 0
             sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
             if sol['status'] != 'optimal':
@@ -453,12 +453,17 @@ def processNodeSuccessors(INTrep,N,H2):
                 return [set([]), 0]
             if -H[idx,1:]@sol['x'] < H[idx,0]:
                 # inequality is redundant, so remove it
-                H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
-                to_keep.pop(idx)
+                # H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
+                to_keep.remove(loc)
             else:
-                idx += 1
-        print('GLPK Simplex-based Minimal H-Representation yielded to_keep of:')
-        print(to_keep)
+                loc += 1
+            idx += 1
+        if orig_to_keep != to_keep:
+            print('Linear regions found? ' + ('YES' if len(ret[0])>0 else 'NO'))
+            print('CDD-obtained to_keep was:')
+            print(orig_to_keep)
+            print('GLPK Simplex-based Minimal H-Representation yielded to_keep of:')
+            print(to_keep)
     # Use this to keep track of the region's faces
     facesInt = 0
     for k in to_keep:
