@@ -417,7 +417,7 @@ def Union(contribs):
 Reducer.addReducer(Union)
 
 
-def processNodeSuccessors(INTrep,N,H2):
+def processNodeSuccessorsCDD(INTrep,N,H2):
     H = copy(H2)
     # global H2
     # H = np.array(H2)
@@ -514,6 +514,103 @@ def processNodeSuccessorsSimpleLP(INTrep,N,H2):
         else:
             loc += 1
         idx += 1
+    # Use this to keep track of the region's faces
+    facesInt = 0
+    for k in to_keep:
+        facesInt = facesInt + (1 << k)
+    
+    successors = []
+    for i in range(len(to_keep)):
+        if to_keep[i] >= N:
+            break
+        idx = 1 << to_keep[i]
+        if idx & INTrep <= 0:
+            successors.append( \
+                    INTrep + idx \
+                )
+    
+    return [set(successors), facesInt]
+
+
+def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True):
+    if not randomize:
+        if copyMat:
+            H = copy(H2)
+        else:
+            H = H2
+    else:
+        H = H2[np.random.permutation(len(H2)),:]
+    if cnt is None:
+        cntr = len(H)
+
+    idx = 0
+    loc = 0
+    e = np.zeros((len(H),1))
+    to_keep = list(range(len(H)))
+    while idx < len(H) and cntr > 0:
+        e[idx,0] = 1
+        cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
+        e[idx,0] = 0
+        sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+        if sol['status'] != 'optimal':
+            print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+            print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
+            print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
+            return [set([]), 0]
+        if -H[idx,1:]@sol['x'] < H[idx,0]:
+            # inequality is redundant, so remove it
+            # H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
+            to_keep.pop(loc)
+        else:
+            loc += 1
+            cntr -= 1
+        idx += 1
+    return to_keep[0:min(cnt if not cnt is None else len(to_keep),len(to_keep))]
+
+
+def processNodeSuccessors(INTrep,N,H2):
+    H = copy(H2)
+    # global H2
+    # H = np.array(H2)
+    # H = np.array(processNodeSuccessors.H)
+    idx = 1
+    for i in range(N):
+        if INTrep & idx > 0:
+            H[i] = -1*H[i]
+        idx = idx << 1
+    
+    d = H.shape[1]-1
+    
+    # Find a bounding box
+    bbox = [[] for ii in range(d)]
+    ed = np.zeros((d,1))
+    for ii in range(d):
+        for direc in [1,-1]:
+            ed[ii,0] = direc
+            cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
+            ed[ii,0] = 0
+            sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+            if sol['status'] == 'optimal':
+                bbox[ii].append(np.array(sol['x'][ii,0]))
+            elif sol['status'] == 'dual infeasible':
+                bbox[ii].append(-1*direc*np.inf)
+            else:
+                print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+                print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected while computing bounding box!')
+                return [set([]), 0]
+
+    boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
+
+    to_keep = np.nonzero(np.any((-H[:,1:] @ boxCorners) >= H[:,0].reshape((len(H),1)),axis=1))[0].tolist()
+
+    idx = 0
+    loc = 0
+    e = np.zeros((len(H),1))
+    
+    to_keep_sub = concreteMinHRep(H[to_keep,:],copyMat=False)
+
+    to_keep = np.array(to_keep)[to_keep_sub].tolist()
+
     # Use this to keep track of the region's faces
     facesInt = 0
     for k in to_keep:
