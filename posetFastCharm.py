@@ -454,7 +454,7 @@ def processNodeSuccessors(INTrep,N,H2):
             if -H[idx,1:]@sol['x'] < H[idx,0]:
                 # inequality is redundant, so remove it
                 # H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
-                to_keep.remove(loc)
+                to_keep.pop(loc)
             else:
                 loc += 1
             idx += 1
@@ -510,7 +510,7 @@ def processNodeSuccessorsSimpleLP(INTrep,N,H2):
         if -H[idx,1:]@sol['x'] < H[idx,0]:
             # inequality is redundant, so remove it
             # H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
-            to_keep.remove(loc)
+            to_keep.pop(loc)
         else:
             loc += 1
         idx += 1
