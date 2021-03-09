@@ -5,8 +5,14 @@ import numpy as np
 from copy import copy
 import time
 from itertools import repeat
+from functools import partial
 import cvxopt
+from cylp.cy import CyClpSimplex
+from cylp.py.modeling.CyLPModel import CyLPArray
 
+import warnings
+
+warnings.simplefilter(action = "ignore", category = RuntimeWarning)
 
 class PosetNode:
 
@@ -107,9 +113,19 @@ class Poset(Chare):
 
 
     @coro
-    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None ):
+    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='clp' ):
         if self.populated:
             return
+        
+        self.succGroup.setMethod(method=method,solver=solver)
+        if method=='cdd':
+            processNodeSuccessors = partial(processNodeSuccessorsCDD, solver=solver)
+        elif method=='simpleLP':
+            processNodeSuccessors = partial(processNodeSuccessorsSimpleLP, solver=solver)
+        elif method=='fastLP':
+            processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver)
+        
+
         emitNodes = False
         if not retChannelEndPoint==None:
             emitNodes = True
@@ -273,6 +289,15 @@ class successorWorker(Chare):
         self.workInts = []
         self.N = N
         self.fullConstraints = fullConstraints
+        self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver='clp')
+    
+    def setMethod(self,method='fastLP',solver='clp'):
+        if method=='cdd':
+            self.processNodeSuccessors = partial(processNodeSuccessorsCDD, solver=solver)
+        elif method=='simpleLP':
+            self.processNodeSuccessors = partial(processNodeSuccessorsSimpleLP, solver=solver)
+        elif method=='fastLP':
+            self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver)
     
     @coro
     def initList(self,workInts):
@@ -286,7 +311,7 @@ class successorWorker(Chare):
 
     @coro
     def computeSuccessors(self, callback):
-        successorList = list(map(processNodeSuccessors, \
+        successorList = list(map(self.processNodeSuccessors, \
                         self.workInts, \
                         repeat(self.N), \
                         repeat(self.fullConstraints) \
@@ -417,7 +442,7 @@ def Union(contribs):
 Reducer.addReducer(Union)
 
 
-def processNodeSuccessorsCDD(INTrep,N,H2):
+def processNodeSuccessorsCDD(INTrep,N,H2,solver='gplk'):
     H = copy(H2)
     # global H2
     # H = np.array(H2)
@@ -436,28 +461,7 @@ def processNodeSuccessorsCDD(INTrep,N,H2):
         orig_to_keep = to_keep
         # There is some degeneracy, which means CDD screwed up (numerical ill-conditioning?)
         # Hence, we will use a direct implementation to find a minimal H-Representation
-        # (i.e. from Fukuda's FAQs about Poltyope computation)
-        idx = 0
-        loc = 0
-        e = np.zeros((len(H),1))
-        to_keep = list(range(len(H)))
-        while idx < len(H):
-            e[idx,0] = 1
-            cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
-            e[idx,0] = 0
-            sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-            if sol['status'] != 'optimal':
-                print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-                print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node: ' + str(INTrep))
-                print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
-                return [set([]), 0]
-            if -H[idx,1:]@sol['x'] < H[idx,0]:
-                # inequality is redundant, so remove it
-                # H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
-                to_keep.pop(loc)
-            else:
-                loc += 1
-            idx += 1
+        to_keep = concreteMinHRep(H,copyMat=False,solver=solver)
         if orig_to_keep != to_keep:
             print('Linear regions found? ' + ('YES' if len(ret[0])>0 else 'NO'))
             print('CDD-obtained to_keep was:')
@@ -482,7 +486,7 @@ def processNodeSuccessorsCDD(INTrep,N,H2):
     return [set(successors), facesInt]
 
 
-def processNodeSuccessorsSimpleLP(INTrep,N,H2):
+def processNodeSuccessorsSimpleLP(INTrep,N,H2,solver='gplk'):
     H = copy(H2)
     # global H2
     # H = np.array(H2)
@@ -493,27 +497,7 @@ def processNodeSuccessorsSimpleLP(INTrep,N,H2):
             H[i] = -1*H[i]
         idx = idx << 1
     
-    idx = 0
-    loc = 0
-    e = np.zeros((len(H),1))
-    to_keep = list(range(len(H)))
-    while idx < len(H):
-        e[idx,0] = 1
-        cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
-        e[idx,0] = 0
-        sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-        if sol['status'] != 'optimal':
-            print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-            print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node: ' + str(INTrep))
-            print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
-            return [set([]), 0]
-        if -H[idx,1:]@sol['x'] < H[idx,0]:
-            # inequality is redundant, so remove it
-            # H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
-            to_keep.pop(loc)
-        else:
-            loc += 1
-        idx += 1
+    to_keep = concreteMinHRep(H,copyMat=False,solver=solver)
     # Use this to keep track of the region's faces
     facesInt = 0
     for k in to_keep:
@@ -532,7 +516,7 @@ def processNodeSuccessorsSimpleLP(INTrep,N,H2):
     return [set(successors), facesInt]
 
 
-def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True):
+def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='gplk'):
     if not randomize:
         if copyMat:
             H = copy(H2)
@@ -542,22 +526,50 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True):
         H = H2[np.random.permutation(len(H2)),:]
     if cnt is None:
         cntr = len(H)
+    
+    d = H.shape[1]-1
+    
+    if solver=='clp':
+        s = CyClpSimplex()
+        xVar = s.addVariable('x', d)
+        s.logLevel = 0
 
     idx = 0
     loc = 0
     e = np.zeros((len(H),1))
     to_keep = list(range(len(H)))
     while idx < len(H) and cntr > 0:
-        e[idx,0] = 1
-        cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
-        e[idx,0] = 0
-        sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-        if sol['status'] != 'optimal':
-            print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-            print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
-            print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
-            return [set([]), 0]
-        if -H[idx,1:]@sol['x'] < H[idx,0]:
+        if solver=='gplk':
+            e[idx,0] = 1
+            cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
+            e[idx,0] = 0
+            sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+            status = sol['status']
+            x = sol['x']
+        elif solver=='clp':
+            e[idx,0] = 1
+            for constr in range(len(s.constraints)):
+                s.removeConstraint(s.constraints[constr].name)
+            s += np.matrix(-H[to_keep,1:]) * xVar <= CyLPArray((H[to_keep,0]+e[to_keep,0]).flatten())
+            s.objective = CyLPArray(H[idx,1:])
+            e[idx,0] = 0
+            status = s.primal()
+            x = np.array(s.primalVariableSolution['x']).reshape((d,1))
+        if status != 'optimal':
+            # If we chose Clp as a solver, use GPLK as a fallback
+            if solver=='clp':
+                e[idx,0] = 1
+                cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
+                e[idx,0] = 0
+                sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+                status = sol['status']
+                x = sol['x']
+            if status != 'optimal':
+                print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+                print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
+                print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
+                return [set([]), 0]
+        if -H[idx,1:]@x < H[idx,0]:
             # inequality is redundant, so remove it
             # H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
             to_keep.pop(loc)
@@ -568,7 +580,7 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True):
     return to_keep[0:min(cnt if not cnt is None else len(to_keep),len(to_keep))]
 
 
-def processNodeSuccessors(INTrep,N,H2):
+def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp'):
     H = copy(H2)
     # global H2
     # H = np.array(H2)
@@ -580,19 +592,46 @@ def processNodeSuccessors(INTrep,N,H2):
         idx = idx << 1
     
     d = H.shape[1]-1
+
+    if solver=='clp':
+        s = CyClpSimplex()
+        xVar = s.addVariable('x', d)
+        s.logLevel = 0
     
     # Find a bounding box
     bbox = [[] for ii in range(d)]
     ed = np.zeros((d,1))
     for ii in range(d):
         for direc in [1,-1]:
-            ed[ii,0] = direc
-            cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
-            ed[ii,0] = 0
-            sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-            if sol['status'] == 'optimal':
-                bbox[ii].append(np.array(sol['x'][ii,0]))
-            elif sol['status'] == 'dual infeasible':
+            if solver=='gplk':
+                ed[ii,0] = direc
+                cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
+                ed[ii,0] = 0
+                sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+                status = sol['status']
+                x = sol['x']
+            elif solver=='clp':
+                ed[ii,0] = direc
+                for constr in range(len(s.constraints)):
+                    s.removeConstraint(s.constraints[constr].name)
+                s +=  np.matrix(-H[:,1:]) * xVar <= CyLPArray(H[:,0])
+                s.objective = CyLPArray(ed.flatten())
+                ed[ii,0] = 0
+                status = s.primal()
+                if status != 'optimal':
+                    print(status)
+                x = np.array(s.primalVariableSolution['x']).reshape((d,1))
+            # In case we have problems with Clp, use GPLK as as fallback
+            if solver =='clp' and (status != 'optimal' or status!='dual infeasible'):
+                ed[ii,0] = direc
+                cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
+                ed[ii,0] = 0
+                sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+                status = sol['status']
+                x = sol['x']
+            if status == 'optimal':
+                bbox[ii].append(np.array(x[ii,0]))
+            elif status == 'dual infeasible':
                 bbox[ii].append(-1*direc*np.inf)
             else:
                 print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
@@ -607,7 +646,7 @@ def processNodeSuccessors(INTrep,N,H2):
     loc = 0
     e = np.zeros((len(H),1))
     
-    to_keep_sub = concreteMinHRep(H[to_keep,:],copyMat=False)
+    to_keep_sub = concreteMinHRep(H[to_keep,:],copyMat=False,solver=solver)
 
     to_keep = np.array(to_keep)[to_keep_sub].tolist()
 
