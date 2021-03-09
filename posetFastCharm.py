@@ -573,11 +573,12 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='clp'):
             # inequality is redundant, so remove it
             # H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
             to_keep.pop(loc)
+            cntr -= 1
         else:
             loc += 1
             cntr -= 1
         idx += 1
-    return to_keep[0:min(cnt if not cnt is None else len(to_keep),len(to_keep))]
+    return to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
 
 
 def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp'):
