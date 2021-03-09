@@ -516,7 +516,7 @@ def processNodeSuccessorsSimpleLP(INTrep,N,H2,solver='gplk'):
     return [set(successors), facesInt]
 
 
-def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='gplk'):
+def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='clp'):
     if not randomize:
         if copyMat:
             H = copy(H2)
@@ -618,8 +618,6 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp'):
                 s.objective = CyLPArray(ed.flatten())
                 ed[ii,0] = 0
                 status = s.primal()
-                if status != 'optimal':
-                    print(status)
                 x = np.array(s.primalVariableSolution['x']).reshape((d,1))
             # In case we have problems with Clp, use GPLK as as fallback
             if solver =='clp' and (status != 'optimal' or status!='dual infeasible'):
