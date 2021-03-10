@@ -5,7 +5,7 @@ import numpy as np
 from copy import copy
 import time
 from itertools import repeat
-from functools import partial
+from functools import partial, total_ordering
 import cvxopt
 from cylp.cy import CyClpSimplex
 from cylp.py.modeling.CyLPModel import CyLPArray
@@ -113,17 +113,17 @@ class Poset(Chare):
 
 
     @coro
-    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='clp' ):
+    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='clp', findAll=True ):
         if self.populated:
             return
         
-        self.succGroup.setMethod(method=method,solver=solver)
+        
         if method=='cdd':
             processNodeSuccessors = partial(processNodeSuccessorsCDD, solver=solver)
         elif method=='simpleLP':
             processNodeSuccessors = partial(processNodeSuccessorsSimpleLP, solver=solver)
         elif method=='fastLP':
-            processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver)
+            processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver, findAll=findAll)
         
 
         emitNodes = False
@@ -156,6 +156,7 @@ class Poset(Chare):
 
         stat = self.succGroup.initialize(self.N,self.constraints.fullConstraints,awaitable=True)
         stat.get()
+        self.succGroup.setMethod(method=method,solver=solver,findAll=findAll)
 
         level = 0
         thisLevel = [0]
@@ -291,13 +292,13 @@ class successorWorker(Chare):
         self.fullConstraints = fullConstraints
         self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver='clp')
     
-    def setMethod(self,method='fastLP',solver='clp'):
+    def setMethod(self,method='fastLP',solver='clp',findAll=True):
         if method=='cdd':
             self.processNodeSuccessors = partial(processNodeSuccessorsCDD, solver=solver)
         elif method=='simpleLP':
             self.processNodeSuccessors = partial(processNodeSuccessorsSimpleLP, solver=solver)
         elif method=='fastLP':
-            self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver)
+            self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver, findAll=findAll)
     
     @coro
     def initList(self,workInts):
@@ -526,7 +527,9 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='clp'):
         H = H2[np.random.permutation(len(H2)),:]
     if cnt is None:
         cntr = len(H)
-    
+    else:
+        cntr = cnt
+
     d = H.shape[1]-1
     
     if solver=='clp':
@@ -581,17 +584,41 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='clp'):
     return to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
 
 
-def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp'):
-    H = copy(H2)
+def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp',findAll=True):
+
+    # H = copy(H2)
     # global H2
     # H = np.array(H2)
     # H = np.array(processNodeSuccessors.H)
+    flippable = np.zeros((N,),dtype=np.int32)
+    unflippable = np.zeros((N,),dtype=np.int32)
+    flipIdx = 0
+    unflipIdx = 0
     idx = 1
     for i in range(N):
         if INTrep & idx > 0:
-            H[i] = -1*H[i]
+            # H[i] = -1*H[i]
+            unflippable[unflipIdx] = i
+            unflipIdx += 1
+        else:
+            flippable[flipIdx] = i
+            flipIdx += 1
         idx = idx << 1
+    # flippable = flippable[0:flipIdx]
+    # unflippable = unflippable[0:unflipIdx]
     
+
+    if not findAll:
+        # Now all of the flippable hyperplanes will be at the beginning
+        # flippable = sorted(list(set(range(N))-set(unflippable)))
+        H = H2[np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx]]),:]
+        reorder = np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx]])
+        H[flipIdx:,:] = -H[flipIdx:,:]
+    else:
+        H = copy(H2)
+        H[unflippable[0:unflipIdx],:] = -H[unflippable[0:unflipIdx],:]
+    
+    # print([flippable,unflippable])
     d = H.shape[1]-1
 
     if solver=='clp':
@@ -621,7 +648,7 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp'):
                 status = s.primal()
                 x = np.array(s.primalVariableSolution['x']).reshape((d,1))
             # In case we have problems with Clp, use GPLK as as fallback
-            if solver =='clp' and (status != 'optimal' or status!='dual infeasible'):
+            if solver =='clp' and status != 'optimal' and status != 'dual infeasible':
                 ed[ii,0] = direc
                 cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
                 ed[ii,0] = 0
@@ -639,19 +666,38 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp'):
 
     boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
 
-    to_keep = np.nonzero(np.any((-H[:,1:] @ boxCorners) >= H[:,0].reshape((len(H),1)),axis=1))[0].tolist()
+    to_keep = np.nonzero(np.any((-H[:,1:] @ boxCorners) >= H[:,0].reshape((len(H),1)),axis=1))[0]
+    # print(to_keep)
+    if not findAll:
+        findSize = 0
+        for ii in range(len(to_keep)):
+            if to_keep[ii] >= flipIdx:
+                break
+            findSize += 1
+    else:
+        findSize = None
+    
+    # to_keep = to_keep.tolist()
 
     idx = 0
     loc = 0
     e = np.zeros((len(H),1))
     
-    to_keep_sub = concreteMinHRep(H[to_keep,:],copyMat=False,solver=solver)
+    to_keep_sub = concreteMinHRep(H[to_keep,:],cnt=findSize,copyMat=False,solver=solver)
+    if findSize is None:
+        findSize = len(to_keep)
+    to_keep_faces = to_keep[to_keep_sub].tolist() + to_keep[findSize:len(to_keep)].tolist()
+    to_keep = to_keep[to_keep_sub].tolist()
 
-    to_keep = np.array(to_keep)[to_keep_sub].tolist()
+    if not findAll:
+        to_keep = reorder[to_keep].tolist()
+        to_keep_faces = reorder[to_keep_faces].tolist()
+
+    # print([findSize, len(to_keep), len(to_keep_faces)])
 
     # Use this to keep track of the region's faces
     facesInt = 0
-    for k in to_keep:
+    for k in to_keep_faces:
         facesInt = facesInt + (1 << k)
     
     successors = []
