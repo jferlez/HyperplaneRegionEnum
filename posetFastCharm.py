@@ -627,7 +627,7 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='gplk',findAll=False):
         # Now all of the flippable hyperplanes will be at the beginning
         # flippable = sorted(list(set(range(N))-set(unflippable)))
         H = H2[np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx]]),:]
-        reorder = np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx], np.array(range(N,H2.shape[0]))])
+        reorder = np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx], np.array(range(N,H2.shape[0]),dtype=np.int32)])
         H[flipIdx:,:] = -H[flipIdx:,:]
         H3 = np.vstack([H, H2[N:,:]])
         H=H3
