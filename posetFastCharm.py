@@ -635,7 +635,6 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp',findAll=True):
         H = copy(H2)
         H[unflippable[0:unflipIdx],:] = -H[unflippable[0:unflipIdx],:]
     
-    # print([flippable,unflippable])
     d = H.shape[1]-1
 
     if solver=='clp':
