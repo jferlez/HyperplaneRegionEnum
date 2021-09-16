@@ -668,8 +668,8 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp',findAll=True):
 
     boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
 
-    to_keep = np.nonzero(np.any((-H[:,1:] @ boxCorners) >= H[:,0].reshape((len(H),1)),axis=1))[0]
-    # print(to_keep)
+    to_keep = np.nonzero(np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((len(H),1))) >= -1e-07,axis=1))[0]
+    
     if not findAll:
         findSize = 0
         for ii in range(len(to_keep)):
