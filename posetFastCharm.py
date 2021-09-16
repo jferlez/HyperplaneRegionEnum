@@ -560,9 +560,17 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='clp'):
                 CyLPArray((np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])).flatten())
             s.objective = CyLPArray(H[idx,1:])
             e[idx,0] = 0
-            status = s.primal()
-            x = np.array(s.primalVariableSolution['x']).reshape((d,1))
-        if status != 'optimal':
+            try:
+                status = s.primal()
+                x = np.array(s.primalVariableSolution['x']).reshape((d,1))
+            except:
+                # Something went wrong with the CLP solver, so force use of GLPK
+                print(' ')
+                print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+                print('PE' + str(charm.myPe()) + ': Needed to fallback to GLPK for unknown reasons!!' ) 
+                print(' ')
+                status = 'unk'
+        if status != 'optimal' and status != 'primal infeasible':
             # If we chose Clp as a solver, use GPLK as a fallback
             if solver=='clp':
                 e[idx,0] = 1
