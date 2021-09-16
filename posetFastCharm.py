@@ -544,7 +544,10 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='clp'):
     while idx < len(H) and cntr > 0:
         if solver=='gplk':
             e[idx,0] = 1
-            cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
+            cvxArgs = [cvxopt.matrix(H[idx,1:]), \
+                    cvxopt.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])), \
+                    cvxopt.matrix(np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])) \
+                    ]
             e[idx,0] = 0
             sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
             status = sol['status']
@@ -553,7 +556,8 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='clp'):
             e[idx,0] = 1
             for constr in range(len(s.constraints)):
                 s.removeConstraint(s.constraints[constr].name)
-            s += np.matrix(-H[to_keep,1:]) * xVar <= CyLPArray((H[to_keep,0]+e[to_keep,0]).flatten())
+            s += np.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])) * xVar <= \
+                CyLPArray((np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])).flatten())
             s.objective = CyLPArray(H[idx,1:])
             e[idx,0] = 0
             status = s.primal()
@@ -562,19 +566,22 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='clp'):
             # If we chose Clp as a solver, use GPLK as a fallback
             if solver=='clp':
                 e[idx,0] = 1
-                cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
+                #cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
+                cvxArgs = [cvxopt.matrix(H[idx,1:]), \
+                    cvxopt.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])), \
+                    cvxopt.matrix(np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])) \
+                    ]
                 e[idx,0] = 0
                 sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
                 status = sol['status']
                 x = sol['x']
-            if status != 'optimal':
+            if status != 'optimal' and status != 'primal infeasible':
                 print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
                 print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
                 print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
                 return [set([]), 0]
-        if -H[idx,1:]@x < H[idx,0]:
+        if status == 'primal infeasible' or np.all(-H[to_keep,1:]@x <= H[to_keep,0].reshape((len(to_keep),1))):
             # inequality is redundant, so remove it
-            # H = np.vstack([ H[0:idx,:], H[idx+1:,:] ])
             to_keep.pop(loc)
             cntr -= 1
         else:
