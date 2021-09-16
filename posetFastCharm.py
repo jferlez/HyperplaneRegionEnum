@@ -642,47 +642,60 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp',findAll=True):
         xVar = s.addVariable('x', d)
         s.logLevel = 0
     
-    # Find a bounding box
-    bbox = [[] for ii in range(d)]
-    ed = np.zeros((d,1))
-    for ii in range(d):
-        for direc in [1,-1]:
-            if solver=='gplk':
-                ed[ii,0] = direc
-                cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
-                ed[ii,0] = 0
-                sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-                status = sol['status']
-                x = sol['x']
-            elif solver=='clp':
-                ed[ii,0] = direc
-                for constr in range(len(s.constraints)):
-                    s.removeConstraint(s.constraints[constr].name)
-                s +=  np.matrix(-H[:,1:]) * xVar <= CyLPArray(H[:,0])
-                s.objective = CyLPArray(ed.flatten())
-                ed[ii,0] = 0
-                status = s.primal()
-                x = np.array(s.primalVariableSolution['x']).reshape((d,1))
-            # In case we have problems with Clp, use GPLK as as fallback
-            if solver =='clp' and status != 'optimal' and status != 'dual infeasible':
-                ed[ii,0] = direc
-                cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
-                ed[ii,0] = 0
-                sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-                status = sol['status']
-                x = sol['x']
-            if status == 'optimal':
-                bbox[ii].append(np.array(x[ii,0]))
-            elif status == 'dual infeasible':
-                bbox[ii].append(-1*direc*np.inf)
-            else:
-                print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-                print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected while computing bounding box!')
-                return [set([]), 0]
+    doBounding = False
+    # Don't compute the bounding box if the number of flippable hyperplanes is almost 2*d,
+    # since we have to do 2*d LPs just to get the bounding box
+    if not findAll and len(flippable) > 3*d:
+        doBounding = True
+    # If we want all the faces, we should decide whether to compute the bounding box based on
+    # the number N instead:
+    if findAll and N > 9*d:
+        doBounding = True
 
-    boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
+    if doBounding:
+        # Find a bounding box
+        bbox = [[] for ii in range(d)]
+        ed = np.zeros((d,1))
+        for ii in range(d):
+            for direc in [1,-1]:
+                if solver=='gplk':
+                    ed[ii,0] = direc
+                    cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
+                    ed[ii,0] = 0
+                    sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+                    status = sol['status']
+                    x = sol['x']
+                elif solver=='clp':
+                    ed[ii,0] = direc
+                    for constr in range(len(s.constraints)):
+                        s.removeConstraint(s.constraints[constr].name)
+                    s +=  np.matrix(-H[:,1:]) * xVar <= CyLPArray(H[:,0])
+                    s.objective = CyLPArray(ed.flatten())
+                    ed[ii,0] = 0
+                    status = s.primal()
+                    x = np.array(s.primalVariableSolution['x']).reshape((d,1))
+                # In case we have problems with Clp, use GPLK as as fallback
+                if solver =='clp' and status != 'optimal' and status != 'dual infeasible':
+                    ed[ii,0] = direc
+                    cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
+                    ed[ii,0] = 0
+                    sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+                    status = sol['status']
+                    x = sol['x']
+                if status == 'optimal':
+                    bbox[ii].append(np.array(x[ii,0]))
+                elif status == 'dual infeasible':
+                    bbox[ii].append(-1*direc*np.inf)
+                else:
+                    print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+                    print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected while computing bounding box!')
+                    return [set([]), 0]
 
-    to_keep = np.nonzero(np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((len(H),1))) >= -1e-07,axis=1))[0]
+        boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
+
+        to_keep = np.nonzero(np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((len(H),1))) >= -1e-07,axis=1))[0]
+    else:
+        to_keep = np.array(range(H.shape[0]),dtype=np.int32)
     
     if not findAll:
         findSize = 0
