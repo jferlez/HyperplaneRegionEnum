@@ -113,7 +113,7 @@ class Poset(Chare):
 
 
     @coro
-    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='clp', findAll=True ):
+    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='gplk', findAll=False ):
         if self.populated:
             return
         
@@ -290,7 +290,7 @@ class successorWorker(Chare):
         self.workInts = []
         self.N = N
         self.fullConstraints = fullConstraints
-        self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver='clp')
+        self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver='gplk')
     
     def setMethod(self,method='fastLP',solver='clp',findAll=True):
         if method=='cdd':
@@ -517,7 +517,7 @@ def processNodeSuccessorsSimpleLP(INTrep,N,H2,solver='gplk'):
     return [set(successors), facesInt]
 
 
-def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='clp'):
+def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='gplk'):
     if not randomize:
         if copyMat:
             H = copy(H2)
@@ -599,7 +599,7 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='clp'):
     return to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
 
 
-def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp',findAll=True):
+def processNodeSuccessorsFastLP(INTrep,N,H2,solver='gplk',findAll=False):
 
     # H = copy(H2)
     # global H2
