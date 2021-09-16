@@ -649,7 +649,7 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='clp',findAll=True):
         doBounding = True
     # If we want all the faces, we should decide whether to compute the bounding box based on
     # the number N instead:
-    if findAll and N > 9*d:
+    if findAll and N > 3*d:
         doBounding = True
 
     if doBounding:
