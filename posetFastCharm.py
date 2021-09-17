@@ -588,7 +588,7 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='gplk'):
                 print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
                 print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
                 return [set([]), 0]
-        if status == 'primal infeasible' or np.all(-H[to_keep,1:]@x <= H[to_keep,0].reshape((len(to_keep),1))):
+        if status == 'primal infeasible' or np.all(-H[to_keep,1:]@x - H[to_keep,0].reshape((len(to_keep),1)) <= 1e-07):
             # inequality is redundant, so remove it
             to_keep.pop(loc)
             cntr -= 1
