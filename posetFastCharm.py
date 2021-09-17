@@ -113,7 +113,7 @@ class Poset(Chare):
 
 
     @coro
-    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='gplk', findAll=False ):
+    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='glpk', findAll=False ):
         if self.populated:
             return
         
@@ -290,7 +290,7 @@ class successorWorker(Chare):
         self.workInts = []
         self.N = N
         self.fullConstraints = fullConstraints
-        self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver='gplk')
+        self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver='glpk')
     
     def setMethod(self,method='fastLP',solver='clp',findAll=True):
         if method=='cdd':
@@ -443,7 +443,7 @@ def Union(contribs):
 Reducer.addReducer(Union)
 
 
-def processNodeSuccessorsCDD(INTrep,N,H2,solver='gplk'):
+def processNodeSuccessorsCDD(INTrep,N,H2,solver='glpk'):
     H = copy(H2)
     # global H2
     # H = np.array(H2)
@@ -487,7 +487,7 @@ def processNodeSuccessorsCDD(INTrep,N,H2,solver='gplk'):
     return [set(successors), facesInt]
 
 
-def processNodeSuccessorsSimpleLP(INTrep,N,H2,solver='gplk'):
+def processNodeSuccessorsSimpleLP(INTrep,N,H2,solver='glpk'):
     H = copy(H2)
     # global H2
     # H = np.array(H2)
@@ -517,7 +517,7 @@ def processNodeSuccessorsSimpleLP(INTrep,N,H2,solver='gplk'):
     return [set(successors), facesInt]
 
 
-def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='gplk'):
+def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='glpk'):
     if not randomize:
         if copyMat:
             H = copy(H2)
@@ -542,7 +542,7 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='gplk'):
     e = np.zeros((len(H),1))
     to_keep = list(range(len(H)))
     while idx < len(H) and cntr > 0:
-        if solver=='gplk':
+        if solver=='glpk':
             e[idx,0] = 1
             cvxArgs = [cvxopt.matrix(H[idx,1:]), \
                     cvxopt.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])), \
@@ -571,7 +571,7 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='gplk'):
                 print(' ')
                 status = 'unk'
         if status != 'optimal' and status != 'primal infeasible':
-            # If we chose Clp as a solver, use GPLK as a fallback
+            # If we chose Clp as a solver, use glpk as a fallback
             if solver=='clp':
                 e[idx,0] = 1
                 #cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
@@ -599,7 +599,7 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='gplk'):
     return to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
 
 
-def processNodeSuccessorsFastLP(INTrep,N,H2,solver='gplk',findAll=False):
+def processNodeSuccessorsFastLP(INTrep,N,H2,solver='glpk',findAll=False):
 
     # H = copy(H2)
     # global H2
@@ -651,14 +651,14 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='gplk',findAll=False):
     # the number N instead:
     if findAll and N > 3*d:
         doBounding = True
-
+    
     if doBounding:
         # Find a bounding box
         bbox = [[] for ii in range(d)]
         ed = np.zeros((d,1))
         for ii in range(d):
             for direc in [1,-1]:
-                if solver=='gplk':
+                if solver=='glpk':
                     ed[ii,0] = direc
                     cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
                     ed[ii,0] = 0
@@ -674,7 +674,7 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='gplk',findAll=False):
                     ed[ii,0] = 0
                     status = s.primal()
                     x = np.array(s.primalVariableSolution['x']).reshape((d,1))
-                # In case we have problems with Clp, use GPLK as as fallback
+                # In case we have problems with Clp, use glpk as as fallback
                 if solver =='clp' and status != 'optimal' and status != 'dual infeasible':
                     ed[ii,0] = direc
                     cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
