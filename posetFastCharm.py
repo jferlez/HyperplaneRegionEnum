@@ -113,7 +113,7 @@ class Poset(Chare):
 
 
     @coro
-    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='glpk', findAll=False ):
+    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='clp', findAll=False ):
         if self.populated:
             return
         
@@ -583,12 +583,12 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='glpk'):
                 sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
                 status = sol['status']
                 x = sol['x']
-            if status != 'optimal' and status != 'primal infeasible':
+            if status != 'optimal' and status != 'primal infeasible' and status != 'dual infeasible':
                 print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
                 print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
                 print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
                 return [set([]), 0]
-        if status == 'primal infeasible' or np.all(-H[to_keep,1:]@x - H[to_keep,0].reshape((len(to_keep),1)) <= 1e-07):
+        if status == 'primal infeasible' or np.all(-H[to_keep,1:]@x - H[to_keep,0].reshape((len(to_keep),1)) <= 1e-10):
             # inequality is redundant, so remove it
             to_keep.pop(loc)
             cntr -= 1
