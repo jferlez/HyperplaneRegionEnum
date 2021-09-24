@@ -43,11 +43,7 @@ class Poset(Chare):
         else:
             self.succGroup = Group(successorWorker, onPEs=self.posetPEs)
 
-        if not self.useParNodeSched:
-            self.nodeSchedInst = Chare(checkNodesSchedulerInt, onPE=charm.myPe())
-        else:
-            self.nodeSchedInst = Chare(checkNodesScheduler, args=[self.thisProxy], onPE=charm.myPe())
-            self.nodeCheckChannel = Channel(self, remote=self.nodeSchedInst)
+        self.nodeSchedInst = Chare(checkNodesSchedulerInt, onPE=charm.myPe())
 
     # @coro
     def initializeFromConstraintObject(self, flippedConstraints):
@@ -150,10 +146,6 @@ class Poset(Chare):
             
             stat = self.nodeSchedInst.initialize(self.stackNum, self.checkNodeGroup, self.pes, checkNodesFuture,awaitable=True)
             stat.get()
-            if  self.useParNodeSched:                
-                # This version of nodeSchedInst recieves nodes on a channel, so we need to bring
-                # up that channel on the Chare, so it will start processing nodes when we send them on nodeCheckChannel
-                nodeReceiverFut = self.nodeSchedInst.receiveNodes(awaitable=True)
 
         stat = self.succGroup.initialize(self.N,self.flippedConstraints.constraints,awaitable=True)
         stat.get()
@@ -235,11 +227,8 @@ class Poset(Chare):
                             self.stackCounter += 1
                             self.peCounter = 0
                         if doProcessing:
-                            if not self.useParNodeSched:
-                                f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
-                                f.get()
-                            else:
-                                self.nodeCheckChannel.send([self.peCounter,self.stackCounter,copy(self.workGroup)])
+                            f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
+                            f.get()
                             f = self.nodeSchedInst.foundQ(awaitable=True) 
                             if f.get():
                                 self.incomplete = True
@@ -258,15 +247,10 @@ class Poset(Chare):
             level += 1
 
         if checkNodes:
-            if not self.useParNodeSched:
-                f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
-                finalVal = f.get()
-                if not finalVal:
-                    checkNodesFuture.send(False)
-            else:
-                self.nodeCheckChannel.send([self.peCounter,self.stackCounter,copy(self.workGroup)])
-                self.nodeCheckChannel.send([])
-                nodeReceiverFut.get()
+            f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
+            finalVal = f.get()
+            if not finalVal:
+                checkNodesFuture.send(False)
 
         # Tell the channel endpoint that no more nodes are coming
         if emitNodes:
@@ -368,67 +352,6 @@ class checkNodesSchedulerInt(Chare):
         return retVal
         
 
-# Shares several methods wtih checkNodesSchedulerInt, but subclassing Chares doesn't seem to work
-class checkNodesScheduler(Chare):
-
-    def __init__(self, channelEndpoint):
-        self.nodeChannel = Channel(self,remote=channelEndpoint)
-    
-    def initialize(self, stackNum, checkNodeGroup, groupPEs, retFuture):
-        
-        self.stackNum = stackNum
-        self.checkNodeChareGroup = checkNodeGroup
-        self.retFuture = retFuture
-        self.pes = groupPEs
-        
-        self.wrkGrpFuture = None
-        self.found = False
-
-    # Should be the same method as checkNodesSchedulerInt
-    @coro
-    def foundQ(self):
-        return self.found
-    
-    # Should be the same method as checkNodesSchedulerInt
-    @coro
-    def checkNode(self, peCounter, stackCounter, workGroup):
-        if self.found:
-            return
-
-        for peIdx in range(len(self.pes)):
-            self.checkNodeChareGroup[self.pes[peIdx]].initList( \
-                    workGroup[peIdx][ 0:(stackCounter+1 if peIdx < peCounter else stackCounter) ] \
-                )
-            
-        xferFut = Future()
-        self.checkNodeChareGroup.collectXferStats(xferFut)
-        xferFut.get()
-
-        localFuture = Future()
-        self.checkNodeChareGroup.check(localFuture, awaitable=True)
-        retVal = localFuture.get()
-        if retVal:
-            self.retFuture.send(True)
-            self.found = True
-        return retVal
-
-    @coro
-    def receiveNodes(self):
-        f = Future()
-        f.send(1)
-        while True:
-            val = self.nodeChannel.recv()
-            if len(val) == 0:
-                # Wait for the last workgroup to finish
-                f.get()
-                if not self.found:
-                    self.retFuture.send(False)
-                break
-            else:
-                f.get()
-                if self.found:
-                    break
-                f = self.thisProxy.checkNode(*val,awaitable=True)
 
 
 
