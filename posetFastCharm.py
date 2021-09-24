@@ -39,6 +39,7 @@ class Poset(Chare):
         # (Use all PEs unless a list was explicitly passed to us)
         if self.posetPEs == None:
             self.succGroup = Group(successorWorker)
+            self.posetPEs = list(range(charm.numPes()))
         else:
             self.succGroup = Group(successorWorker, onPEs=self.posetPEs)
 
@@ -176,9 +177,9 @@ class Poset(Chare):
             
             if parallelCode:
 
-                for k in range(charm.numPes()):
-                    self.succGroup[k].initList( \
-                                [ i for i in thisLevel[k:len(thisLevel):charm.numPes()] ] \
+                for k in range(len(self.posetPEs)):
+                    self.succGroup[self.posetPEs[k]].initList( \
+                                [ i for i in thisLevel[k:len(thisLevel):len(self.posetPEs)] ] \
                             )
                 transferStatus = Future()
                 self.succGroup.collectXferStats(transferStatus)
@@ -189,11 +190,11 @@ class Poset(Chare):
 
                 # Retrieve faces for all the nodes in the current level
                 facesList = [0 for i in range(len(thisLevel))]
-                for k in range(charm.numPes()):
-                    facesListFut = self.succGroup[k].retrieveFaces(awaitable=True)
+                for k in range(len(self.posetPEs)):
+                    facesListFut = self.succGroup[self.posetPEs[k]].retrieveFaces(awaitable=True)
                     facesListWork = facesListFut.get()
-                    for i in range(k,len(thisLevel),charm.numPes()):
-                        facesList[i] = facesListWork[int((i-k)/charm.numPes())]
+                    for i in range(k,len(thisLevel),len(self.posetPEs)):
+                        facesList[i] = facesListWork[int((i-k)/len(self.posetPEs))]
 
             else:
 
