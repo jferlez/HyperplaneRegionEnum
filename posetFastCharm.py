@@ -49,17 +49,17 @@ class Poset(Chare):
             self.nodeCheckChannel = Channel(self, remote=self.nodeSchedInst)
 
     # @coro
-    def initializeFromConstraintObject(self, constraints):
-        self.constraints = constraints
-        self.N = len(self.constraints.nA)
+    def initializeFromConstraintObject(self, flippedConstraints):
+        self.flippedConstraints = flippedConstraints
+        self.N = len(self.flippedConstraints.nA)
         # The number of nodes (regions) in a poset level that are requried to trigger
         # the parallelized code to compute all of the successors:
         self.parallelThreshold = 0
 
         self.hashTable = {}
-        self.levelArray = [[] for i in range(len(self.constraints.nA))]
+        self.levelArray = [[] for i in range(len(self.flippedConstraints.nA))]
 
-        self.root = PosetNode(intSet(0,self.N), self.constraints)
+        self.root = PosetNode(intSet(0,self.N), self.flippedConstraints)
         self.hashTable[self.root.INTrep] = self.root
         self.levelArray[0].append(self.root)
         self.root.regionLeveled = True
@@ -92,7 +92,7 @@ class Poset(Chare):
     def setConstraint(self,lb,out=0):
         self.populated = False
         self.incomplete = True
-        self.constraints = constraints( \
+        self.flippedConstraints = flipConstraints( \
                 -1*self.AbPairs[out][0], \
                 self.AbPairs[out][1] - lb*np.ones((self.N,1)), \
                 self.pt, \
@@ -154,7 +154,7 @@ class Poset(Chare):
                 # up that channel on the Chare, so it will start processing nodes when we send them on nodeCheckChannel
                 nodeReceiverFut = self.nodeSchedInst.receiveNodes(awaitable=True)
 
-        stat = self.succGroup.initialize(self.N,self.constraints.fullConstraints,awaitable=True)
+        stat = self.succGroup.initialize(self.N,self.flippedConstraints.constraints,awaitable=True)
         stat.get()
         self.succGroup.setMethod(method=method,solver=solver,findAll=findAll)
 
@@ -200,7 +200,7 @@ class Poset(Chare):
                 successorList = map(processNodeSuccessors, \
                             [node.INTrep.iINT for node in thisLevel], \
                             repeat(self.N), \
-                            repeat(self.constraints.fullConstraints) \
+                            repeat(self.flippedConstraints.constraints) \
                         )
                 nextLevel = list(set([]).union(*successorList))
 
@@ -286,10 +286,10 @@ class Poset(Chare):
 
 class successorWorker(Chare):
 
-    def initialize(self,N,fullConstraints):
+    def initialize(self,N,constraints):
         self.workInts = []
         self.N = N
-        self.fullConstraints = fullConstraints
+        self.constraints = constraints
         self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver='glpk')
     
     def setMethod(self,method='fastLP',solver='clp',findAll=True):
@@ -315,7 +315,7 @@ class successorWorker(Chare):
         successorList = list(map(self.processNodeSuccessors, \
                         self.workInts, \
                         repeat(self.N), \
-                        repeat(self.fullConstraints) \
+                        repeat(self.constraints) \
                     )) if len(self.workInts) > 0 else [[set([]),-1]]
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
         successorList = [successorList[ii][0] for ii in range(len(successorList))]
@@ -760,14 +760,10 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='glpk',findAll=False):
 
 
 
-# def prepareGlobal(pe,constraints,myId):
-#     pe.updateGlobals({'flippedConstraints_'+str(myId): constraints}, module_name='posetFastCharm', awaitable=True)
 
 
 
-
-
-class constraints:
+class flipConstraints:
 
     def __init__(self, nA, nb, pt, fA=None, fb=None):
         v = nA @ pt
@@ -785,12 +781,12 @@ class constraints:
                 raise ValueError('Supplied point must satisfy all specified \'fixed\' constraints -- i.e. fA @ pt >= fb !')
             self.fA = fA
             self.fb = fb
-            self.fullConstraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
+            self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
 
         else:
             self.fA = None
             self.fb = None
-            self.fullConstraints = np.hstack((-self.nb,self.nA))
+            self.constraints = np.hstack((-self.nb,self.nA))
 
 
 
