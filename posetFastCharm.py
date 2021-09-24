@@ -6,6 +6,7 @@ from copy import copy
 import time
 from itertools import repeat
 from functools import partial, total_ordering
+from encapsulateLP import *
 import cvxopt
 from cylp.cy import CyClpSimplex
 from cylp.py.modeling.CyLPModel import CyLPArray
@@ -439,70 +440,43 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='glpk',safe=
 
     d = H.shape[1]-1
     
-    if solver=='clp':
-        s = CyClpSimplex()
-        xVar = s.addVariable('x', d)
-        s.logLevel = 0
+    # if solver=='clp':
+    #     s = CyClpSimplex()
+    #     xVar = s.addVariable('x', d)
+    #     s.logLevel = 0
+    lp = encapsulateLP()
+    if 'solver'=='clp':
+        lp.initclp(d)
 
     idx = 0
     loc = 0
     e = np.zeros((len(H),1))
     to_keep = list(range(len(H)))
     while idx < len(H) and cntr > 0:
-        if solver=='glpk':
-            e[idx,0] = 1
-            if safe:
-                cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
-            else:
-                cvxArgs = [cvxopt.matrix(H[idx,1:]), \
-                    cvxopt.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])), \
-                    cvxopt.matrix(np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])) \
-                    ]
-            e[idx,0] = 0
-            sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-            status = sol['status']
-            x = sol['x']
-        elif solver=='clp':
-            e[idx,0] = 1
-            for constr in range(len(s.constraints)):
-                s.removeConstraint(s.constraints[constr].name)
-            if safe:
-                s += np.matrix(-H[to_keep,1:]) * xVar <= CyLPArray((H[to_keep,0]+e[to_keep,0]).flatten())
-            else:
-                s += np.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])) * xVar <= \
-                CyLPArray((np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])).flatten())
-            s.objective = CyLPArray(H[idx,1:])
-            e[idx,0] = 0
-            try:
-                status = s.primal()
-                x = np.array(s.primalVariableSolution['x']).reshape((d,1))
-            except:
-                # Something went wrong with the CLP solver, so force use of GLPK
-                print(' ')
-                print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-                print('PE' + str(charm.myPe()) + ': Needed to fallback to GLPK for unknown reasons!!' ) 
-                print(' ')
-                status = 'unk'
-        if status != 'optimal' and status != 'primal infeasible':
-            # If we chose Clp as a solver, use glpk as a fallback
-            if solver=='clp':
-                e[idx,0] = 1
-                if safe:
-                    cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
-                else:
-                    cvxArgs = [cvxopt.matrix(H[idx,1:]), \
-                        cvxopt.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])), \
-                        cvxopt.matrix(np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])) \
-                        ]
-                e[idx,0] = 0
-                sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-                status = sol['status']
-                x = sol['x']
-            if status != 'optimal' and (safe or status != 'primal infeasible') and status != 'dual infeasible':
-                print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-                print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
-                print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
-                return [set([]), 0]
+        e[idx,0] = 1        
+        if safe:
+            status, x = lp.runLP( \
+                    H[idx,1:], \
+                    -H[to_keep,1:], \
+                    H[to_keep,0]+e[to_keep,0], \
+                    lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
+                    msgID = str(charm.myPe()) \
+                )
+        else:
+            status, x = lp.runLP( \
+                    H[idx,1:], \
+                    -np.vstack([H[to_keep,1:], [-H[idx,1:]]]), \
+                    np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]]), \
+                    lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
+                    msgID = str(charm.myPe()) \
+                )
+        e[idx,0] = 0
+        
+        if status != 'optimal' and (safe or status != 'primal infeasible') and status != 'dual infeasible':
+            print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+            print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
+            print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
+            return [set([]), 0]
         if (safe and -H[idx,1:]@x < H[idx,0]) \
             or (not safe and (status == 'primal infeasible' or np.all(-H[to_keep,1:]@x - H[to_keep,0].reshape((len(to_keep),1)) <= 1e-10))):
             # inequality is redundant, so remove it
@@ -569,43 +543,24 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='glpk',findAll=False):
         doBounding = True
     
     if doBounding:
+        lp = encapsulateLP()
+        if 'solver'=='clp':
+            lp.initclp(d)
         # Find a bounding box
         bbox = [[] for ii in range(d)]
         ed = np.zeros((d,1))
         for ii in range(d):
             for direc in [1,-1]:
-                if solver=='glpk':
-                    ed[ii,0] = direc
-                    cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
-                    ed[ii,0] = 0
-                    sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-                    status = sol['status']
-                    x = sol['x']
-                elif solver=='clp':
-                    ed[ii,0] = direc
-                    for constr in range(len(s.constraints)):
-                        s.removeConstraint(s.constraints[constr].name)
-                    s +=  np.matrix(-H[:,1:]) * xVar <= CyLPArray(H[:,0])
-                    s.objective = CyLPArray(ed.flatten())
-                    ed[ii,0] = 0
-                    try:
-                        status = s.primal()
-                        x = np.array(s.primalVariableSolution['x']).reshape((d,1))
-                    except:
-                        # Something went wrong with the CLP solver, so force use of GLPK
-                        print(' ')
-                        print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-                        print('PE' + str(charm.myPe()) + ': Needed to fallback to GLPK for unknown reasons!!' ) 
-                        print(' ')
-                        status = 'unk'
-                # In case we have problems with Clp, use glpk as as fallback
-                if solver =='clp' and status != 'optimal' and status != 'dual infeasible':
-                    ed[ii,0] = direc
-                    cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
-                    ed[ii,0] = 0
-                    sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-                    status = sol['status']
-                    x = sol['x']
+                ed[ii,0] = direc
+                status, x = lp.runLP( \
+                    ed.flatten(), \
+                    -H[:,1:], H[:,0], \
+                    lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
+                    msgID = str(charm.myPe()) \
+                )
+                cvxArgs = [cvxopt.matrix(ed), cvxopt.matrix(-H[:,1:]), cvxopt.matrix(H[:,0])]
+                ed[ii,0] = 0
+
                 if status == 'optimal':
                     bbox[ii].append(np.array(x[ii,0]))
                 elif status == 'dual infeasible':
