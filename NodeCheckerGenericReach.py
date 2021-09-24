@@ -13,7 +13,7 @@ class NodeCheckerGenericReach(Chare):
     
     
     def initialize(self, AbPairs, pt, fixedA, fixedb, localLinearFns, selectorMats):
-        self.constraints = None
+        self.flippedConstraints = None
         self.AbPairs = AbPairs
         self.pt = pt
         self.fixedA = fixedA
@@ -39,7 +39,7 @@ class NodeCheckerGenericReach(Chare):
         # Since we're stacking everything the "dummy" problem has only one output
         out = 0
         self.selectorSets = self.selectorSetsFull[out]
-        self.constraints = posetFastCharm.constraints( \
+        self.flippedConstraints = posetFastCharm.flipConstraints( \
                 -1*self.AbPairs[out][0], \
                 self.AbPairs[out][1], \
                 self.pt, \
@@ -53,7 +53,7 @@ class NodeCheckerGenericReach(Chare):
         # posetFastCharm.processNodeSuccessors(
         #         2845527369221820404884871826903052309888206722711017505268416110679545610710122444318688906556112151421243843127113533243096657964998437092896096856022267129219735425895594092401181931640716998160097047625060728275340643614204083321519633626360977880717137322341761443881028566456532655143174502424846964721608047895843226334661533820020276110959331685522757410973031462972308833971445453334217383364654568869919268698621418052785645076044150941251451856975686940909239314315651796349964719216560788021507039832082690260964788767036470543884021639638277644782843417155487015608488662924247704535183010106376, \
         #         2016,\
-        #         self.constraints.fullConstraints
+        #         self.flippedConstraints.constraints
         #     )
         # print('Special poset processed ---------------')
     
@@ -90,7 +90,7 @@ class NodeCheckerGenericReach(Chare):
             self.facesList = [ self.facesMask & (self.myWorkList[k]>>(self.Nstack+1)) for k in range(len(self.myWorkList))]
             self.facesSets = list( \
                     map( \
-                        lambda x: frozenset( activeHyperplaneSet( self.facesMask & (x>>(self.Nstack+1)),len(self.constraints.fullConstraints) ) ) , \
+                        lambda x: frozenset( activeHyperplaneSet( self.facesMask & (x>>(self.Nstack+1)),len(self.flippedConstraints.constraints) ) ) , \
                         self.myWorkList \
                     ) \
                 )
@@ -98,7 +98,7 @@ class NodeCheckerGenericReach(Chare):
             for k in range(len(self.myWorkList)):
                 self.myWorkList[k] = self.myWorkList[k] & self.nodeIntMask
 
-            self.regSets = list(map( lambda x: frozenset(activeHyperplaneSet(unflipIntFixed(x,self.constraints.flipMapSet,self.constraints.N),self.constraints.N)) , self.myWorkList ))
+            self.regSets = list(map( lambda x: frozenset(activeHyperplaneSet(unflipIntFixed(x,self.flippedConstraints.flipMapSet,self.flippedConstraints.N),self.flippedConstraints.N)) , self.myWorkList ))
             val = False
             for regIdx in range(len(self.regSets)):
                 if len(self.facesSets[regIdx]) == 0:

@@ -9,8 +9,8 @@ import time
 
 class NodeCheckerLowerBdVerify(Chare):
     
-    def initializeFromConstraintObject(self, constraints, selectorMats):
-        self.constraints = constraints
+    def initializeFromConstraintObject(self, flippedConstraints, selectorMats):
+        self.flippedConstraints = flippedConstraints
         self.selectorMats = selectorMats
         # Convert the matrices to sets of 'used' hyperplanes
         self.selectorSets = list( \
@@ -23,7 +23,7 @@ class NodeCheckerLowerBdVerify(Chare):
         self.myWorkList = []
     
     def initialize(self, AbPairs, pt, fixedA, fixedb, selectorMats):
-        self.constraints = None
+        self.flippedConstraints = None
         self.AbPairs = AbPairs
         self.pt = pt
         self.fixedA = fixedA
@@ -48,7 +48,7 @@ class NodeCheckerLowerBdVerify(Chare):
     def setConstraint(self,lb,out=0):
         t = time.time()
         self.selectorSets = self.selectorSetsFull[out]
-        self.constraints = posetFastCharm.constraints( \
+        self.flippedConstraints = posetFastCharm.flipConstraints( \
                 -1*self.AbPairs[out][0], \
                 self.AbPairs[out][1] - lb*np.ones((self.N,1)), \
                 self.pt, \
@@ -82,7 +82,7 @@ class NodeCheckerLowerBdVerify(Chare):
         if len(self.myWorkList) > 0:
             val = True
             # This fixes a nasty integer arithmetic bug -- see also unflipInt
-            for regSet in map( lambda x: frozenset(activeHyperplaneSet(unflipIntFixed(x,self.constraints.flipMapSet,self.constraints.N),self.constraints.N)) , self.myWorkList ):
+            for regSet in map( lambda x: frozenset(activeHyperplaneSet(unflipIntFixed(x,self.flippedConstraints.flipMapSet,self.flippedConstraints.N),self.flippedConstraints.N)) , self.myWorkList ):
                 val = True
                 for sSet in self.selectorSets:
                     if len(sSet & regSet) == 0:
