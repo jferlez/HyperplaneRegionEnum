@@ -159,43 +159,26 @@ class Poset(Chare):
 
             # This is the place to put alternative fast processing of nodes -- e.g. ray shooting to find regions
 
-            # Now parallelize the LPs to find the neihboring regions; we won't put them in the poset
-            # yet, though
-            if len(thisLevel) < self.parallelThreshold:
-                parallelCode = False
-            else:
-                parallelCode = True
+                        
 
-            
-            if parallelCode:
-
-                for k in range(len(self.posetPEs)):
-                    self.succGroup[self.posetPEs[k]].initList( \
-                                [ i for i in thisLevel[k:len(thisLevel):len(self.posetPEs)] ] \
-                            )
-                transferStatus = Future()
-                self.succGroup.collectXferStats(transferStatus)
-                stat = transferStatus.get()
-                successorList = Future()
-                self.succGroup.computeSuccessors(successorList)
-                nextLevel = list(successorList.get())
-
-                # Retrieve faces for all the nodes in the current level
-                facesList = [0 for i in range(len(thisLevel))]
-                for k in range(len(self.posetPEs)):
-                    facesListFut = self.succGroup[self.posetPEs[k]].retrieveFaces(awaitable=True)
-                    facesListWork = facesListFut.get()
-                    for i in range(k,len(thisLevel),len(self.posetPEs)):
-                        facesList[i] = facesListWork[int((i-k)/len(self.posetPEs))]
-
-            else:
-
-                successorList = map(processNodeSuccessors, \
-                            [node.INTrep.iINT for node in thisLevel], \
-                            repeat(self.N), \
-                            repeat(self.flippedConstraints.constraints) \
+            for k in range(len(self.posetPEs)):
+                self.succGroup[self.posetPEs[k]].initList( \
+                            [ i for i in thisLevel[k:len(thisLevel):len(self.posetPEs)] ] \
                         )
-                nextLevel = list(set([]).union(*successorList))
+            transferStatus = Future()
+            self.succGroup.collectXferStats(transferStatus)
+            stat = transferStatus.get()
+            successorList = Future()
+            self.succGroup.computeSuccessors(successorList)
+            nextLevel = list(successorList.get())
+
+            # Retrieve faces for all the nodes in the current level
+            facesList = [0 for i in range(len(thisLevel))]
+            for k in range(len(self.posetPEs)):
+                facesListFut = self.succGroup[self.posetPEs[k]].retrieveFaces(awaitable=True)
+                facesListWork = facesListFut.get()
+                for i in range(k,len(thisLevel),len(self.posetPEs)):
+                    facesList[i] = facesListWork[int((i-k)/len(self.posetPEs))]
 
 
 
