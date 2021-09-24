@@ -672,8 +672,16 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='glpk',findAll=False):
                     s +=  np.matrix(-H[:,1:]) * xVar <= CyLPArray(H[:,0])
                     s.objective = CyLPArray(ed.flatten())
                     ed[ii,0] = 0
-                    status = s.primal()
-                    x = np.array(s.primalVariableSolution['x']).reshape((d,1))
+                    try:
+                        status = s.primal()
+                        x = np.array(s.primalVariableSolution['x']).reshape((d,1))
+                    except:
+                        # Something went wrong with the CLP solver, so force use of GLPK
+                        print(' ')
+                        print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+                        print('PE' + str(charm.myPe()) + ': Needed to fallback to GLPK for unknown reasons!!' ) 
+                        print(' ')
+                        status = 'unk'
                 # In case we have problems with Clp, use glpk as as fallback
                 if solver =='clp' and status != 'optimal' and status != 'dual infeasible':
                     ed[ii,0] = direc
