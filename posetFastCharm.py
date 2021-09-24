@@ -760,8 +760,8 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='glpk',findAll=False):
 
 
 
-def prepareGlobal(pe,constraints,myId):
-    pe.updateGlobals({'FULLCONSTRAINTS_'+str(myId): constraints}, module_name='posetFastCharm', awaitable=True)
+# def prepareGlobal(pe,constraints,myId):
+#     pe.updateGlobals({'flippedConstraints_'+str(myId): constraints}, module_name='posetFastCharm', awaitable=True)
 
 
 
