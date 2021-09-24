@@ -517,7 +517,7 @@ def processNodeSuccessorsSimpleLP(INTrep,N,H2,solver='glpk'):
     return [set(successors), facesInt]
 
 
-def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='glpk'):
+def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='glpk',safe=False):
     if not randomize:
         if copyMat:
             H = copy(H2)
@@ -544,7 +544,10 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='glpk'):
     while idx < len(H) and cntr > 0:
         if solver=='glpk':
             e[idx,0] = 1
-            cvxArgs = [cvxopt.matrix(H[idx,1:]), \
+            if safe:
+                cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
+            else:
+                cvxArgs = [cvxopt.matrix(H[idx,1:]), \
                     cvxopt.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])), \
                     cvxopt.matrix(np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])) \
                     ]
@@ -556,7 +559,10 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='glpk'):
             e[idx,0] = 1
             for constr in range(len(s.constraints)):
                 s.removeConstraint(s.constraints[constr].name)
-            s += np.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])) * xVar <= \
+            if safe:
+                s += np.matrix(-H[to_keep,1:]) * xVar <= CyLPArray((H[to_keep,0]+e[to_keep,0]).flatten())
+            else:
+                s += np.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])) * xVar <= \
                 CyLPArray((np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])).flatten())
             s.objective = CyLPArray(H[idx,1:])
             e[idx,0] = 0
@@ -574,21 +580,24 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='glpk'):
             # If we chose Clp as a solver, use glpk as a fallback
             if solver=='clp':
                 e[idx,0] = 1
-                #cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
-                cvxArgs = [cvxopt.matrix(H[idx,1:]), \
-                    cvxopt.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])), \
-                    cvxopt.matrix(np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])) \
-                    ]
+                if safe:
+                    cvxArgs = [cvxopt.matrix(H[idx,1:]), cvxopt.matrix(-H[to_keep,1:]), cvxopt.matrix(H[to_keep,0]+e[to_keep,0])]
+                else:
+                    cvxArgs = [cvxopt.matrix(H[idx,1:]), \
+                        cvxopt.matrix(-np.vstack([H[to_keep,1:], [-H[idx,1:]]])), \
+                        cvxopt.matrix(np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]])) \
+                        ]
                 e[idx,0] = 0
                 sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
                 status = sol['status']
                 x = sol['x']
-            if status != 'optimal' and status != 'primal infeasible' and status != 'dual infeasible':
+            if status != 'optimal' and (safe or status != 'primal infeasible') and status != 'dual infeasible':
                 print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
                 print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
                 print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
                 return [set([]), 0]
-        if status == 'primal infeasible' or np.all(-H[to_keep,1:]@x - H[to_keep,0].reshape((len(to_keep),1)) <= 1e-10):
+        if (safe and -H[idx,1:]@x < H[idx,0]) \
+            or (not safe and (status == 'primal infeasible' or np.all(-H[to_keep,1:]@x - H[to_keep,0].reshape((len(to_keep),1)) <= 1e-10))):
             # inequality is redundant, so remove it
             to_keep.pop(loc)
             cntr -= 1
