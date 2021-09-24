@@ -444,9 +444,7 @@ def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='glpk',safe=
     #     s = CyClpSimplex()
     #     xVar = s.addVariable('x', d)
     #     s.logLevel = 0
-    lp = encapsulateLP()
-    if solver == 'clp':
-        lp.initclp(d)
+    lp = encapsulateLP(solver, opts={'dim':d})
 
     idx = 0
     loc = 0
@@ -543,9 +541,7 @@ def processNodeSuccessorsFastLP(INTrep,N,H2,solver='glpk',findAll=False):
         doBounding = True
     
     if doBounding:
-        lp = encapsulateLP()
-        if solver == 'clp':
-            lp.initclp(d)
+        lp = encapsulateLP(solver, opts={'dim':d})
         # Find a bounding box
         bbox = [[] for ii in range(d)]
         ed = np.zeros((d,1))

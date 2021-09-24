@@ -5,11 +5,12 @@ import numpy as np
 
 class encapsulateLP():
 
-    def initclp(self,dimension):
-        self.d = dimension
-        self.cylp = CyClpSimplex()
-        self.xVar = self.cylp.addVariable('x', self.d)
-        self.cylp.logLevel = 0
+    def __init__(self, solver, opts):
+        if solver == 'clp':
+            self.d = opts['dim']
+            self.cylp = CyClpSimplex()
+            self.xVar = self.cylp.addVariable('x', self.d)
+            self.cylp.logLevel = 0
 
     def runLP(self,obj,A,b,Ae=None,be=None,lpopts={'solver':'clp', 'fallback':'glpk'},msgID=''):
         if lpopts['solver']=='glpk':
