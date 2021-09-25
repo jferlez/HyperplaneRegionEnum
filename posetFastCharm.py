@@ -111,15 +111,33 @@ class Poset(Chare):
                 self.fixedA, \
                 self.fixedb \
             )
+        
+
+        # Initialize a new distributed hash table:
+        self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroup])
+        initFut = self.distHashTable.initialize(awaitable=True)
+        initFut.get()
+        
+        self.hashWorkerProxy = self.distHashTable.getWorkerProxy(ret=True).get()
+        self.hashWorkerProxy.listen()
+
+        # TODO: code to insert the root node into the hash table...
+
+
+        # Deprecate this code
         self.hashTable = {}
         self.levelArray = [[] for i in range(self.N)]
 
         self.root = OldPosetNode(intSet(0,self.N),0)
         self.hashTable[self.root.INTrep] = self.root
         self.levelArray[0].append(self.root)
+
+        # Deprecate these properties... (Should happen automatically with new code)
         self.root.regionLeveled = True
         self.incomplete = True
         self.populated = False
+
+        
         
         return 1
 
