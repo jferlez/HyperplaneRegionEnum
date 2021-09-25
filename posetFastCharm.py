@@ -6,7 +6,7 @@ from copy import copy
 import time
 from itertools import repeat
 from functools import partial
-from encapsulateLP import *
+import encapsulateLP
 import DistributedHash
 import cvxopt
 from cylp.cy import CyClpSimplex
@@ -252,6 +252,12 @@ class Poset(Chare):
             thisLevel = nextLevel
             level += 1
 
+        # Note, this print has to go here because this coroutine is only suspending until checkNodes is set
+        lpCountFut = Future()
+        self.succGroup.getLPCount(lpCountFut)
+        lpCount = lpCountFut.get()
+        print('Total LPs used: ' + str(lpCount))
+
         if checkNodes:
             f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
             finalVal = f.get()
@@ -266,6 +272,7 @@ class Poset(Chare):
         for ii in self.hashTable.keys():
             if self.hashTable[ii].facesInt > 0:
                 posetLen += 1
+        
         print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
         print('Computed a (partial) poset of size (nontrivial regions): ' + str(posetLen))
         # return [i.iINT for i in self.hashTable.keys()]
@@ -282,15 +289,22 @@ class successorWorker(Chare):
         self.N = N
         self.constraints = constraints
         self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver='glpk')
+        # Defaults to glpk, so this empty call is ok:
+        self.lp = encapsulateLP.encapsulateLP()
         self.outChannels = []
     
     def setMethod(self,method='fastLP',solver='clp',findAll=True):
+        self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         if method=='cdd':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsCDD, self, solver=solver)
         elif method=='simpleLP':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsSimpleLP, self, solver=solver)
         elif method=='fastLP':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll)
+    @coro
+    def getLPCount(self, lpCountFut):
+        self.reduce(lpCountFut,self.lp.lpCount,Reducer.sum)
+    
     @coro
     def getProxies(self):
         return self.thisProxy[self.thisIndex]
@@ -430,7 +444,7 @@ class successorWorker(Chare):
         #     s = CyClpSimplex()
         #     xVar = s.addVariable('x', d)
         #     s.logLevel = 0
-        lp = encapsulateLP(solver, opts={'dim':d})
+        #lp = encapsulateLP(solver, opts={'dim':d})
 
         idx = 0
         loc = 0
@@ -439,7 +453,7 @@ class successorWorker(Chare):
         while idx < len(H) and cntr > 0:
             e[idx,0] = 1        
             if safe:
-                status, x = lp.runLP( \
+                status, x = self.lp.runLP( \
                         H[idx,1:], \
                         -H[to_keep,1:], \
                         H[to_keep,0]+e[to_keep,0], \
@@ -447,7 +461,7 @@ class successorWorker(Chare):
                         msgID = str(charm.myPe()) \
                     )
             else:
-                status, x = lp.runLP( \
+                status, x = self.lp.runLP( \
                         H[idx,1:], \
                         -np.vstack([H[to_keep,1:], [-H[idx,1:]]]), \
                         np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]]), \
@@ -527,14 +541,14 @@ class successorWorker(Chare):
             doBounding = True
         
         if doBounding:
-            lp = encapsulateLP(solver, opts={'dim':d})
+            #lp = encapsulateLP(solver, opts={'dim':d})
             # Find a bounding box
             bbox = [[] for ii in range(d)]
             ed = np.zeros((d,1))
             for ii in range(d):
                 for direc in [1,-1]:
                     ed[ii,0] = direc
-                    status, x = lp.runLP( \
+                    status, x = self.lp.runLP( \
                         ed.flatten(), \
                         -H[:,1:], H[:,0], \
                         lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
@@ -667,6 +681,7 @@ class flipConstraints:
         self.nA = np.diag(self.flipMapN) @ nA
         self.nb = np.diag(self.flipMapN) @ nb
         self.N = len(nA)
+        self.d = len(nA[0])
 
         if (fA is not None) and (fb is not None):
             v = fA @ pt

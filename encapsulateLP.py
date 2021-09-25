@@ -5,14 +5,20 @@ import numpy as np
 
 class encapsulateLP():
 
-    def __init__(self, solver, opts):
-        if solver == 'clp':
+    def __init__(self):
+        self.initializedSolvers = {}    
+        self.lpCount = 0
+    
+    def initSolver(self, solver='glpk', opts={}):
+        if solver == 'clp' and not 'clp' in self.initializedSolvers:
             self.d = opts['dim']
             self.cylp = CyClpSimplex()
             self.xVar = self.cylp.addVariable('x', self.d)
             self.cylp.logLevel = 0
+            self.initializedSolvers['clp'] = True
 
     def runLP(self,obj,A,b,Ae=None,be=None,lpopts={'solver':'clp', 'fallback':'glpk'},msgID=''):
+        self.lpCount += 1
         if lpopts['solver']=='glpk':
             cvxArgs = [cvxopt.matrix(obj), cvxopt.matrix(A), cvxopt.matrix(b)]
             sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
