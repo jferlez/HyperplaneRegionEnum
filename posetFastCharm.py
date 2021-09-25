@@ -5,7 +5,7 @@ import numpy as np
 from copy import copy
 import time
 from itertools import repeat
-from functools import partial, total_ordering
+from functools import partial, partialmethod, total_ordering
 from encapsulateLP import *
 import DistributedHash
 import cvxopt
@@ -142,12 +142,12 @@ class Poset(Chare):
             return
         
         
-        if method=='cdd':
-            processNodeSuccessors = partial(processNodeSuccessorsCDD, solver=solver)
-        elif method=='simpleLP':
-            processNodeSuccessors = partial(processNodeSuccessorsSimpleLP, solver=solver)
-        elif method=='fastLP':
-            processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver, findAll=findAll)
+        # if method=='cdd':
+        #     processNodeSuccessors = partial(processNodeSuccessorsCDD, solver=solver)
+        # elif method=='simpleLP':
+        #     processNodeSuccessors = partial(processNodeSuccessorsSimpleLP, solver=solver)
+        # elif method=='fastLP':
+        #     processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver, findAll=findAll)
         
 
         emitNodes = False
@@ -289,16 +289,16 @@ class successorWorker(Chare):
         self.workInts = []
         self.N = N
         self.constraints = constraints
-        self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver='glpk')
+        self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver='glpk')
         self.outChannels = []
     
     def setMethod(self,method='fastLP',solver='clp',findAll=True):
         if method=='cdd':
-            self.processNodeSuccessors = partial(processNodeSuccessorsCDD, solver=solver)
+            self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsCDD, self, solver=solver)
         elif method=='simpleLP':
-            self.processNodeSuccessors = partial(processNodeSuccessorsSimpleLP, solver=solver)
+            self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsSimpleLP, self, solver=solver)
         elif method=='fastLP':
-            self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver, findAll=findAll)
+            self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll)
     @coro
     def getProxies(self):
         return self.thisProxy[self.thisIndex]
@@ -330,11 +330,17 @@ class successorWorker(Chare):
 
     @coro
     def computeSuccessors(self, callback):
-        successorList = list(map(self.processNodeSuccessors, \
-                        self.workInts, \
-                        repeat(self.N), \
-                        repeat(self.constraints) \
-                    )) if len(self.workInts) > 0 else [[set([]),-1]]
+        # successorList = list(map(self.processNodeSuccessors, \
+        #                 self.workInts, \
+        #                 repeat(self.N), \
+        #                 repeat(self.constraints) \
+        #             )) if len(self.workInts) > 0 else [[set([]),-1]]
+        if len(self.workInts) > 0:
+            successorList = [None] * len(self.workInts)
+            for ii in range(len(successorList)):
+                successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
+        else:
+            successorList = [[set([]),-1]]
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
         successorList = [successorList[ii][0] for ii in range(len(successorList))]
         self.reduce(callback, set([]).union(*successorList), Reducer.Union)
@@ -344,6 +350,269 @@ class successorWorker(Chare):
         return self.workInts
 
 
+    def processNodeSuccessorsCDD(self,INTrep,N,H2,solver='glpk'):
+        H = copy(H2)
+        # global H2
+        # H = np.array(H2)
+        # H = np.array(processNodeSuccessors.H)
+        idx = 1
+        for i in range(N):
+            if INTrep & idx > 0:
+                H[i] = -1*H[i]
+            idx = idx << 1
+        
+        mat = cdd.Matrix(H,number_type='float')
+        mat.rep_type = cdd.RepType.INEQUALITY
+        ret = mat.canonicalize()
+        to_keep = sorted(list(frozenset(range(len(H))) - ret[1]))
+        if len(ret[0]) > 0:
+            orig_to_keep = to_keep
+            # There is some degeneracy, which means CDD screwed up (numerical ill-conditioning?)
+            # Hence, we will use a direct implementation to find a minimal H-Representation
+            to_keep = self.concreteMinHRep(H,copyMat=False,solver=solver)
+            if orig_to_keep != to_keep:
+                print('Linear regions found? ' + ('YES' if len(ret[0])>0 else 'NO'))
+                print('CDD-obtained to_keep was:')
+                print(orig_to_keep)
+                print('GLPK Simplex-based Minimal H-Representation yielded to_keep of:')
+                print(to_keep)
+        # Use this to keep track of the region's faces
+        facesInt = 0
+        for k in to_keep:
+            facesInt = facesInt + (1 << k)
+        
+        successors = []
+        for i in range(len(to_keep)):
+            if to_keep[i] >= N:
+                break
+            idx = 1 << to_keep[i]
+            if idx & INTrep <= 0:
+                successors.append( \
+                        INTrep + idx \
+                    )
+        
+        return [set(successors), facesInt]
+
+
+    def processNodeSuccessorsSimpleLP(self,INTrep,N,H2,solver='glpk'):
+        H = copy(H2)
+        # global H2
+        # H = np.array(H2)
+        # H = np.array(processNodeSuccessors.H)
+        idx = 1
+        for i in range(N):
+            if INTrep & idx > 0:
+                H[i] = -1*H[i]
+            idx = idx << 1
+        
+        to_keep = self.concreteMinHRep(H,copyMat=False,solver=solver)
+        # Use this to keep track of the region's faces
+        facesInt = 0
+        for k in to_keep:
+            facesInt = facesInt + (1 << k)
+        
+        successors = []
+        for i in range(len(to_keep)):
+            if to_keep[i] >= N:
+                break
+            idx = 1 << to_keep[i]
+            if idx & INTrep <= 0:
+                successors.append( \
+                        INTrep + idx \
+                    )
+        
+        return [set(successors), facesInt]
+
+
+    def concreteMinHRep(self,H2,cnt=None,randomize=False,copyMat=True,solver='glpk',safe=False):
+        if not randomize:
+            if copyMat:
+                H = copy(H2)
+            else:
+                H = H2
+        else:
+            H = H2[np.random.permutation(len(H2)),:]
+        if cnt is None:
+            cntr = len(H)
+        else:
+            cntr = cnt
+
+        d = H.shape[1]-1
+        
+        # if solver=='clp':
+        #     s = CyClpSimplex()
+        #     xVar = s.addVariable('x', d)
+        #     s.logLevel = 0
+        lp = encapsulateLP(solver, opts={'dim':d})
+
+        idx = 0
+        loc = 0
+        e = np.zeros((len(H),1))
+        to_keep = list(range(len(H)))
+        while idx < len(H) and cntr > 0:
+            e[idx,0] = 1        
+            if safe:
+                status, x = lp.runLP( \
+                        H[idx,1:], \
+                        -H[to_keep,1:], \
+                        H[to_keep,0]+e[to_keep,0], \
+                        lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
+                        msgID = str(charm.myPe()) \
+                    )
+            else:
+                status, x = lp.runLP( \
+                        H[idx,1:], \
+                        -np.vstack([H[to_keep,1:], [-H[idx,1:]]]), \
+                        np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]]), \
+                        lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
+                        msgID = str(charm.myPe()) \
+                    )
+            e[idx,0] = 0
+            
+            if status != 'optimal' and (safe or status != 'primal infeasible') and status != 'dual infeasible':
+                print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+                print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
+                print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
+                return [set([]), 0]
+            if (safe and -H[idx,1:]@x < H[idx,0]) \
+                or (not safe and (status == 'primal infeasible' or np.all(-H[to_keep,1:]@x - H[to_keep,0].reshape((len(to_keep),1)) <= 1e-10))):
+                # inequality is redundant, so remove it
+                to_keep.pop(loc)
+                cntr -= 1
+            else:
+                loc += 1
+                cntr -= 1
+            idx += 1
+        return to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
+
+
+    def processNodeSuccessorsFastLP(self,INTrep,N,H2,solver='glpk',findAll=False):
+
+        # H = copy(H2)
+        # global H2
+        # H = np.array(H2)
+        # H = np.array(processNodeSuccessors.H)
+        flippable = np.zeros((N,),dtype=np.int32)
+        unflippable = np.zeros((N,),dtype=np.int32)
+        flipIdx = 0
+        unflipIdx = 0
+        idx = 1
+        for i in range(N):
+            if INTrep & idx > 0:
+                # H[i] = -1*H[i]
+                unflippable[unflipIdx] = i
+                unflipIdx += 1
+            else:
+                flippable[flipIdx] = i
+                flipIdx += 1
+            idx = idx << 1
+        # flippable = flippable[0:flipIdx]
+        # unflippable = unflippable[0:unflipIdx]
+        
+
+        if not findAll:
+            # Now all of the flippable hyperplanes will be at the beginning
+            # flippable = sorted(list(set(range(N))-set(unflippable)))
+            H = H2[np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx]]),:]
+            reorder = np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx], np.array(range(N,H2.shape[0]),dtype=np.int32)])
+            H[flipIdx:,:] = -H[flipIdx:,:]
+            H3 = np.vstack([H, H2[N:,:]])
+            H=H3
+        else:
+            H = copy(H2)
+            H[unflippable[0:unflipIdx],:] = -H[unflippable[0:unflipIdx],:]
+        
+        d = H.shape[1]-1
+
+        if solver=='clp':
+            s = CyClpSimplex()
+            xVar = s.addVariable('x', d)
+            s.logLevel = 0
+        
+        doBounding = False
+        # Don't compute the bounding box if the number of flippable hyperplanes is almost 2*d,
+        # since we have to do 2*d LPs just to get the bounding box
+        if not findAll and len(flippable) > 3*d:
+            doBounding = True
+        # If we want all the faces, we should decide whether to compute the bounding box based on
+        # the number N instead:
+        if findAll and N > 3*d:
+            doBounding = True
+        
+        if doBounding:
+            lp = encapsulateLP(solver, opts={'dim':d})
+            # Find a bounding box
+            bbox = [[] for ii in range(d)]
+            ed = np.zeros((d,1))
+            for ii in range(d):
+                for direc in [1,-1]:
+                    ed[ii,0] = direc
+                    status, x = lp.runLP( \
+                        ed.flatten(), \
+                        -H[:,1:], H[:,0], \
+                        lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
+                        msgID = str(charm.myPe()) \
+                    )
+                    ed[ii,0] = 0
+
+                    if status == 'optimal':
+                        bbox[ii].append(np.array(x[ii,0]))
+                    elif status == 'dual infeasible':
+                        bbox[ii].append(-1*direc*np.inf)
+                    else:
+                        print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+                        print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected while computing bounding box!')
+                        return [set([]), 0]
+
+            boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
+
+            to_keep = np.nonzero(np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((len(H),1))) >= -1e-07,axis=1))[0]
+        else:
+            to_keep = np.array(range(H.shape[0]),dtype=np.int32)
+        
+        if not findAll:
+            findSize = 0
+            for ii in range(len(to_keep)):
+                if to_keep[ii] >= flipIdx:
+                    break
+                findSize += 1
+        else:
+            findSize = None
+        
+        # to_keep = to_keep.tolist()
+
+        idx = 0
+        loc = 0
+        e = np.zeros((len(H),1))
+        
+        to_keep_sub = self.concreteMinHRep(H[to_keep,:],cnt=findSize,copyMat=False,solver=solver)
+        if findSize is None:
+            findSize = len(to_keep)
+        to_keep_faces = to_keep[to_keep_sub].tolist() + to_keep[findSize:len(to_keep)].tolist()
+        to_keep = to_keep[to_keep_sub].tolist()
+
+        if not findAll:
+            to_keep = reorder[to_keep].tolist()
+            to_keep_faces = reorder[to_keep_faces].tolist()
+
+        # print([findSize, len(to_keep), len(to_keep_faces)])
+
+        # Use this to keep track of the region's faces
+        facesInt = 0
+        for k in to_keep_faces:
+            facesInt = facesInt + (1 << k)
+        
+        successors = []
+        for i in range(len(to_keep)):
+            if to_keep[i] >= N:
+                break
+            idx = 1 << to_keep[i]
+            if idx & INTrep <= 0:
+                successors.append( \
+                        INTrep + idx \
+                    )
+        
+        return [set(successors), facesInt]
 
 
 class checkNodesSchedulerInt(Chare):
@@ -398,274 +667,6 @@ def Union(contribs):
     return set().union(*contribs)
 
 Reducer.addReducer(Union)
-
-
-def processNodeSuccessorsCDD(INTrep,N,H2,solver='glpk'):
-    H = copy(H2)
-    # global H2
-    # H = np.array(H2)
-    # H = np.array(processNodeSuccessors.H)
-    idx = 1
-    for i in range(N):
-        if INTrep & idx > 0:
-            H[i] = -1*H[i]
-        idx = idx << 1
-    
-    mat = cdd.Matrix(H,number_type='float')
-    mat.rep_type = cdd.RepType.INEQUALITY
-    ret = mat.canonicalize()
-    to_keep = sorted(list(frozenset(range(len(H))) - ret[1]))
-    if len(ret[0]) > 0:
-        orig_to_keep = to_keep
-        # There is some degeneracy, which means CDD screwed up (numerical ill-conditioning?)
-        # Hence, we will use a direct implementation to find a minimal H-Representation
-        to_keep = concreteMinHRep(H,copyMat=False,solver=solver)
-        if orig_to_keep != to_keep:
-            print('Linear regions found? ' + ('YES' if len(ret[0])>0 else 'NO'))
-            print('CDD-obtained to_keep was:')
-            print(orig_to_keep)
-            print('GLPK Simplex-based Minimal H-Representation yielded to_keep of:')
-            print(to_keep)
-    # Use this to keep track of the region's faces
-    facesInt = 0
-    for k in to_keep:
-        facesInt = facesInt + (1 << k)
-    
-    successors = []
-    for i in range(len(to_keep)):
-        if to_keep[i] >= N:
-            break
-        idx = 1 << to_keep[i]
-        if idx & INTrep <= 0:
-            successors.append( \
-                    INTrep + idx \
-                )
-    
-    return [set(successors), facesInt]
-
-
-def processNodeSuccessorsSimpleLP(INTrep,N,H2,solver='glpk'):
-    H = copy(H2)
-    # global H2
-    # H = np.array(H2)
-    # H = np.array(processNodeSuccessors.H)
-    idx = 1
-    for i in range(N):
-        if INTrep & idx > 0:
-            H[i] = -1*H[i]
-        idx = idx << 1
-    
-    to_keep = concreteMinHRep(H,copyMat=False,solver=solver)
-    # Use this to keep track of the region's faces
-    facesInt = 0
-    for k in to_keep:
-        facesInt = facesInt + (1 << k)
-    
-    successors = []
-    for i in range(len(to_keep)):
-        if to_keep[i] >= N:
-            break
-        idx = 1 << to_keep[i]
-        if idx & INTrep <= 0:
-            successors.append( \
-                    INTrep + idx \
-                )
-    
-    return [set(successors), facesInt]
-
-
-def concreteMinHRep(H2,cnt=None,randomize=False,copyMat=True,solver='glpk',safe=False):
-    if not randomize:
-        if copyMat:
-            H = copy(H2)
-        else:
-            H = H2
-    else:
-        H = H2[np.random.permutation(len(H2)),:]
-    if cnt is None:
-        cntr = len(H)
-    else:
-        cntr = cnt
-
-    d = H.shape[1]-1
-    
-    # if solver=='clp':
-    #     s = CyClpSimplex()
-    #     xVar = s.addVariable('x', d)
-    #     s.logLevel = 0
-    lp = encapsulateLP(solver, opts={'dim':d})
-
-    idx = 0
-    loc = 0
-    e = np.zeros((len(H),1))
-    to_keep = list(range(len(H)))
-    while idx < len(H) and cntr > 0:
-        e[idx,0] = 1        
-        if safe:
-            status, x = lp.runLP( \
-                    H[idx,1:], \
-                    -H[to_keep,1:], \
-                    H[to_keep,0]+e[to_keep,0], \
-                    lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
-                    msgID = str(charm.myPe()) \
-                )
-        else:
-            status, x = lp.runLP( \
-                    H[idx,1:], \
-                    -np.vstack([H[to_keep,1:], [-H[idx,1:]]]), \
-                    np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]]), \
-                    lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
-                    msgID = str(charm.myPe()) \
-                )
-        e[idx,0] = 0
-        
-        if status != 'optimal' and (safe or status != 'primal infeasible') and status != 'dual infeasible':
-            print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-            print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
-            print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
-            return [set([]), 0]
-        if (safe and -H[idx,1:]@x < H[idx,0]) \
-            or (not safe and (status == 'primal infeasible' or np.all(-H[to_keep,1:]@x - H[to_keep,0].reshape((len(to_keep),1)) <= 1e-10))):
-            # inequality is redundant, so remove it
-            to_keep.pop(loc)
-            cntr -= 1
-        else:
-            loc += 1
-            cntr -= 1
-        idx += 1
-    return to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
-
-
-def processNodeSuccessorsFastLP(INTrep,N,H2,solver='glpk',findAll=False):
-
-    # H = copy(H2)
-    # global H2
-    # H = np.array(H2)
-    # H = np.array(processNodeSuccessors.H)
-    flippable = np.zeros((N,),dtype=np.int32)
-    unflippable = np.zeros((N,),dtype=np.int32)
-    flipIdx = 0
-    unflipIdx = 0
-    idx = 1
-    for i in range(N):
-        if INTrep & idx > 0:
-            # H[i] = -1*H[i]
-            unflippable[unflipIdx] = i
-            unflipIdx += 1
-        else:
-            flippable[flipIdx] = i
-            flipIdx += 1
-        idx = idx << 1
-    # flippable = flippable[0:flipIdx]
-    # unflippable = unflippable[0:unflipIdx]
-    
-
-    if not findAll:
-        # Now all of the flippable hyperplanes will be at the beginning
-        # flippable = sorted(list(set(range(N))-set(unflippable)))
-        H = H2[np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx]]),:]
-        reorder = np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx], np.array(range(N,H2.shape[0]),dtype=np.int32)])
-        H[flipIdx:,:] = -H[flipIdx:,:]
-        H3 = np.vstack([H, H2[N:,:]])
-        H=H3
-    else:
-        H = copy(H2)
-        H[unflippable[0:unflipIdx],:] = -H[unflippable[0:unflipIdx],:]
-    
-    d = H.shape[1]-1
-
-    if solver=='clp':
-        s = CyClpSimplex()
-        xVar = s.addVariable('x', d)
-        s.logLevel = 0
-    
-    doBounding = False
-    # Don't compute the bounding box if the number of flippable hyperplanes is almost 2*d,
-    # since we have to do 2*d LPs just to get the bounding box
-    if not findAll and len(flippable) > 3*d:
-        doBounding = True
-    # If we want all the faces, we should decide whether to compute the bounding box based on
-    # the number N instead:
-    if findAll and N > 3*d:
-        doBounding = True
-    
-    if doBounding:
-        lp = encapsulateLP(solver, opts={'dim':d})
-        # Find a bounding box
-        bbox = [[] for ii in range(d)]
-        ed = np.zeros((d,1))
-        for ii in range(d):
-            for direc in [1,-1]:
-                ed[ii,0] = direc
-                status, x = lp.runLP( \
-                    ed.flatten(), \
-                    -H[:,1:], H[:,0], \
-                    lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
-                    msgID = str(charm.myPe()) \
-                )
-                ed[ii,0] = 0
-
-                if status == 'optimal':
-                    bbox[ii].append(np.array(x[ii,0]))
-                elif status == 'dual infeasible':
-                    bbox[ii].append(-1*direc*np.inf)
-                else:
-                    print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-                    print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected while computing bounding box!')
-                    return [set([]), 0]
-
-        boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
-
-        to_keep = np.nonzero(np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((len(H),1))) >= -1e-07,axis=1))[0]
-    else:
-        to_keep = np.array(range(H.shape[0]),dtype=np.int32)
-    
-    if not findAll:
-        findSize = 0
-        for ii in range(len(to_keep)):
-            if to_keep[ii] >= flipIdx:
-                break
-            findSize += 1
-    else:
-        findSize = None
-    
-    # to_keep = to_keep.tolist()
-
-    idx = 0
-    loc = 0
-    e = np.zeros((len(H),1))
-    
-    to_keep_sub = concreteMinHRep(H[to_keep,:],cnt=findSize,copyMat=False,solver=solver)
-    if findSize is None:
-        findSize = len(to_keep)
-    to_keep_faces = to_keep[to_keep_sub].tolist() + to_keep[findSize:len(to_keep)].tolist()
-    to_keep = to_keep[to_keep_sub].tolist()
-
-    if not findAll:
-        to_keep = reorder[to_keep].tolist()
-        to_keep_faces = reorder[to_keep_faces].tolist()
-
-    # print([findSize, len(to_keep), len(to_keep_faces)])
-
-    # Use this to keep track of the region's faces
-    facesInt = 0
-    for k in to_keep_faces:
-        facesInt = facesInt + (1 << k)
-    
-    successors = []
-    for i in range(len(to_keep)):
-        if to_keep[i] >= N:
-            break
-        idx = 1 << to_keep[i]
-        if idx & INTrep <= 0:
-            successors.append( \
-                    INTrep + idx \
-                )
-    
-    return [set(successors), facesInt]
-
-
-
 
 
 
