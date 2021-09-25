@@ -61,20 +61,20 @@ class Poset(Chare):
         self.nodeSchedInst = Chare(checkNodesSchedulerInt, onPE=charm.myPe())
 
     # @coro
-    def initializeFromConstraintObject(self, flippedConstraints):
-        self.flippedConstraints = flippedConstraints
-        self.N = len(self.flippedConstraints.nA)
+    # def initializeFromConstraintObject(self, flippedConstraints):
+    #     self.flippedConstraints = flippedConstraints
+    #     self.N = len(self.flippedConstraints.nA)
 
-        self.hashTable = {}
-        self.levelArray = [[] for i in range(len(self.flippedConstraints.nA))]
+    #     self.hashTable = {}
+    #     self.levelArray = [[] for i in range(len(self.flippedConstraints.nA))]
 
-        self.root = OldPosetNode(intSet(0,self.N), self.flippedConstraints)
-        self.hashTable[self.root.INTrep] = self.root
-        self.levelArray[0].append(self.root)
-        self.root.regionLeveled = True
-        self.incomplete = True
-        self.stackNum = 10
-        self.populated = False
+    #     self.root = OldPosetNode(intSet(0,self.N), self.flippedConstraints)
+    #     self.hashTable[self.root.INTrep] = self.root
+    #     self.levelArray[0].append(self.root)
+    #     self.root.regionLeveled = True
+    #     self.incomplete = True
+    #     self.stackNum = 10
+    #     self.populated = False
     
     def initialize(self, AbPairs, pt, fixedA, fixedb):
         self.AbPairs = AbPairs
