@@ -64,9 +64,6 @@ class Poset(Chare):
     def initializeFromConstraintObject(self, flippedConstraints):
         self.flippedConstraints = flippedConstraints
         self.N = len(self.flippedConstraints.nA)
-        # The number of nodes (regions) in a poset level that are requried to trigger
-        # the parallelized code to compute all of the successors:
-        self.parallelThreshold = 0
 
         self.hashTable = {}
         self.levelArray = [[] for i in range(len(self.flippedConstraints.nA))]
@@ -86,9 +83,6 @@ class Poset(Chare):
         self.fixedb = fixedb
 
         self.N = len(self.AbPairs[0][0])
-        # The number of nodes (regions) in a poset level that are requried to trigger
-        # the parallelized code to compute all of the successors:
-        self.parallelThreshold = 0
 
         self.hashTable = {}
         self.levelArray = [[] for i in range(self.N)]
@@ -184,12 +178,7 @@ class Poset(Chare):
         stat.get()
         self.succGroup.setMethod(method=method,solver=solver,findAll=findAll)
 
-        distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroup])
-        initFut = distHashTable.initialize(awaitable=True)
-        initFut.get()
         
-        hashWorkerProxy = distHashTable.getWorkerProxy(ret=True).get()
-        hashWorkerProxy.listen()
         #self.succGroup.testSend()
 
 
