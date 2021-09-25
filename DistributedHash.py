@@ -3,16 +3,6 @@ from charm4py import charm, Chare, coro, Reducer, Group, Future, Array, Channel
 from numpy import may_share_memory
 import time
 
-class PosetNode():
-
-    def __init__(self,lsb,msb,nodeInt,facesInt):
-        self.lsbHash = lsb
-        self.msbHash = msb
-        self.nodeInt = nodeInt
-        self.facesInt = facesInt
-    
-    def __hash__(self):
-        return self.msbHash
 
 
 class HashWorker(Chare):

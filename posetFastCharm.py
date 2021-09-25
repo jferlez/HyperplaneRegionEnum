@@ -16,6 +16,19 @@ import warnings
 
 warnings.simplefilter(action = "ignore", category = RuntimeWarning)
 
+
+class PosetNode():
+
+    def __init__(self,lsb,msb,nodeInt,facesInt):
+        self.lsbHash = lsb
+        self.msbHash = msb
+        self.nodeInt = nodeInt
+        self.facesInt = facesInt
+    
+    def __hash__(self):
+        return self.msbHash
+
+
 class OldPosetNode:
 
     def __init__(self, INTrep, level, facesInt=-1):
