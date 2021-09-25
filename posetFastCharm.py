@@ -84,15 +84,15 @@ class Poset(Chare):
 
         self.N = len(self.AbPairs[0][0])
 
-        self.hashTable = {}
-        self.levelArray = [[] for i in range(self.N)]
+        # self.hashTable = {}
+        # self.levelArray = [[] for i in range(self.N)]
 
-        self.root = OldPosetNode(intSet(0,self.N),0)
-        self.hashTable[self.root.INTrep] = self.root
-        self.levelArray[0].append(self.root)
-        self.root.regionLeveled = True
-        self.incomplete = True
-        self.populated = False
+        # self.root = OldPosetNode(intSet(0,self.N),0)
+        # self.hashTable[self.root.INTrep] = self.root
+        # self.levelArray[0].append(self.root)
+        # self.root.regionLeveled = True
+        # self.incomplete = True
+        # self.populated = False
 
     @coro
     def setConstraint(self,lb=0,out=0):
