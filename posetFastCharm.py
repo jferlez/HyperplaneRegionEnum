@@ -101,7 +101,7 @@ class Poset(Chare):
         self.populated = False
 
     @coro
-    def setConstraint(self,lb,out=0):
+    def setConstraint(self,lb=0,out=0):
         self.populated = False
         self.incomplete = True
         self.flippedConstraints = flipConstraints( \
