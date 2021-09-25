@@ -322,11 +322,6 @@ class successorWorker(Chare):
 
     @coro
     def computeSuccessors(self, callback):
-        # successorList = list(map(self.processNodeSuccessors, \
-        #                 self.workInts, \
-        #                 repeat(self.N), \
-        #                 repeat(self.constraints) \
-        #             )) if len(self.workInts) > 0 else [[set([]),-1]]
         if len(self.workInts) > 0:
             successorList = [None] * len(self.workInts)
             for ii in range(len(successorList)):
