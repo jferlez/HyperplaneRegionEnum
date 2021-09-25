@@ -5,7 +5,7 @@ import numpy as np
 from copy import copy
 import time
 from itertools import repeat
-from functools import partial, partialmethod, total_ordering
+from functools import partial
 from encapsulateLP import *
 import DistributedHash
 import cvxopt
