@@ -7,6 +7,7 @@ import time
 from itertools import repeat
 from functools import partial, total_ordering
 from encapsulateLP import *
+import DistributedHash
 import cvxopt
 from cylp.cy import CyClpSimplex
 from cylp.py.modeling.CyLPModel import CyLPArray
@@ -152,6 +153,15 @@ class Poset(Chare):
         stat.get()
         self.succGroup.setMethod(method=method,solver=solver,findAll=findAll)
 
+        distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroup])
+        initFut = distHashTable.initialize(awaitable=True)
+        initFut.get()
+        
+        hashWorkerProxy = distHashTable.getWorkerProxy(ret=True).get()
+        hashWorkerProxy.listen()
+        #self.succGroup.testSend()
+
+
         level = 0
         thisLevel = [0]
 
@@ -260,6 +270,7 @@ class successorWorker(Chare):
         self.N = N
         self.constraints = constraints
         self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver='glpk')
+        self.outChannels = []
     
     def setMethod(self,method='fastLP',solver='clp',findAll=True):
         if method=='cdd':
@@ -268,7 +279,25 @@ class successorWorker(Chare):
             self.processNodeSuccessors = partial(processNodeSuccessorsSimpleLP, solver=solver)
         elif method=='fastLP':
             self.processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver, findAll=findAll)
-    
+    @coro
+    def getProxies(self):
+        return self.thisProxy[self.thisIndex]
+    @coro
+    def addDestChannel(self, procGroupProxies):
+        self.numHashWorkers = len(procGroupProxies)
+        self.outChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
+        # print(self.outChannels)
+    @coro
+    def addFeedbackChannel(self,proxy):
+        self.feedbackChannel = Channel(self,remote=proxy)
+    @coro
+    def testSend(self):
+        for k in range(self.numHashWorkers):
+            #print('Sending on to ' + str(k))
+            #print(self.outChannels[k])
+            self.outChannels[k].send((self.thisIndex,k))
+            #print('Message sent!')
+
     @coro
     def initList(self,workInts):
         self.status = Future()
