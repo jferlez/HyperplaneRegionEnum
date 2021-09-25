@@ -27,6 +27,12 @@ class PosetNode():
     
     def __hash__(self):
         return self.msbHash
+    
+    def __eq__(self,other):
+        if type(other) == int:
+            return self.nodeInt == other
+        else:
+            return self.nodeInt == other.nodeInt
 
 
 class OldPosetNode:
@@ -108,7 +114,7 @@ class Poset(Chare):
         
 
         # Initialize a new distributed hash table:
-        self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroup])
+        self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroup,PosetNode])
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
         
