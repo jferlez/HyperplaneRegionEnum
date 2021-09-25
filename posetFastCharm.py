@@ -16,7 +16,7 @@ import warnings
 
 warnings.simplefilter(action = "ignore", category = RuntimeWarning)
 
-class PosetNode:
+class OldPosetNode:
 
     def __init__(self, INTrep, level, facesInt=-1):
         self.INTrep = INTrep
@@ -58,7 +58,7 @@ class Poset(Chare):
         self.hashTable = {}
         self.levelArray = [[] for i in range(len(self.flippedConstraints.nA))]
 
-        self.root = PosetNode(intSet(0,self.N), self.flippedConstraints)
+        self.root = OldPosetNode(intSet(0,self.N), self.flippedConstraints)
         self.hashTable[self.root.INTrep] = self.root
         self.levelArray[0].append(self.root)
         self.root.regionLeveled = True
@@ -80,7 +80,7 @@ class Poset(Chare):
         self.hashTable = {}
         self.levelArray = [[] for i in range(self.N)]
 
-        self.root = PosetNode(intSet(0,self.N),0)
+        self.root = OldPosetNode(intSet(0,self.N),0)
         self.hashTable[self.root.INTrep] = self.root
         self.levelArray[0].append(self.root)
         self.root.regionLeveled = True
@@ -101,7 +101,7 @@ class Poset(Chare):
         self.hashTable = {}
         self.levelArray = [[] for i in range(self.N)]
 
-        self.root = PosetNode(intSet(0,self.N),0)
+        self.root = OldPosetNode(intSet(0,self.N),0)
         self.hashTable[self.root.INTrep] = self.root
         self.levelArray[0].append(self.root)
         self.root.regionLeveled = True
@@ -199,7 +199,7 @@ class Poset(Chare):
                     thisLevel[k] = self.hashTable[i]
                     thisLevel[k].facesInt = facesList[k]
                 else:
-                    thisLevel[k] = PosetNode( i, level+1, facesInt=facesList[k] )
+                    thisLevel[k] = OldPosetNode( i, level+1, facesInt=facesList[k] )
                     self.hashTable[i] = thisLevel[k]
                 if not thisLevel[k].regionProcessed:
                     if emitNodes:
