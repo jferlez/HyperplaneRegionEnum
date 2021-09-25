@@ -141,14 +141,6 @@ class Poset(Chare):
         if self.populated:
             return
         
-        
-        # if method=='cdd':
-        #     processNodeSuccessors = partial(processNodeSuccessorsCDD, solver=solver)
-        # elif method=='simpleLP':
-        #     processNodeSuccessors = partial(processNodeSuccessorsSimpleLP, solver=solver)
-        # elif method=='fastLP':
-        #     processNodeSuccessors = partial(processNodeSuccessorsFastLP, solver=solver, findAll=findAll)
-        
 
         emitNodes = False
         if not retChannelEndPoint==None:
