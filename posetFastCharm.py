@@ -191,7 +191,7 @@ class Poset(Chare):
                         )
             cnt = 0
             for fut in charm.iwait(doneFuts):
-                cnt += fut.get())
+                cnt += fut.get()
 
             successorList = Future()
             self.succGroup.computeSuccessors(successorList)
@@ -451,10 +451,10 @@ class successorWorker(Chare):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         if method=='cdd':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsCDD, self, solver=solver)
-            self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsCDD, self, solver=solver)
+            self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsCDD, self, solver=solver, send=True)
         elif method=='simpleLP':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsSimpleLP, self, solver=solver)
-            self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsSimpleLP, self, solver=solver)
+            self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsSimpleLP, self, solver=solver, send=True)
         elif method=='fastLP':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll)
             self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll, send=True)
