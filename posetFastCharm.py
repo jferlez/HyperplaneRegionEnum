@@ -11,7 +11,8 @@ import DistributedHash
 import cvxopt
 from cylp.cy import CyClpSimplex
 from cylp.py.modeling.CyLPModel import CyLPArray
-
+import hashlib
+import sys
 import warnings
 
 warnings.simplefilter(action = "ignore", category = RuntimeWarning)
@@ -19,11 +20,10 @@ warnings.simplefilter(action = "ignore", category = RuntimeWarning)
 
 class PosetNode():
 
-    def __init__(self,lsb,msb,nodeInt,facesInt):
+    def __init__(self,lsb,msb,nodeInt):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeInt = nodeInt
-        self.facesInt = facesInt
     
     def __hash__(self):
         return self.msbHash
@@ -112,14 +112,14 @@ class Poset(Chare):
                 self.fixedb \
             )
         
+        stat = self.succGroup.initialize(self.N,self.flippedConstraints.constraints,awaitable=True)
+        stat.get()
 
         # Initialize a new distributed hash table:
         self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroup,PosetNode])
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
         
-        self.hashWorkerProxy = self.distHashTable.getWorkerProxy(ret=True).get()
-        self.hashWorkerProxy.listen()
 
         # TODO: code to insert the root node into the hash table...
 
@@ -172,8 +172,7 @@ class Poset(Chare):
             stat = self.nodeSchedInst.initialize(self.stackNum, self.checkNodeGroup, self.pes, checkNodesFuture,awaitable=True)
             stat.get()
 
-        stat = self.succGroup.initialize(self.N,self.flippedConstraints.constraints,awaitable=True)
-        stat.get()
+        
         self.succGroup.setMethod(method=method,solver=solver,findAll=findAll)
 
         
@@ -187,8 +186,7 @@ class Poset(Chare):
         while level < self.N+1 and len(thisLevel) > 0:
 
             # This is the place to put alternative fast processing of nodes -- e.g. ray shooting to find regions
-
-                        
+         
 
             for k in range(len(self.posetPEs)):
                 self.succGroup[self.posetPEs[k]].initList( \
@@ -197,9 +195,65 @@ class Poset(Chare):
             transferStatus = Future()
             self.succGroup.collectXferStats(transferStatus)
             stat = transferStatus.get()
+
             successorList = Future()
             self.succGroup.computeSuccessors(successorList)
             nextLevel = list(successorList.get())
+
+            # The levelDone coroutine will send on levelFut when the current level is done
+            # levelFut = Future()
+            # self.distHashTable.levelDone(levelFut)   
+
+
+            # Reinitialize everything:
+            successorProxies = self.succGroup.getProxies(ret=True).get()
+            doneFuts = [Future() for k in range(len(successorProxies))]
+            for k in range(len(successorProxies)):
+                successorProxies[k].initListNew( \
+                            [ i for i in thisLevel[k:len(thisLevel):len(self.posetPEs)] ], \
+                            doneFuts[k]
+                        )
+            cnt = 0
+            for fut in charm.iwait(doneFuts):
+                cnt += fut.get()
+            # print('Successfully copied ' + str(cnt) + ' workInt lists')
+            
+            # Tell the hash table to get ready to receive new nodes
+            # self.succGroup.sendAll(-1)
+            # print('Started successor')
+            initFut = Future()
+            self.distHashTable.initListening(initFut)
+            initFut.get()
+            # print('Successfully started ' + str(initFut.get()) + ' worker listeners')
+            
+            # self.hashWorkerProxy = self.distHashTable.getWorkerProxy(ret=True).get()
+            # # listenerFut = self.hashWorkerProxy.initListen(awaitable=True)
+            # # listenerFut.get()
+            # # print('Got hash worker proxies')
+            # self.hashWorkerProxy.listen()
+            # print('Started hashWorker listeners')
+
+            # stat = self.succGroup.tester(ret=True).get()
+            # print(stat)
+            # print('Success communicating with successorWorkers')
+            # time.sleep(2)
+            self.succGroup.computeSuccessorsNew()
+            # print('Started processing successors')
+
+           
+
+            # Hold here until all of the successors are processed
+            # levelFut.get()
+            # listenerFut.get()
+
+            # Retrieve the nodes for the next level
+            hashWorkerProxy = self.distHashTable.getWorkerProxy(ret=True).get()
+            levelListFut = Future()
+            hashWorkerProxy.getLevelList(levelListFut)
+            nextLevelAlt = levelListFut.get()
+            nextLevelAlt.sort()
+
+            print('Do level lists match? ' + str(sorted(nextLevel) == sorted(nextLevelAlt)))
 
             # Retrieve faces for all the nodes in the current level
             facesList = [0 for i in range(len(thisLevel))]
@@ -298,6 +352,7 @@ class successorWorker(Chare):
         # Defaults to glpk, so this empty call is ok:
         self.lp = encapsulateLP.encapsulateLP()
         self.outChannels = []
+        self.endian = sys.byteorder
     
     def setMethod(self,method='fastLP',solver='clp',findAll=True):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
@@ -307,6 +362,11 @@ class successorWorker(Chare):
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsSimpleLP, self, solver=solver)
         elif method=='fastLP':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll)
+            self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll, send=True)
+
+        self.solver = solver
+        self.findAll = findAll
+
     @coro
     def getLPCount(self, lpCountFut):
         self.reduce(lpCountFut,self.lp.lpCount,Reducer.sum)
@@ -318,6 +378,15 @@ class successorWorker(Chare):
     def addDestChannel(self, procGroupProxies):
         self.numHashWorkers = len(procGroupProxies)
         self.outChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
+        self.numHashBits = 1
+        while self.numHashBits < self.numHashWorkers:
+            self.numHashBits = self.numHashBits << 1
+        self.hashMask = self.numHashBits - 1
+        self.numHashBits -= 1
+        if self.N % 4 == 0:
+            self.numBytes = self.N/4
+        else:
+            self.numBytes = int(self.N/4)+1
         # print(self.outChannels)
     @coro
     def addFeedbackChannel(self,proxy):
@@ -330,6 +399,17 @@ class successorWorker(Chare):
             self.outChannels[k].send((self.thisIndex,k))
             #print('Message sent!')
 
+    def hashNode(self,nodeInt):
+        hashInt = int.from_bytes( \
+            hashlib.md5(nodeInt.to_bytes(self.numBytes,byteorder=self.endian)).digest(), \
+            byteorder=self.endian \
+        )
+        return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
+
+    @coro
+    def tester(self):
+        print('Entered tester on PE ' + str(charm.myPe()))
+        return charm.myPe()
     @coro
     def initList(self,workInts):
         self.status = Future()
@@ -337,20 +417,71 @@ class successorWorker(Chare):
         self.status.send(1)
 
     @coro
+    def initListNew(self,workInts, fut):
+        self.workInts = workInts
+        # print(self.workInts)
+        fut.send(1)
+    @coro
     def collectXferStats(self, stat_result):
         self.reduce(stat_result, self.status.get() , Reducer.sum)
 
     @coro
+    def sendAll(self,val):
+        for ch in self.outChannels:
+            ch.send(val)
+
+    @coro
     def computeSuccessors(self, callback):
+        #print('Workints on pe ' + str(charm.myPe()) + ': ' + str(self.workInts))
         if len(self.workInts) > 0:
             successorList = [None] * len(self.workInts)
             for ii in range(len(successorList)):
                 successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
         else:
             successorList = [[set([]),-1]]
+        # if charm.myPe() == 0:
+        #     print(successorList)
+        #     print(self.workInts)
+        # Signal all hash workers that they won't be receiving any more nodes from this successor worker
+        # if charm.myPe() == 0:
+        #     print('I got here!')
+        # Unknown why this needs to be sent more than once!!!!!
+
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
         successorList = [successorList[ii][0] for ii in range(len(successorList))]
+        # if charm.myPe() == 0:
+        #     print('Now I got here!')
         self.reduce(callback, set([]).union(*successorList), Reducer.Union)
+    
+    # @coro
+    def computeSuccessorsNew(self):
+        #print('Workints on pe ' + str(charm.myPe()) + ': ' + str(self.workInts))
+        # print('Entered computeSuccessorsNew')
+        if len(self.workInts) > 0:
+            successorList = [None] * len(self.workInts)
+            for ii in range(len(successorList)):
+                # print('Starting one successor')
+                successorList[ii] = self.processNodeSuccessorsSend(self.workInts[ii],self.N,self.constraints)
+                # successorList[ii] = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP(self.workInts[ii], self.N, self.constraints, solver=self.solver, findAll=self.findAll, send=True, ret=True).get()
+                # = successorFut.get()
+                #successorList[ii] = self.processNodeSuccessorsFastLP(self.workInts[ii],self.N,self.constraints,solver=self.solver,findAll=self.findAll,send=True)
+        else:
+            successorList = [[set([]),-1]]
+        # if charm.myPe() == 0:
+        #     print(successorList)
+        #     print(self.workInts)
+        # Signal all hash workers that they won't be receiving any more nodes from this successor worker
+        # if charm.myPe() == 0:
+        #     print('I got here!')
+        # Unknown why this needs to be sent more than once!!!!!
+        # stat = self.thisProxy[self.thisIndex].sendAll(-2,awaitable=True)
+        # stat.get()
+        # print('Finished successors')
+        self.sendAll(-2)
+        
+        self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
+        successorList = [successorList[ii][0] for ii in range(len(successorList))]
+
 
     @coro
     def retrieveFaces(self):
@@ -492,9 +623,9 @@ class successorWorker(Chare):
             idx += 1
         return to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
 
-
-    def processNodeSuccessorsFastLP(self,INTrep,N,H2,solver='glpk',findAll=False):
-
+    # @coro
+    def processNodeSuccessorsFastLP(self,INTrep,N,H2,solver='glpk',findAll=False,send=False):
+        
         # H = copy(H2)
         # global H2
         # H = np.array(H2)
@@ -587,7 +718,7 @@ class successorWorker(Chare):
             findSize = None
         
         # to_keep = to_keep.tolist()
-
+        
         idx = 0
         loc = 0
         e = np.zeros((len(H),1))
@@ -615,9 +746,16 @@ class successorWorker(Chare):
                 break
             idx = 1 << to_keep[i]
             if idx & INTrep <= 0:
+                nNode = INTrep + idx
                 successors.append( \
-                        INTrep + idx \
+                        nNode \
                     )
+                # print('Processing node!')
+                if send:
+                    # print('Sending')
+                    val = self.hashNode(nNode)
+                    # print('Sending ' + str(val))
+                    self.outChannels[val[0]].send(val)
         
         return [set(successors), facesInt]
 
