@@ -524,20 +524,13 @@ class successorWorker(Chare):
 
     @coro
     def computeSuccessors(self, callback):
-        #print('Workints on pe ' + str(charm.myPe()) + ': ' + str(self.workInts))
         if len(self.workInts) > 0:
             successorList = [None] * len(self.workInts)
             for ii in range(len(successorList)):
                 successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
         else:
             successorList = [[set([]),-1]]
-        # if charm.myPe() == 0:
-        #     print(successorList)
-        #     print(self.workInts)
-        # Signal all hash workers that they won't be receiving any more nodes from this successor worker
-        # if charm.myPe() == 0:
-        #     print('I got here!')
-        # Unknown why this needs to be sent more than once!!!!!
+
 
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
         successorList = [successorList[ii][0] for ii in range(len(successorList))]
@@ -547,28 +540,13 @@ class successorWorker(Chare):
     
     # @coro
     def computeSuccessorsNew(self):
-        #print('Workints on pe ' + str(charm.myPe()) + ': ' + str(self.workInts))
-        # print('Entered computeSuccessorsNew')
         if len(self.workInts) > 0:
             successorList = [None] * len(self.workInts)
             for ii in range(len(successorList)):
-                # print('Starting one successor')
                 successorList[ii] = self.processNodeSuccessorsSend(self.workInts[ii],self.N,self.constraints)
-                # successorList[ii] = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP(self.workInts[ii], self.N, self.constraints, solver=self.solver, findAll=self.findAll, send=True, ret=True).get()
-                # = successorFut.get()
-                #successorList[ii] = self.processNodeSuccessorsFastLP(self.workInts[ii],self.N,self.constraints,solver=self.solver,findAll=self.findAll,send=True)
         else:
             successorList = [[set([]),-1]]
-        # if charm.myPe() == 0:
-        #     print(successorList)
-        #     print(self.workInts)
-        # Signal all hash workers that they won't be receiving any more nodes from this successor worker
-        # if charm.myPe() == 0:
-        #     print('I got here!')
-        # Unknown why this needs to be sent more than once!!!!!
-        # stat = self.thisProxy[self.thisIndex].sendAll(-2,awaitable=True)
-        # stat.get()
-        # print('Finished successors')
+        
         self.sendAll(-2)
         
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
