@@ -158,7 +158,7 @@ class HashWorker(Chare):
 
 class DistHash(Chare):
 
-    def __init__(self, feederGroup, nodeConstructor, pelist=None):
+    def __init__(self, feederGroup, nodeConstructor, pelist):
         self.feederGroup = feederGroup
         self.nodeConstructor = nodeConstructor
         if pelist == None:

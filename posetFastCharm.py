@@ -116,7 +116,7 @@ class Poset(Chare):
         stat.get()
 
         # Initialize a new distributed hash table:
-        self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroup,PosetNode])
+        self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroup,PosetNode,None])
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
         
@@ -141,6 +141,146 @@ class Poset(Chare):
         
         return 1
 
+
+    @coro
+    def populatePosetOld(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='clp', findAll=False ):
+        if self.populated:
+            return
+        
+
+        emitNodes = False
+        if not retChannelEndPoint==None:
+            emitNodes = True
+            retChannel = Channel(self, remote=retChannelEndPoint)
+
+        checkNodes = False
+        if not checkNodesFuture==None:
+
+
+            if self.checkNodeGroup==None: # or not isinstance(checkNodeGroup,Group):
+                raise ValueError('Must supply a Chare Group node-check group via \'checkNodesGroup\' argument!')
+            self.peCounter = 0
+            self.stackCounter = 0
+            self.pes = [i for i in range(charm.numPes())] if len(self.groupPEs)==0 else self.groupPEs
+            self.workGroup = [[-1 for i in range(self.stackNum)] for j in range(len(self.pes))]
+
+            checkNodes = True
+            returned = False
+
+            # (Re-)Initialize the node checker group with the new data
+            
+            stat = self.nodeSchedInst.initialize(self.stackNum, self.checkNodeGroup, self.pes, checkNodesFuture,awaitable=True)
+            stat.get()
+
+        
+        self.succGroup.setMethod(method=method,solver=solver,findAll=findAll)
+
+        
+        level = 0
+        thisLevel = [0]
+
+        doProcessing = False
+        while level < self.N+1 and len(thisLevel) > 0:
+
+            successorProxies = self.succGroup.getProxies(ret=True).get()
+            doneFuts = [Future() for k in range(len(successorProxies))]
+            for k in range(len(successorProxies)):
+                successorProxies[k].initListNew( \
+                            [ i for i in thisLevel[k:len(thisLevel):len(self.posetPEs)] ], \
+                            doneFuts[k]
+                        )
+            cnt = 0
+            for fut in charm.iwait(doneFuts):
+                cnt += fut.get())
+
+            successorList = Future()
+            self.succGroup.computeSuccessors(successorList)
+            nextLevel = list(successorList.get())
+
+
+            # Retrieve faces for all the nodes in the current level
+            facesList = [0 for i in range(len(thisLevel))]
+            for k in range(len(self.posetPEs)):
+                facesListFut = self.succGroup[self.posetPEs[k]].retrieveFaces(awaitable=True)
+                facesListWork = facesListFut.get()
+                for i in range(k,len(thisLevel),len(self.posetPEs)):
+                    facesList[i] = facesListWork[int((i-k)/len(self.posetPEs))]
+
+
+
+            for k in range(len(thisLevel)):
+                i = intSet(thisLevel[k],self.N)
+                if i in self.hashTable:
+                    thisLevel[k] = self.hashTable[i]
+                    thisLevel[k].facesInt = facesList[k]
+                else:
+                    thisLevel[k] = OldPosetNode( i, level+1, facesInt=facesList[k] )
+                    self.hashTable[i] = thisLevel[k]
+                if not thisLevel[k].regionProcessed:
+                    if emitNodes:
+                        retChannel.send(thisLevel[k].INTrep.iINT)
+                    if checkNodes:
+                        # First update self.workGroup with the new node
+                        if self.peCounter == len(self.pes)-1 and self.stackCounter == self.stackNum - 1:
+                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
+                            thisLevel[k].regionProcessed = True
+                            self.peCounter += 1
+                            doProcessing = True
+                        elif self.peCounter < len(self.pes)-1 and self.stackCounter < self.stackNum:
+                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
+                            thisLevel[k].regionProcessed = True
+                            self.peCounter += 1
+                        elif self.peCounter == len(self.pes)-1 and self.stackCounter < self.stackNum - 1:
+                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
+                            thisLevel[k].regionProcessed = True
+                            self.stackCounter += 1
+                            self.peCounter = 0
+                        if doProcessing:
+                            f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
+                            f.get()
+                            f = self.nodeSchedInst.foundQ(awaitable=True) 
+                            if f.get():
+                                self.incomplete = True
+                                # We found a 'True' on some poset node, so shut everything down
+                                if emitNodes:
+                                    retChannel.send(-2)
+                                return
+                            # Reset the counters
+                            doProcessing = False
+                            self.peCounter = 0
+                            self.stackCounter = 0
+            
+            
+            
+            thisLevel = nextLevel
+            level += 1
+
+        # Note, this print has to go here because this coroutine is only suspending until checkNodes is set
+        lpCountFut = Future()
+        self.succGroup.getLPCount(lpCountFut)
+        lpCount = lpCountFut.get()
+        print('Total LPs used: ' + str(lpCount))
+
+        if checkNodes:
+            f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
+            finalVal = f.get()
+            if not finalVal:
+                checkNodesFuture.send(False)
+
+        # Tell the channel endpoint that no more nodes are coming
+        if emitNodes:
+            retChannel.send(-1)
+        self.incomplete = False
+        posetLen = 0
+        for ii in self.hashTable.keys():
+            if self.hashTable[ii].facesInt > 0:
+                posetLen += 1
+        
+        print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
+        print('Computed a (partial) poset of size (nontrivial regions): ' + str(posetLen))
+        # return [i.iINT for i in self.hashTable.keys()]
+        self.populated = True
+        return posetLen
 
     @coro
     def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='clp', findAll=False ):
@@ -185,27 +325,6 @@ class Poset(Chare):
         doProcessing = False
         while level < self.N+1 and len(thisLevel) > 0:
 
-            # This is the place to put alternative fast processing of nodes -- e.g. ray shooting to find regions
-         
-
-            for k in range(len(self.posetPEs)):
-                self.succGroup[self.posetPEs[k]].initList( \
-                            [ i for i in thisLevel[k:len(thisLevel):len(self.posetPEs)] ] \
-                        )
-            transferStatus = Future()
-            self.succGroup.collectXferStats(transferStatus)
-            stat = transferStatus.get()
-
-            successorList = Future()
-            self.succGroup.computeSuccessors(successorList)
-            nextLevel = list(successorList.get())
-
-            # The levelDone coroutine will send on levelFut when the current level is done
-            # levelFut = Future()
-            # self.distHashTable.levelDone(levelFut)   
-
-
-            # Reinitialize everything:
             successorProxies = self.succGroup.getProxies(ret=True).get()
             doneFuts = [Future() for k in range(len(successorProxies))]
             for k in range(len(successorProxies)):
@@ -216,44 +335,18 @@ class Poset(Chare):
             cnt = 0
             for fut in charm.iwait(doneFuts):
                 cnt += fut.get()
-            # print('Successfully copied ' + str(cnt) + ' workInt lists')
-            
-            # Tell the hash table to get ready to receive new nodes
-            # self.succGroup.sendAll(-1)
-            # print('Started successor')
+
             initFut = Future()
             self.distHashTable.initListening(initFut)
             initFut.get()
-            # print('Successfully started ' + str(initFut.get()) + ' worker listeners')
-            
-            # self.hashWorkerProxy = self.distHashTable.getWorkerProxy(ret=True).get()
-            # # listenerFut = self.hashWorkerProxy.initListen(awaitable=True)
-            # # listenerFut.get()
-            # # print('Got hash worker proxies')
-            # self.hashWorkerProxy.listen()
-            # print('Started hashWorker listeners')
 
-            # stat = self.succGroup.tester(ret=True).get()
-            # print(stat)
-            # print('Success communicating with successorWorkers')
-            # time.sleep(2)
             self.succGroup.computeSuccessorsNew()
-            # print('Started processing successors')
-
-           
-
-            # Hold here until all of the successors are processed
-            # levelFut.get()
-            # listenerFut.get()
 
             # Retrieve the nodes for the next level
             hashWorkerProxy = self.distHashTable.getWorkerProxy(ret=True).get()
             levelListFut = Future()
             hashWorkerProxy.getLevelList(levelListFut)
-            nextLevelAlt = levelListFut.get()
-            nextLevelAlt.sort()
-
-            print('Do level lists match? ' + str(sorted(nextLevel) == sorted(nextLevelAlt)))
+            nextLevel = levelListFut.get()
 
             # Retrieve faces for all the nodes in the current level
             facesList = [0 for i in range(len(thisLevel))]
@@ -358,8 +451,10 @@ class successorWorker(Chare):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         if method=='cdd':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsCDD, self, solver=solver)
+            self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsCDD, self, solver=solver)
         elif method=='simpleLP':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsSimpleLP, self, solver=solver)
+            self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsSimpleLP, self, solver=solver)
         elif method=='fastLP':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll)
             self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll, send=True)
@@ -421,9 +516,6 @@ class successorWorker(Chare):
         self.workInts = workInts
         # print(self.workInts)
         fut.send(1)
-    @coro
-    def collectXferStats(self, stat_result):
-        self.reduce(stat_result, self.status.get() , Reducer.sum)
 
     @coro
     def sendAll(self,val):
