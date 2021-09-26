@@ -342,11 +342,17 @@ class Poset(Chare):
 
             self.succGroup.computeSuccessorsNew()
 
+            
+            self.distHashTable.levelDone(awaitable=True).get()
+
+            nextLevel = self.distHashTable.getLevelList(ret=True).get()
+            
+
             # Retrieve the nodes for the next level
-            hashWorkerProxy = self.distHashTable.getWorkerProxy(ret=True).get()
-            levelListFut = Future()
-            hashWorkerProxy.getLevelList(levelListFut)
-            nextLevel = levelListFut.get()
+            # hashWorkerProxy = self.distHashTable.getWorkerProxy(ret=True).get()
+            # levelListFut = Future()
+            # hashWorkerProxy.getLevelList(levelListFut)
+            # nextLevel = levelListFut.get()
 
             posetLen += len(nextLevel)
 

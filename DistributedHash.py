@@ -69,6 +69,7 @@ class HashWorker(Chare):
         self.level += 1
         self.levelList = []
         self.termCount = 0
+        self.levelDone = False
         fut.send(1)
         
     
@@ -93,6 +94,7 @@ class HashWorker(Chare):
             elif val == -2:
                 self.status[ch] = -2
                 self.workerDone[ch].send(1)
+                self.levelDone = True
             elif type(val) == tuple and len(val) == 3:
                 # if self.status[ch] == -1:
                     # Process node
@@ -112,10 +114,18 @@ class HashWorker(Chare):
         return 1
 
     @coro
-    def getLevelList(self, levelListFut):
+    def awaitLevel(self):
         for ch in self.inChannels:
             self.workerDone[ch].get()
-        self.reduce(levelListFut, self.levelList, Reducer.Join)
+        self.levelDone = True
+
+    @coro
+    def getLevelList(self, levelListFut):
+        if self.levelDone:
+            self.reduce(levelListFut, self.levelList, Reducer.Join)
+        else:
+            print('Warning: tried to retrieve level list before level was done!')
+            self.reduce(levelListFut, [], Reducer.Join)
     
 
 class DistHash(Chare):
@@ -131,9 +141,6 @@ class DistHash(Chare):
         self.hashWorkerProxies = self.hWorkers.getProxies(ret=True)
         self.hashWorkerProxies = self.hashWorkerProxies.get()
         self.hashWorkerChannels = [Channel(self, remote=proxy) for proxy in self.hashWorkerProxies]
-        self.hashWorkerStatus = {}
-        for ch in self.hashWorkerChannels:
-            self.hashWorkerStatus[ch] = 0
 
     @coro
     def initialize(self):
@@ -154,20 +161,28 @@ class DistHash(Chare):
         myFut.get()
 
     @coro
-    def levelDone(self, doneFut):
-        imDone = False
-        while not imDone:
-            for ch in charm.iwait(self.hashWorkerChannels):
-                val = ch.recv()
-                if val == -2:
-                    self.hashWorkerStatus[ch] = -2
-                if all([self.hashWorkerStatus[ch] == -2 for ch in self.hashWorkerChannels]):
-                    for ch in self.hashWorkerChannels:
-                        self.hashWorkerStatus[ch] = 0
-                    doneFut.send(1)
-                    imDone = True
-                    break
+    def levelDoneChannel(self, doneFut):
+        hashWorkerStatus = {}
+        for ch in self.hashWorkerChannels:
+            hashWorkerStatus[ch] = 0
+        for ch in charm.iwait(self.hashWorkerChannels):
+            val = ch.recv()
+            if val == -2 or val == -3:
+                hashWorkerStatus[ch] = val
+            if all([hashWorkerStatus[ch] < 0 for ch in self.hashWorkerChannels]):
+                doneFut.send(1)
+                break
     
+    @coro
+    def levelDone(self):
+        self.hWorkers.awaitLevel(awaitable=True).get()
+    
+    @coro
+    def getLevelList(self):
+        nextlevel = Future()
+        self.hWorkers.getLevelList(nextlevel)
+        return nextlevel.get()
+
     def getWorkerProxy(self):
         return self.hWorkers
     @coro
