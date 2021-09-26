@@ -321,7 +321,7 @@ class Poset(Chare):
 
         level = 0
         thisLevel = [0]
-
+        posetLen = 1
         doProcessing = False
         while level < self.N+1 and len(thisLevel) > 0:
 
@@ -348,6 +348,8 @@ class Poset(Chare):
             hashWorkerProxy.getLevelList(levelListFut)
             nextLevel = levelListFut.get()
 
+            posetLen += len(nextLevel)
+
             # Retrieve faces for all the nodes in the current level
             facesList = [0 for i in range(len(thisLevel))]
             for k in range(len(self.posetPEs)):
@@ -358,47 +360,47 @@ class Poset(Chare):
 
 
 
-            for k in range(len(thisLevel)):
-                i = intSet(thisLevel[k],self.N)
-                if i in self.hashTable:
-                    thisLevel[k] = self.hashTable[i]
-                    thisLevel[k].facesInt = facesList[k]
-                else:
-                    thisLevel[k] = OldPosetNode( i, level+1, facesInt=facesList[k] )
-                    self.hashTable[i] = thisLevel[k]
-                if not thisLevel[k].regionProcessed:
-                    if emitNodes:
-                        retChannel.send(thisLevel[k].INTrep.iINT)
-                    if checkNodes:
-                        # First update self.workGroup with the new node
-                        if self.peCounter == len(self.pes)-1 and self.stackCounter == self.stackNum - 1:
-                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
-                            thisLevel[k].regionProcessed = True
-                            self.peCounter += 1
-                            doProcessing = True
-                        elif self.peCounter < len(self.pes)-1 and self.stackCounter < self.stackNum:
-                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
-                            thisLevel[k].regionProcessed = True
-                            self.peCounter += 1
-                        elif self.peCounter == len(self.pes)-1 and self.stackCounter < self.stackNum - 1:
-                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
-                            thisLevel[k].regionProcessed = True
-                            self.stackCounter += 1
-                            self.peCounter = 0
-                        if doProcessing:
-                            f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
-                            f.get()
-                            f = self.nodeSchedInst.foundQ(awaitable=True) 
-                            if f.get():
-                                self.incomplete = True
-                                # We found a 'True' on some poset node, so shut everything down
-                                if emitNodes:
-                                    retChannel.send(-2)
-                                return
-                            # Reset the counters
-                            doProcessing = False
-                            self.peCounter = 0
-                            self.stackCounter = 0
+            # for k in range(len(thisLevel)):
+            #     i = intSet(thisLevel[k],self.N)
+            #     if i in self.hashTable:
+            #         thisLevel[k] = self.hashTable[i]
+            #         thisLevel[k].facesInt = facesList[k]
+            #     else:
+            #         thisLevel[k] = OldPosetNode( i, level+1, facesInt=facesList[k] )
+            #         self.hashTable[i] = thisLevel[k]
+            #     if not thisLevel[k].regionProcessed:
+            #         if emitNodes:
+            #             retChannel.send(thisLevel[k].INTrep.iINT)
+            #         if checkNodes:
+            #             # First update self.workGroup with the new node
+            #             if self.peCounter == len(self.pes)-1 and self.stackCounter == self.stackNum - 1:
+            #                 self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
+            #                 thisLevel[k].regionProcessed = True
+            #                 self.peCounter += 1
+            #                 doProcessing = True
+            #             elif self.peCounter < len(self.pes)-1 and self.stackCounter < self.stackNum:
+            #                 self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
+            #                 thisLevel[k].regionProcessed = True
+            #                 self.peCounter += 1
+            #             elif self.peCounter == len(self.pes)-1 and self.stackCounter < self.stackNum - 1:
+            #                 self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
+            #                 thisLevel[k].regionProcessed = True
+            #                 self.stackCounter += 1
+            #                 self.peCounter = 0
+            #             if doProcessing:
+            #                 f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
+            #                 f.get()
+            #                 f = self.nodeSchedInst.foundQ(awaitable=True) 
+            #                 if f.get():
+            #                     self.incomplete = True
+            #                     # We found a 'True' on some poset node, so shut everything down
+            #                     if emitNodes:
+            #                         retChannel.send(-2)
+            #                     return
+            #                 # Reset the counters
+            #                 doProcessing = False
+            #                 self.peCounter = 0
+            #                 self.stackCounter = 0
             
             
             
@@ -421,13 +423,9 @@ class Poset(Chare):
         if emitNodes:
             retChannel.send(-1)
         self.incomplete = False
-        posetLen = 0
-        for ii in self.hashTable.keys():
-            if self.hashTable[ii].facesInt > 0:
-                posetLen += 1
         
-        print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
-        print('Computed a (partial) poset of size (nontrivial regions): ' + str(posetLen))
+        # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
+        print('Computed a (partial) poset of size: ' + str(posetLen))
         # return [i.iINT for i in self.hashTable.keys()]
         self.populated = True
         return posetLen
@@ -494,11 +492,16 @@ class successorWorker(Chare):
             self.outChannels[k].send((self.thisIndex,k))
             #print('Message sent!')
 
-    def hashNode(self,nodeInt):
+    def hashNodeMD5(self,nodeInt):
         hashInt = int.from_bytes( \
             hashlib.md5(nodeInt.to_bytes(self.numBytes,byteorder=self.endian)).digest(), \
             byteorder=self.endian \
         )
+        return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
+    
+    def hashNode(self,nodeInt):
+        p = 6148914691236517205*(nodeInt^(nodeInt>>32))
+        hashInt = 17316035218449499591*(p^(p>>32))
         return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
 
     @coro
