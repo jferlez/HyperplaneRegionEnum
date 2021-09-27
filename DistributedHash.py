@@ -11,7 +11,7 @@ Reducer.addReducer(Join)
 class HashWorker(Chare):
 
     def __init__(self,nodeConstructor,parentProxy,pes):
-        self.hashPEs = pes
+        self.hashPElist = pes
         self.inChannels = []
         self.level = -1
         self.levelList = []
@@ -31,7 +31,7 @@ class HashWorker(Chare):
 
     @coro
     def addOriginChannel(self,feederProxies):
-        if charm.myPe() < self.hashPEs[0] or charm.myPe() >= self.hashPEs[1]:
+        if not charm.myPe() in self.hashPElist:
             return
         self.numFeederWorkers = len(feederProxies)
         self.inChannels = [Channel(self, remote=proxy) for proxy in feederProxies]
@@ -62,7 +62,7 @@ class HashWorker(Chare):
 
     @coro
     def initListen(self,fut):
-        if charm.myPe() < self.hashPEs[0] or charm.myPe() >= self.hashPEs[1]:
+        if not charm.myPe() in self.hashPElist:
             return
         for ch in self.inChannels:
             self.status[ch] = 0
@@ -142,19 +142,27 @@ class DistHash(Chare):
         self.posetPEs = posetPEs
         self.nodeConstructor = nodeConstructor
         self.hashPEs = hashPEs
-        if hashPEs == None:
-            self.hashPEs = (0,charm.numPes())
-        self.hWorkersFull = Group(HashWorker,args=[self.nodeConstructor, self.thisProxy, self.hashPEs])
+        self.hashPElist = list(itertools.chain.from_iterable( \
+               [list(range(r[0],r[1],r[2])) for r in self.hashPEs] \
+            ))
+        self.hWorkersFull = Group(HashWorker,args=[self.nodeConstructor, self.thisProxy, self.hashPElist])
         charm.awaitCreation(self.hWorkersFull)
-        self.hWorkers = self.hWorkersFull[self.hashPEs[0]:self.hashPEs[1]]
-        self.hashWorkerProxies = self.hWorkersFull.getProxies(ret=True).get()[self.hashPEs[0]:self.hashPEs[1]]
+        secs = [self.hWorkersFull[r[0]:r[1]:r[2]] for r in self.hashPEs]
+        self.hWorkers = charm.combine(*secs)
+        self.hashWorkerProxies = self.hWorkersFull.getProxies(ret=True).get()
+        self.hashWorkerProxies = list(itertools.chain.from_iterable( \
+                [self.hashWorkerProxies[r[0]:r[1]:r[2]] for r in self.hashPEs]
+            ))
         # self.hashWorkerProxies = self.hashWorkerProxies.get()
         self.hashWorkerChannels = [Channel(self, remote=proxy) for proxy in self.hashWorkerProxies]
 
     @coro
     def initialize(self):
         # Get a list of proxies for all memembers of the feeder group:
-        feederProxies = self.feederGroup.getProxies(ret=True).get()[self.posetPEs[0]:self.posetPEs[1]]
+        secs = self.feederGroup.getProxies(ret=True).get()
+        feederProxies = list(itertools.chain.from_iterable( \
+                [secs[r[0]:r[1]:r[2]] for r in self.posetPEs]
+            ))
         # print(feederProxies)
         # Establish a feedback channel so that the hash table can send messages to the feeder workers:
         myFut = self.feederGroup.addFeedbackChannel(self.thisProxy, awaitable=True)

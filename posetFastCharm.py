@@ -4,7 +4,7 @@ import cdd
 import numpy as np
 from copy import copy
 import time
-from itertools import repeat
+import itertools
 from functools import partial
 import encapsulateLP
 import DistributedHash
@@ -48,25 +48,36 @@ class OldPosetNode:
 
 class Poset(Chare):
     
-    def __init__(self, checkNodeGroup, groupPEs, useParNodeSched, posetPEs, batchSize):
+    def __init__(self, checkNodeGroup, groupPEs, useParNodeSched, peSpec, batchSize):
         
         self.checkNodeGroup = checkNodeGroup
         self.useParNodeSched = useParNodeSched
         self.groupPEs = groupPEs
-        self.posetPEs = posetPEs
+        # self.posetPEs = posetPEs
         self.stackNum = batchSize
 
         # Create a group to paralellize the computation of successors
         # (Use all PEs unless a list was explicitly passed to us)
+        if peSpec == None:
+            self.posetPEs = [(0,charm.numPes(),1)]
+            self.hashPEs = [(0,charm.numPes(),1)]
+        else:
+            self.posetPEs = peSpec['poset']
+            self.hashPEs = peSpec['hash']
         
-        if self.posetPEs == None:
-            self.posetPEs = (0,charm.numPes())
-        self.posetPElist = list(range(self.posetPEs[0],self.posetPEs[1]))
-        self.succGroupFull = Group(successorWorker,args=[self.posetPEs])
-        self.succGroup = self.succGroupFull[self.posetPEs[0]:self.posetPEs[1]]
-
+        self.posetPElist = list(itertools.chain.from_iterable( \
+               [list(range(r[0],r[1],r[2])) for r in self.posetPEs] \
+            ))
+        self.succGroupFull = Group(successorWorker,args=[self.posetPElist])
+        secs = [self.succGroupFull[r[0]:r[1]:r[2]] for r in self.posetPEs]
+        self.succGroup = charm.combine(*secs)
+        successorProxies = self.succGroupFull.getProxies(ret=True).get()
+        self.successorProxies = list(itertools.chain.from_iterable( \
+                [successorProxies[r[0]:r[1]:r[2]] for r in self.posetPEs] \
+            ))
         self.nodeSchedInst = Chare(checkNodesSchedulerInt, onPE=charm.myPe())
-
+        # print(self.posetPElist)
+        # print(len(self.successorProxies))
     # @coro
     # def initializeFromConstraintObject(self, flippedConstraints):
     #     self.flippedConstraints = flippedConstraints
@@ -118,7 +129,7 @@ class Poset(Chare):
 
        
         # Initialize a new distributed hash table:
-        self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroupFull,PosetNode,None,self.posetPEs])
+        self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroupFull,PosetNode,self.hashPEs,self.posetPEs])
         # print('Initialized distHashTable group')
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
@@ -187,10 +198,10 @@ class Poset(Chare):
         doProcessing = False
         while level < self.N+1 and len(thisLevel) > 0:
 
-            successorProxies = self.succGroup.getProxies(ret=True).get()
-            doneFuts = [Future() for k in range(len(successorProxies))]
-            for k in range(len(successorProxies)):
-                successorProxies[k].initListNew( \
+            # successorProxies = self.succGroup.getProxies(ret=True).get()
+            doneFuts = [Future() for k in range(len(self.successorProxies))]
+            for k in range(len(self.successorProxies)):
+                self.successorProxies[k].initListNew( \
                             [ i for i in thisLevel[k:len(thisLevel):len(self.posetPElist)] ], \
                             doneFuts[k]
                         )
@@ -329,10 +340,10 @@ class Poset(Chare):
         doProcessing = False
         while level < self.N+1 and len(thisLevel) > 0:
 
-            successorProxies = self.succGroup.getProxies(ret=True).get()
-            doneFuts = [Future() for k in range(len(successorProxies))]
-            for k in range(len(successorProxies)):
-                successorProxies[k].initListNew( \
+            # successorProxies = self.succGroup.getProxies(ret=True).get()
+            doneFuts = [Future() for k in range(len(self.successorProxies))]
+            for k in range(len(self.successorProxies)):
+                self.successorProxies[k].initListNew( \
                             [ i for i in thisLevel[k:len(thisLevel):len(self.posetPElist)] ], \
                             doneFuts[k]
                         )
@@ -446,7 +457,7 @@ class Poset(Chare):
 class successorWorker(Chare):
 
     def __init__(self,pes):
-        self.pelist = pes
+        self.posetPElist = pes
 
     def initialize(self,N,constraints):
         self.workInts = []
@@ -475,7 +486,7 @@ class successorWorker(Chare):
 
     @coro
     def getLPCount(self, lpCountFut):
-        retVal = 0 if charm.myPe() < self.pelist[0] or charm.myPe() >= self.pelist[1] else self.lp.lpCount
+        retVal = 0 if not charm.myPe() in self.posetPElist else self.lp.lpCount
         self.reduce(lpCountFut,retVal,Reducer.sum)
     
     @coro
@@ -483,7 +494,7 @@ class successorWorker(Chare):
         return self.thisProxy[self.thisIndex]
     @coro
     def addDestChannel(self, procGroupProxies):
-        if charm.myPe() < self.pelist[0] or charm.myPe() >= self.pelist[1]:
+        if not charm.myPe() in self.posetPElist:
             return
         self.numHashWorkers = len(procGroupProxies)
         self.outChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
@@ -499,7 +510,7 @@ class successorWorker(Chare):
         # print(self.outChannels)
     @coro
     def addFeedbackChannel(self,proxy):
-        if charm.myPe() < self.pelist[0] or charm.myPe() >= self.pelist[1]:
+        if not charm.myPe() in self.posetPElist:
             return
         self.feedbackChannel = Channel(self,remote=proxy)
     @coro
