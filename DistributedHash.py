@@ -10,10 +10,12 @@ Reducer.addReducer(Join)
 
 class HashWorker(Chare):
 
-    def __init__(self,nodeConstructor,parentProxy):
+    def __init__(self,nodeConstructor,parentProxy,pes):
+        self.hashPEs = pes
         self.inChannels = []
         self.level = -1
         self.levelList = []
+        self.levelDone = True
         self.table = {}
         self.nodeConstructor = nodeConstructor
         self.parentProxy = parentProxy
@@ -29,6 +31,8 @@ class HashWorker(Chare):
 
     @coro
     def addOriginChannel(self,feederProxies):
+        if charm.myPe() < self.hashPEs[0] or charm.myPe() >= self.hashPEs[1]:
+            return
         self.numFeederWorkers = len(feederProxies)
         self.inChannels = [Channel(self, remote=proxy) for proxy in feederProxies]
         self.status = {}
@@ -58,6 +62,8 @@ class HashWorker(Chare):
 
     @coro
     def initListen(self,fut):
+        if charm.myPe() < self.hashPEs[0] or charm.myPe() >= self.hashPEs[1]:
+            return
         for ch in self.inChannels:
             self.status[ch] = 0
             self.messages[ch] = {'msg':None, 'fut':None}
@@ -83,6 +89,7 @@ class HashWorker(Chare):
             chIdx = self.loopback.recv()
             ch = self.inChannels[chIdx]
             msg = self.messages[ch]
+            # print('Processed message ' + str(msg))
             val = msg['msg']
             msgCount[ch] += 1
             if val == -3:
@@ -130,24 +137,25 @@ class HashWorker(Chare):
 
 class DistHash(Chare):
 
-    def __init__(self, feederGroup, nodeConstructor, pelist):
+    def __init__(self, feederGroup, nodeConstructor, hashPEs, posetPEs):
         self.feederGroup = feederGroup
+        self.posetPEs = posetPEs
         self.nodeConstructor = nodeConstructor
-        if pelist == None:
-            self.hWorkers = Group(HashWorker,args=[self.nodeConstructor, self.thisProxy])
-        else:
-            self.hWorkers = Group(HashWorker,args=[self.nodeConstructor, self.thisProxy],onPEs=pelist)
-        charm.awaitCreation(self.hWorkers)
-        self.hashWorkerProxies = self.hWorkers.getProxies(ret=True)
-        self.hashWorkerProxies = self.hashWorkerProxies.get()
+        self.hashPEs = hashPEs
+        if hashPEs == None:
+            self.hashPEs = (0,charm.numPes())
+        self.hWorkersFull = Group(HashWorker,args=[self.nodeConstructor, self.thisProxy, self.hashPEs])
+        charm.awaitCreation(self.hWorkersFull)
+        self.hWorkers = self.hWorkersFull[self.hashPEs[0]:self.hashPEs[1]]
+        self.hashWorkerProxies = self.hWorkersFull.getProxies(ret=True).get()[self.hashPEs[0]:self.hashPEs[1]]
+        # self.hashWorkerProxies = self.hashWorkerProxies.get()
         self.hashWorkerChannels = [Channel(self, remote=proxy) for proxy in self.hashWorkerProxies]
 
     @coro
     def initialize(self):
         # Get a list of proxies for all memembers of the feeder group:
-        feederProxies = self.feederGroup.getProxies(ret=True)
-        feederProxies = feederProxies.get()
-
+        feederProxies = self.feederGroup.getProxies(ret=True).get()[self.posetPEs[0]:self.posetPEs[1]]
+        # print(feederProxies)
         # Establish a feedback channel so that the hash table can send messages to the feeder workers:
         myFut = self.feederGroup.addFeedbackChannel(self.thisProxy, awaitable=True)
         myFut.get()        
@@ -157,7 +165,7 @@ class DistHash(Chare):
         myFut = self.feederGroup.addDestChannel(self.hashWorkerProxies , awaitable=True)
         myFut.get()
 
-        myFut = self.hWorkers.addOriginChannel(feederProxies,awaitable=True)
+        myFut = self.hWorkersFull.addOriginChannel(feederProxies,awaitable=True)
         myFut.get()
 
     @coro
@@ -180,7 +188,7 @@ class DistHash(Chare):
     @coro
     def getLevelList(self):
         nextlevel = Future()
-        self.hWorkers.getLevelList(nextlevel)
+        self.hWorkersFull.getLevelList(nextlevel)
         return nextlevel.get()
 
     def getWorkerProxy(self):

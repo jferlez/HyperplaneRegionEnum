@@ -58,11 +58,12 @@ class Poset(Chare):
 
         # Create a group to paralellize the computation of successors
         # (Use all PEs unless a list was explicitly passed to us)
+        
         if self.posetPEs == None:
-            self.succGroup = Group(successorWorker)
-            self.posetPEs = list(range(charm.numPes()))
-        else:
-            self.succGroup = Group(successorWorker, onPEs=self.posetPEs)
+            self.posetPEs = (0,charm.numPes())
+        self.posetPElist = list(range(self.posetPEs[0],self.posetPEs[1]))
+        self.succGroupFull = Group(successorWorker,args=[self.posetPEs])
+        self.succGroup = self.succGroupFull[self.posetPEs[0]:self.posetPEs[1]]
 
         self.nodeSchedInst = Chare(checkNodesSchedulerInt, onPE=charm.myPe())
 
@@ -115,10 +116,14 @@ class Poset(Chare):
         stat = self.succGroup.initialize(self.N,self.flippedConstraints.constraints,awaitable=True)
         stat.get()
 
+       
         # Initialize a new distributed hash table:
-        self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroup,PosetNode,None])
+        self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroupFull,PosetNode,None,self.posetPEs])
+        # print('Initialized distHashTable group')
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
+
+        
         
 
         # TODO: code to insert the root node into the hash table...
@@ -186,7 +191,7 @@ class Poset(Chare):
             doneFuts = [Future() for k in range(len(successorProxies))]
             for k in range(len(successorProxies)):
                 successorProxies[k].initListNew( \
-                            [ i for i in thisLevel[k:len(thisLevel):len(self.posetPEs)] ], \
+                            [ i for i in thisLevel[k:len(thisLevel):len(self.posetPElist)] ], \
                             doneFuts[k]
                         )
             cnt = 0
@@ -200,12 +205,11 @@ class Poset(Chare):
 
             # Retrieve faces for all the nodes in the current level
             facesList = [0 for i in range(len(thisLevel))]
-            for k in range(len(self.posetPEs)):
-                facesListFut = self.succGroup[self.posetPEs[k]].retrieveFaces(awaitable=True)
+            for k in range(len(self.posetPElist)):
+                facesListFut = self.succGroupFull[self.posetPElist[k]].retrieveFaces(awaitable=True)
                 facesListWork = facesListFut.get()
-                for i in range(k,len(thisLevel),len(self.posetPEs)):
-                    facesList[i] = facesListWork[int((i-k)/len(self.posetPEs))]
-
+                for i in range(k,len(thisLevel),len(self.posetPElist)):
+                    facesList[i] = facesListWork[int((i-k)/len(self.posetPElist))]
 
 
             for k in range(len(thisLevel)):
@@ -257,7 +261,7 @@ class Poset(Chare):
 
         # Note, this print has to go here because this coroutine is only suspending until checkNodes is set
         lpCountFut = Future()
-        self.succGroup.getLPCount(lpCountFut)
+        self.succGroupFull.getLPCount(lpCountFut)
         lpCount = lpCountFut.get()
         print('Total LPs used: ' + str(lpCount))
 
@@ -329,7 +333,7 @@ class Poset(Chare):
             doneFuts = [Future() for k in range(len(successorProxies))]
             for k in range(len(successorProxies)):
                 successorProxies[k].initListNew( \
-                            [ i for i in thisLevel[k:len(thisLevel):len(self.posetPEs)] ], \
+                            [ i for i in thisLevel[k:len(thisLevel):len(self.posetPElist)] ], \
                             doneFuts[k]
                         )
             cnt = 0
@@ -342,12 +346,12 @@ class Poset(Chare):
 
             self.succGroup.computeSuccessorsNew()
 
-            
+            # print('Started looking for successors')
             self.distHashTable.levelDone(awaitable=True).get()
-
+            # print('Done with level')
             nextLevel = self.distHashTable.getLevelList(ret=True).get()
-            
 
+            # print('made it to next level')
             # Retrieve the nodes for the next level
             # hashWorkerProxy = self.distHashTable.getWorkerProxy(ret=True).get()
             # levelListFut = Future()
@@ -355,17 +359,17 @@ class Poset(Chare):
             # nextLevel = levelListFut.get()
 
             posetLen += len(nextLevel)
-
+            # print(posetLen)
             # Retrieve faces for all the nodes in the current level
             facesList = [0 for i in range(len(thisLevel))]
-            for k in range(len(self.posetPEs)):
-                facesListFut = self.succGroup[self.posetPEs[k]].retrieveFaces(awaitable=True)
+            for k in range(len(self.posetPElist)):
+                facesListFut = self.succGroupFull[self.posetPElist[k]].retrieveFaces(awaitable=True)
                 facesListWork = facesListFut.get()
-                for i in range(k,len(thisLevel),len(self.posetPEs)):
-                    facesList[i] = facesListWork[int((i-k)/len(self.posetPEs))]
+                for i in range(k,len(thisLevel),len(self.posetPElist)):
+                    facesList[i] = facesListWork[int((i-k)/len(self.posetPElist))]
 
 
-
+            # print('Processed faces')
             # for k in range(len(thisLevel)):
             #     i = intSet(thisLevel[k],self.N)
             #     if i in self.hashTable:
@@ -415,7 +419,7 @@ class Poset(Chare):
 
         # Note, this print has to go here because this coroutine is only suspending until checkNodes is set
         lpCountFut = Future()
-        self.succGroup.getLPCount(lpCountFut)
+        self.succGroupFull.getLPCount(lpCountFut)
         lpCount = lpCountFut.get()
         print('Total LPs used: ' + str(lpCount))
 
@@ -440,6 +444,9 @@ class Poset(Chare):
 
 
 class successorWorker(Chare):
+
+    def __init__(self,pes):
+        self.pelist = pes
 
     def initialize(self,N,constraints):
         self.workInts = []
@@ -468,13 +475,16 @@ class successorWorker(Chare):
 
     @coro
     def getLPCount(self, lpCountFut):
-        self.reduce(lpCountFut,self.lp.lpCount,Reducer.sum)
+        retVal = 0 if charm.myPe() < self.pelist[0] or charm.myPe() >= self.pelist[1] else self.lp.lpCount
+        self.reduce(lpCountFut,retVal,Reducer.sum)
     
     @coro
     def getProxies(self):
         return self.thisProxy[self.thisIndex]
     @coro
     def addDestChannel(self, procGroupProxies):
+        if charm.myPe() < self.pelist[0] or charm.myPe() >= self.pelist[1]:
+            return
         self.numHashWorkers = len(procGroupProxies)
         self.outChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
         self.numHashBits = 1
@@ -489,6 +499,8 @@ class successorWorker(Chare):
         # print(self.outChannels)
     @coro
     def addFeedbackChannel(self,proxy):
+        if charm.myPe() < self.pelist[0] or charm.myPe() >= self.pelist[1]:
+            return
         self.feedbackChannel = Channel(self,remote=proxy)
     @coro
     def testSend(self):
