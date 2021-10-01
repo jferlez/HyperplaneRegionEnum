@@ -200,18 +200,20 @@ class DistHash(Chare):
         myFut = self.hWorkersFull.addOriginChannel(feederProxies,awaitable=True)
         myFut.get()
 
-    @coro
-    def levelDoneChannel(self, doneFut):
-        hashWorkerStatus = {}
-        for ch in self.hashWorkerChannels:
-            hashWorkerStatus[ch] = 0
-        for ch in charm.iwait(self.hashWorkerChannels):
-            val = ch.recv()
-            if val == -2 or val == -3:
-                hashWorkerStatus[ch] = val
-            if all([hashWorkerStatus[ch] < 0 for ch in self.hashWorkerChannels]):
-                doneFut.send(1)
-                break
+    # This method is superceded by the DistributedHash.initListening -> DistributedHash.levelDone().get() sequence
+    # It should be replaced by a method to signal the feeders on the feedback channel when early termination happens
+    # @coro
+    # def levelDoneChannel(self, doneFut):
+    #     hashWorkerStatus = {}
+    #     for ch in self.hashWorkerChannels:
+    #         hashWorkerStatus[ch] = 0
+    #     for ch in charm.iwait(self.hashWorkerChannels):
+    #         val = ch.recv()
+    #         if val == -2 or val == -3:
+    #             hashWorkerStatus[ch] = val
+    #         if all([hashWorkerStatus[ch] < 0 for ch in self.hashWorkerChannels]):
+    #             doneFut.send(1)
+    #             break
     
     @coro
     def levelDone(self):
