@@ -337,6 +337,17 @@ class Poset(Chare):
         level = 0
         thisLevel = [0]
         posetLen = 1
+
+        # Send this node into the distributed hash table
+        initFut = Future()
+        self.distHashTable.initListening(initFut)
+        initFut.get()
+
+        self.successorProxies[0].hashAndSend(thisLevel[0])
+
+        self.succGroup.sendAll(-2)
+        self.distHashTable.levelDone(awaitable=True).get()
+
         doProcessing = False
         while level < self.N+1 and len(thisLevel) > 0:
 
@@ -533,6 +544,10 @@ class successorWorker(Chare):
         hashInt = 17316035218449499591*(p^(p>>32))
         return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
 
+    def hashAndSend(self,nodeInt):
+        val = self.hashNode(nodeInt)
+        self.outChannels[val[0]].send(val)
+
     @coro
     def tester(self):
         print('Entered tester on PE ' + str(charm.myPe()))
@@ -549,8 +564,10 @@ class successorWorker(Chare):
         # print(self.workInts)
         fut.send(1)
 
-    @coro
+    #@coro
     def sendAll(self,val):
+        if not charm.myPe() in self.posetPElist:
+            return
         for ch in self.outChannels:
             ch.send(val)
 
