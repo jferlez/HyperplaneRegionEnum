@@ -42,6 +42,30 @@ class HashWorker(Chare):
             self.status[ch] = 0
             self.messages[ch] = {'msg':None, 'fut':None}
             self.workerDone[ch] = None
+    
+    # The following two methods allow a DistributedHash to function as a "feeder" to **another** DistributedHash!
+    # To do: implement the feedback channel from the other DistributedHash...
+    @coro
+    def addDestChannel(self, procGroupProxies):
+        if not charm.myPe() in self.hashPElist:
+            return
+        self.numHashWorkers = len(procGroupProxies)
+        self.outChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
+        self.numHashBits = 1
+        while self.numHashBits < self.numHashWorkers:
+            self.numHashBits = self.numHashBits << 1
+        self.hashMask = self.numHashBits - 1
+        self.numHashBits -= 1
+        if self.N % 4 == 0:
+            self.numBytes = self.N/4
+        else:
+            self.numBytes = int(self.N/4)+1
+        # print(self.outChannels)
+    @coro
+    def addFeedbackChannel(self,proxy):
+        if not charm.myPe() in self.hashPElist:
+            return
+        self.feedbackChannel = Channel(self,remote=proxy)
 
     @coro
     def localListener(self,ch,chIdx):
