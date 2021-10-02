@@ -18,29 +18,42 @@ import warnings
 warnings.simplefilter(action = "ignore", category = RuntimeWarning)
 
 
-class PosetNode():
+class PosetNode(DistributedHash.Node):
+    # DO NOT OVERRIDE PARENT'S __init__() method
+    # DistributedHash will create a local property with a proxy, self.localProxy, that we can call
+    #   (we will use this to make sure that any necessary variables are copied to the required PEs)
+    # DistributedHash will also add a property called parentChare to allow acces to data on the hash worker
+    def dummy(self):
+        pass
+    # These methods are optional, and will be called at an appropriate time by DistributedHash if present
+    def init(self):
+        self.constraints = self.localProxy.getConstraints(ret=True).get()
 
-    def __init__(self,lsb,msb,nodeInt):
-        self.lsbHash = lsb
-        self.msbHash = msb
-        self.nodeInt = nodeInt
-    
-    def __hash__(self):
-        return self.msbHash
-    
-    def __eq__(self,other):
-        if type(other) == int:
-            return self.nodeInt == other
-        else:
-            return self.nodeInt == other.nodeInt
+    # def update(self):
+    #     pass
 
+    # def check(self):
+    #     pass
+
+class localVar(Chare):
+    def __init__(self,constraints):
+        self.constraints = constraints
+    def getConstraints(self):
+        return self.constraints
 
 class Poset(Chare):
     
-    def __init__(self, peSpec, batchSize):
+    def __init__(self, peSpec, batchSize, nodeConstructor, localVarGroup):
         
         self.stackNum = batchSize
-
+        # To do: check to make sure we're passed a valid Group in localVarGroup
+        self.localVarGroup = localVarGroup
+        self.useDefaultLocalVarGroup = False
+        if localVarGroup is None:
+            self.useDefaultLocalVarGroup = True
+        self.nodeConstructor = nodeConstructor
+        if self.nodeConstructor is None:
+            self.nodeConstructor = PosetNode
         # Create a group to paralellize the computation of successors
         # (Use all PEs unless a list was explicitly passed to us)
         if peSpec == None:
@@ -85,10 +98,17 @@ class Poset(Chare):
         
         stat = self.succGroup.initialize(self.N,self.flippedConstraints.constraints,awaitable=True)
         stat.get()
-
-       
+        if self.useDefaultLocalVarGroup:
+            self.localVarGroup = Group(localVar,args=[self.flippedConstraints])
+            charm.awaitCreation(self.localVarGroup) 
         # Initialize a new distributed hash table:
-        self.distHashTable = Chare(DistributedHash.DistHash,args=[self.succGroupFull,PosetNode,self.hashPEs,self.posetPEs])
+        self.distHashTable = Chare(DistributedHash.DistHash,args=[
+            self.succGroupFull, \
+            self.nodeConstructor, \
+            self.localVarGroup, \
+            self.hashPEs, \
+            self.posetPEs \
+        ])
         # print('Initialized distHashTable group')
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
@@ -253,7 +273,7 @@ class successorWorker(Chare):
     
     def hashNode(self,nodeInt):
         p = 6148914691236517205*(nodeInt^(nodeInt>>32))
-        hashInt = 17316035218449499591*(p^(p>>32))
+        hashInt = (17316035218449499591*(p^(p>>32))) & ((1 << 33)-1)
         return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
 
     def hashAndSend(self,nodeInt):

@@ -4,13 +4,35 @@ from numpy import may_share_memory
 import time
 import itertools
 
+
+
+class Node():
+
+    def __init__(self,lsb,msb,nodeInt,localProxy, parentChare):
+        self.lsbHash = lsb
+        self.msbHash = msb
+        self.nodeInt = nodeInt
+        self.localProxy = localProxy
+        self.parentChare = parentChare
+    
+    def __hash__(self):
+        return self.msbHash
+    
+    def __eq__(self,other):
+        if type(other) == int:
+            return self.nodeInt == other
+        elif isinstance(other,Node):
+            return self.nodeInt == other.nodeInt
+
+
+
 def Join(contribs):
     return list(itertools.chain.from_iterable(contribs))
 Reducer.addReducer(Join)
 
 class HashWorker(Chare):
 
-    def __init__(self,nodeConstructor,parentProxy,pes):
+    def __init__(self,nodeConstructor,localVarGroup,parentProxy,pes):
         self.hashPElist = pes
         self.inChannels = []
         self.level = -1
@@ -18,6 +40,14 @@ class HashWorker(Chare):
         self.levelDone = True
         self.table = {}
         self.nodeConstructor = nodeConstructor
+        self.nodeCalls = 0
+        callIdx = 0
+        for checkCall in ['init','update','check']:
+            call = getattr(self.nodeConstructor,checkCall,None)
+            if callable(call):
+                self.nodeCalls += 1 << callIdx
+                callIdx += 1
+        self.localVarGroup = localVarGroup
         self.parentProxy = parentProxy
         self.parentChannel = Channel(self,remote=self.parentProxy)
         self.loopback = Channel(self,remote=self.thisProxy[self.thisIndex])
@@ -129,7 +159,9 @@ class HashWorker(Chare):
             elif type(val) == tuple and len(val) == 3:
                 # if self.status[ch] == -1:
                     # Process node
-                newNode = self.nodeConstructor(*val)
+                newNode = self.nodeConstructor(*val, self.localVarGroup[charm.myPe()], self)
+                if self.nodeCalls & 1:
+                    newNode.init()
                 if not newNode in self.table:
                     self.table[newNode] = {'nodeInt': val[2], 'checked':False}
                     self.levelList.append(val[2])
@@ -161,15 +193,18 @@ class HashWorker(Chare):
 
 class DistHash(Chare):
 
-    def __init__(self, feederGroup, nodeConstructor, hashPEs, posetPEs):
+    def __init__(self, feederGroup, nodeConstructor, localVarGroup, hashPEs, posetPEs):
         self.feederGroup = feederGroup
         self.posetPEs = posetPEs
         self.nodeConstructor = nodeConstructor
+        if self.nodeConstructor is None:
+            self.nodeConstructor = Node
+        self.localVarGroup = localVarGroup
         self.hashPEs = hashPEs
         self.hashPElist = list(itertools.chain.from_iterable( \
                [list(range(r[0],r[1],r[2])) for r in self.hashPEs] \
             ))
-        self.hWorkersFull = Group(HashWorker,args=[self.nodeConstructor, self.thisProxy, self.hashPElist])
+        self.hWorkersFull = Group(HashWorker,args=[self.nodeConstructor, self.localVarGroup, self.thisProxy, self.hashPElist])
         charm.awaitCreation(self.hWorkersFull)
         secs = [self.hWorkersFull[r[0]:r[1]:r[2]] for r in self.hashPEs]
         self.hWorkers = charm.combine(*secs)
