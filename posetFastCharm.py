@@ -48,12 +48,8 @@ class OldPosetNode:
 
 class Poset(Chare):
     
-    def __init__(self, checkNodeGroup, groupPEs, useParNodeSched, peSpec, batchSize):
+    def __init__(self, peSpec, batchSize):
         
-        self.checkNodeGroup = checkNodeGroup
-        self.useParNodeSched = useParNodeSched
-        self.groupPEs = groupPEs
-        # self.posetPEs = posetPEs
         self.stackNum = batchSize
 
         # Create a group to paralellize the computation of successors
@@ -75,24 +71,7 @@ class Poset(Chare):
         self.successorProxies = list(itertools.chain.from_iterable( \
                 [successorProxies[r[0]:r[1]:r[2]] for r in self.posetPEs] \
             ))
-        self.nodeSchedInst = Chare(checkNodesSchedulerInt, onPE=charm.myPe())
-        # print(self.posetPElist)
-        # print(len(self.successorProxies))
-    # @coro
-    # def initializeFromConstraintObject(self, flippedConstraints):
-    #     self.flippedConstraints = flippedConstraints
-    #     self.N = len(self.flippedConstraints.nA)
 
-    #     self.hashTable = {}
-    #     self.levelArray = [[] for i in range(len(self.flippedConstraints.nA))]
-
-    #     self.root = OldPosetNode(intSet(0,self.N), self.flippedConstraints)
-    #     self.hashTable[self.root.INTrep] = self.root
-    #     self.levelArray[0].append(self.root)
-    #     self.root.regionLeveled = True
-    #     self.incomplete = True
-    #     self.stackNum = 10
-    #     self.populated = False
     
     def initialize(self, AbPairs, pt, fixedA, fixedb):
         self.AbPairs = AbPairs
@@ -102,15 +81,6 @@ class Poset(Chare):
 
         self.N = len(self.AbPairs[0][0])
 
-        # self.hashTable = {}
-        # self.levelArray = [[] for i in range(self.N)]
-
-        # self.root = OldPosetNode(intSet(0,self.N),0)
-        # self.hashTable[self.root.INTrep] = self.root
-        # self.levelArray[0].append(self.root)
-        # self.root.regionLeveled = True
-        # self.incomplete = True
-        # self.populated = False
 
     @coro
     def setConstraint(self,lb=0,out=0):
@@ -134,200 +104,17 @@ class Poset(Chare):
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
 
-        
-        
-
-        # TODO: code to insert the root node into the hash table...
-
-
-        # Deprecate this code
-        self.hashTable = {}
-        self.levelArray = [[] for i in range(self.N)]
-
-        self.root = OldPosetNode(intSet(0,self.N),0)
-        self.hashTable[self.root.INTrep] = self.root
-        self.levelArray[0].append(self.root)
-
-        # Deprecate these properties... (Should happen automatically with new code)
-        self.root.regionLeveled = True
-        self.incomplete = True
         self.populated = False
 
-        
-        
         return 1
 
 
     @coro
-    def populatePosetOld(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='clp', findAll=False ):
+    def populatePoset(self, method='fastLP', solver='clp', findAll=False ):
         if self.populated:
             return
         
 
-        emitNodes = False
-        if not retChannelEndPoint==None:
-            emitNodes = True
-            retChannel = Channel(self, remote=retChannelEndPoint)
-
-        checkNodes = False
-        if not checkNodesFuture==None:
-
-
-            if self.checkNodeGroup==None: # or not isinstance(checkNodeGroup,Group):
-                raise ValueError('Must supply a Chare Group node-check group via \'checkNodesGroup\' argument!')
-            self.peCounter = 0
-            self.stackCounter = 0
-            self.pes = [i for i in range(charm.numPes())] if len(self.groupPEs)==0 else self.groupPEs
-            self.workGroup = [[-1 for i in range(self.stackNum)] for j in range(len(self.pes))]
-
-            checkNodes = True
-            returned = False
-
-            # (Re-)Initialize the node checker group with the new data
-            
-            stat = self.nodeSchedInst.initialize(self.stackNum, self.checkNodeGroup, self.pes, checkNodesFuture,awaitable=True)
-            stat.get()
-
-        
-        self.succGroup.setMethod(method=method,solver=solver,findAll=findAll)
-
-        
-        level = 0
-        thisLevel = [0]
-
-        doProcessing = False
-        while level < self.N+1 and len(thisLevel) > 0:
-
-            # successorProxies = self.succGroup.getProxies(ret=True).get()
-            doneFuts = [Future() for k in range(len(self.successorProxies))]
-            for k in range(len(self.successorProxies)):
-                self.successorProxies[k].initListNew( \
-                            [ i for i in thisLevel[k:len(thisLevel):len(self.posetPElist)] ], \
-                            doneFuts[k]
-                        )
-            cnt = 0
-            for fut in charm.iwait(doneFuts):
-                cnt += fut.get()
-
-            successorList = Future()
-            self.succGroup.computeSuccessors(successorList)
-            nextLevel = list(successorList.get())
-
-
-            # Retrieve faces for all the nodes in the current level
-            facesList = [0 for i in range(len(thisLevel))]
-            for k in range(len(self.posetPElist)):
-                facesListFut = self.succGroupFull[self.posetPElist[k]].retrieveFaces(awaitable=True)
-                facesListWork = facesListFut.get()
-                for i in range(k,len(thisLevel),len(self.posetPElist)):
-                    facesList[i] = facesListWork[int((i-k)/len(self.posetPElist))]
-
-
-            for k in range(len(thisLevel)):
-                i = intSet(thisLevel[k],self.N)
-                if i in self.hashTable:
-                    thisLevel[k] = self.hashTable[i]
-                    thisLevel[k].facesInt = facesList[k]
-                else:
-                    thisLevel[k] = OldPosetNode( i, level+1, facesInt=facesList[k] )
-                    self.hashTable[i] = thisLevel[k]
-                if not thisLevel[k].regionProcessed:
-                    if emitNodes:
-                        retChannel.send(thisLevel[k].INTrep.iINT)
-                    if checkNodes:
-                        # First update self.workGroup with the new node
-                        if self.peCounter == len(self.pes)-1 and self.stackCounter == self.stackNum - 1:
-                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
-                            thisLevel[k].regionProcessed = True
-                            self.peCounter += 1
-                            doProcessing = True
-                        elif self.peCounter < len(self.pes)-1 and self.stackCounter < self.stackNum:
-                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
-                            thisLevel[k].regionProcessed = True
-                            self.peCounter += 1
-                        elif self.peCounter == len(self.pes)-1 and self.stackCounter < self.stackNum - 1:
-                            self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
-                            thisLevel[k].regionProcessed = True
-                            self.stackCounter += 1
-                            self.peCounter = 0
-                        if doProcessing:
-                            f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
-                            f.get()
-                            f = self.nodeSchedInst.foundQ(awaitable=True) 
-                            if f.get():
-                                self.incomplete = True
-                                # We found a 'True' on some poset node, so shut everything down
-                                if emitNodes:
-                                    retChannel.send(-2)
-                                return
-                            # Reset the counters
-                            doProcessing = False
-                            self.peCounter = 0
-                            self.stackCounter = 0
-            
-            
-            
-            thisLevel = nextLevel
-            level += 1
-
-        # Note, this print has to go here because this coroutine is only suspending until checkNodes is set
-        lpCountFut = Future()
-        self.succGroupFull.getLPCount(lpCountFut)
-        lpCount = lpCountFut.get()
-        print('Total LPs used: ' + str(lpCount))
-
-        if checkNodes:
-            f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
-            finalVal = f.get()
-            if not finalVal:
-                checkNodesFuture.send(False)
-
-        # Tell the channel endpoint that no more nodes are coming
-        if emitNodes:
-            retChannel.send(-1)
-        self.incomplete = False
-        posetLen = 0
-        for ii in self.hashTable.keys():
-            if self.hashTable[ii].facesInt > 0:
-                posetLen += 1
-        
-        print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
-        print('Computed a (partial) poset of size (nontrivial regions): ' + str(posetLen))
-        # return [i.iINT for i in self.hashTable.keys()]
-        self.populated = True
-        return posetLen
-
-    @coro
-    def populatePoset(self, retChannelEndPoint=None, checkNodesFuture=None, method='fastLP', solver='clp', findAll=False ):
-        if self.populated:
-            return
-        
-
-        emitNodes = False
-        if not retChannelEndPoint==None:
-            emitNodes = True
-            retChannel = Channel(self, remote=retChannelEndPoint)
-
-        checkNodes = False
-        if not checkNodesFuture==None:
-
-
-            if self.checkNodeGroup==None: # or not isinstance(checkNodeGroup,Group):
-                raise ValueError('Must supply a Chare Group node-check group via \'checkNodesGroup\' argument!')
-            self.peCounter = 0
-            self.stackCounter = 0
-            self.pes = [i for i in range(charm.numPes())] if len(self.groupPEs)==0 else self.groupPEs
-            self.workGroup = [[-1 for i in range(self.stackNum)] for j in range(len(self.pes))]
-
-            checkNodes = True
-            returned = False
-
-            # (Re-)Initialize the node checker group with the new data
-            
-            stat = self.nodeSchedInst.initialize(self.stackNum, self.checkNodeGroup, self.pes, checkNodesFuture,awaitable=True)
-            stat.get()
-
-        
         self.succGroup.setMethod(method=method,solver=solver,findAll=findAll)
 
         
@@ -348,7 +135,6 @@ class Poset(Chare):
         self.succGroup.sendAll(-2)
         self.distHashTable.levelDone(awaitable=True).get()
 
-        doProcessing = False
         while level < self.N+1 and len(thisLevel) > 0:
 
             # successorProxies = self.succGroup.getProxies(ret=True).get()
@@ -373,12 +159,7 @@ class Poset(Chare):
             # print('Done with level')
             nextLevel = self.distHashTable.getLevelList(ret=True).get()
 
-            # print('made it to next level')
-            # Retrieve the nodes for the next level
-            # hashWorkerProxy = self.distHashTable.getWorkerProxy(ret=True).get()
-            # levelListFut = Future()
-            # hashWorkerProxy.getLevelList(levelListFut)
-            # nextLevel = levelListFut.get()
+            
 
             posetLen += len(nextLevel)
             # print(posetLen)
@@ -391,50 +172,6 @@ class Poset(Chare):
                     facesList[i] = facesListWork[int((i-k)/len(self.posetPElist))]
 
 
-            # print('Processed faces')
-            # for k in range(len(thisLevel)):
-            #     i = intSet(thisLevel[k],self.N)
-            #     if i in self.hashTable:
-            #         thisLevel[k] = self.hashTable[i]
-            #         thisLevel[k].facesInt = facesList[k]
-            #     else:
-            #         thisLevel[k] = OldPosetNode( i, level+1, facesInt=facesList[k] )
-            #         self.hashTable[i] = thisLevel[k]
-            #     if not thisLevel[k].regionProcessed:
-            #         if emitNodes:
-            #             retChannel.send(thisLevel[k].INTrep.iINT)
-            #         if checkNodes:
-            #             # First update self.workGroup with the new node
-            #             if self.peCounter == len(self.pes)-1 and self.stackCounter == self.stackNum - 1:
-            #                 self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
-            #                 thisLevel[k].regionProcessed = True
-            #                 self.peCounter += 1
-            #                 doProcessing = True
-            #             elif self.peCounter < len(self.pes)-1 and self.stackCounter < self.stackNum:
-            #                 self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
-            #                 thisLevel[k].regionProcessed = True
-            #                 self.peCounter += 1
-            #             elif self.peCounter == len(self.pes)-1 and self.stackCounter < self.stackNum - 1:
-            #                 self.workGroup[self.peCounter][self.stackCounter] = thisLevel[k].INTrep.iINT + (thisLevel[k].facesInt << (self.N+1))
-            #                 thisLevel[k].regionProcessed = True
-            #                 self.stackCounter += 1
-            #                 self.peCounter = 0
-            #             if doProcessing:
-            #                 f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
-            #                 f.get()
-            #                 f = self.nodeSchedInst.foundQ(awaitable=True) 
-            #                 if f.get():
-            #                     self.incomplete = True
-            #                     # We found a 'True' on some poset node, so shut everything down
-            #                     if emitNodes:
-            #                         retChannel.send(-2)
-            #                     return
-            #                 # Reset the counters
-            #                 doProcessing = False
-            #                 self.peCounter = 0
-            #                 self.stackCounter = 0
-            
-            
             
             thisLevel = nextLevel
             level += 1
@@ -445,16 +182,7 @@ class Poset(Chare):
         lpCount = lpCountFut.get()
         print('Total LPs used: ' + str(lpCount))
 
-        if checkNodes:
-            f = self.nodeSchedInst.checkNode(self.peCounter,self.stackCounter,self.workGroup, awaitable=True)
-            finalVal = f.get()
-            if not finalVal:
-                checkNodesFuture.send(False)
-
-        # Tell the channel endpoint that no more nodes are coming
-        if emitNodes:
-            retChannel.send(-1)
-        self.incomplete = False
+        
         
         # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
         print('Computed a (partial) poset of size: ' + str(posetLen))
@@ -484,13 +212,8 @@ class successorWorker(Chare):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         if method=='cdd':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsCDD, self, solver=solver)
-            self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsCDD, self, solver=solver, send=True)
-        elif method=='simpleLP':
-            self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsSimpleLP, self, solver=solver)
-            self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsSimpleLP, self, solver=solver, send=True)
         elif method=='fastLP':
             self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll)
-            self.processNodeSuccessorsSend = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll, send=True)
 
         self.solver = solver
         self.findAll = findAll
@@ -592,7 +315,7 @@ class successorWorker(Chare):
         if len(self.workInts) > 0:
             successorList = [None] * len(self.workInts)
             for ii in range(len(successorList)):
-                successorList[ii] = self.processNodeSuccessorsSend(self.workInts[ii],self.N,self.constraints)
+                successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
         else:
             successorList = [[set([]),-1]]
         
@@ -647,38 +370,10 @@ class successorWorker(Chare):
                 successors.append( \
                         INTrep + idx \
                     )
+                self.hashAndSend(INTrep + idx)
         
         return [set(successors), facesInt]
 
-
-    def processNodeSuccessorsSimpleLP(self,INTrep,N,H2,solver='glpk'):
-        H = copy(H2)
-        # global H2
-        # H = np.array(H2)
-        # H = np.array(processNodeSuccessors.H)
-        idx = 1
-        for i in range(N):
-            if INTrep & idx > 0:
-                H[i] = -1*H[i]
-            idx = idx << 1
-        
-        to_keep = self.concreteMinHRep(H,copyMat=False,solver=solver)
-        # Use this to keep track of the region's faces
-        facesInt = 0
-        for k in to_keep:
-            facesInt = facesInt + (1 << k)
-        
-        successors = []
-        for i in range(len(to_keep)):
-            if to_keep[i] >= N:
-                break
-            idx = 1 << to_keep[i]
-            if idx & INTrep <= 0:
-                successors.append( \
-                        INTrep + idx \
-                    )
-        
-        return [set(successors), facesInt]
 
 
     def concreteMinHRep(self,H2,cnt=None,randomize=False,copyMat=True,solver='glpk',safe=False):
@@ -743,7 +438,7 @@ class successorWorker(Chare):
         return to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
 
     # @coro
-    def processNodeSuccessorsFastLP(self,INTrep,N,H2,solver='glpk',findAll=False,send=False):
+    def processNodeSuccessorsFastLP(self,INTrep,N,H2,solver='glpk',findAll=False):
         
         # H = copy(H2)
         # global H2
@@ -852,7 +547,6 @@ class successorWorker(Chare):
             to_keep = reorder[to_keep].tolist()
             to_keep_faces = reorder[to_keep_faces].tolist()
 
-        # print([findSize, len(to_keep), len(to_keep_faces)])
 
         # Use this to keep track of the region's faces
         facesInt = 0
@@ -870,57 +564,9 @@ class successorWorker(Chare):
                         nNode \
                     )
                 # print('Processing node!')
-                if send:
-                    # print('Sending')
-                    val = self.hashNode(nNode)
-                    # print('Sending ' + str(val))
-                    self.outChannels[val[0]].send(val)
+                self.hashAndSend(nNode)
         
         return [set(successors), facesInt]
-
-
-class checkNodesSchedulerInt(Chare):
-    
-    def initialize(self, stackNum, checkNodeGroup, groupPEs, retFuture):
-        self.stackNum = stackNum
-        self.checkNodeChareGroup = checkNodeGroup
-        self.retFuture = retFuture
-        self.pes = groupPEs
-        # self.waitOn = waitOn
-        
-        self.wrkGrpFuture = None
-        self.found = False
-
-    @coro
-    def foundQ(self):
-        return self.found
-    
-    @coro
-    def checkNode(self, peCounter, stackCounter, workGroup):
-        if self.found:
-            return
-
-        for peIdx in range(len(self.pes)):
-            self.checkNodeChareGroup[self.pes[peIdx]].initList( \
-                    workGroup[peIdx][ 0:(stackCounter+1 if peIdx < peCounter else stackCounter) ]
-                )
-            
-        xferFut = Future()
-        self.checkNodeChareGroup.collectXferStats(xferFut)
-        xferFut.get()
-
-        localFuture = Future()
-        self.checkNodeChareGroup.check(localFuture, awaitable=True)
-        retVal = localFuture.get()
-        if retVal:
-            self.retFuture.send(True)
-            self.found = True
-        return retVal
-        
-
-
-
-
 
 
         
@@ -985,7 +631,6 @@ class flipConstraintsReduced(flipConstraints):
         self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
         
         # Modify root node:
-        print(len(np.nonzero(redundantHyperplanes<0)[0]))
         for k in np.nonzero(redundantHyperplanes<0)[0]:
             self.root += 1 << int(k)
 
