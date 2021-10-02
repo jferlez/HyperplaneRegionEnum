@@ -116,7 +116,7 @@ class Poset(Chare):
     def setConstraint(self,lb=0,out=0):
         self.populated = False
         self.incomplete = True
-        self.flippedConstraints = flipConstraints( \
+        self.flippedConstraints = flipConstraintsReduced( \
                 -1*self.AbPairs[out][0], \
                 self.AbPairs[out][1] - lb*np.ones((self.N,1)), \
                 self.pt, \
@@ -335,10 +335,10 @@ class Poset(Chare):
 
 
         level = 0
-        thisLevel = [0]
+        thisLevel = [self.flippedConstraints.root]
         posetLen = 1
 
-        # Send this node into the distributed hash table
+        # Send this node into the distributed hash table and check it
         initFut = Future()
         self.distHashTable.initListening(initFut)
         initFut.get()
@@ -960,7 +960,53 @@ class flipConstraints:
             self.fb = None
             self.constraints = np.hstack((-self.nb,self.nA))
 
+        self.root = 0
 
+
+class flipConstraintsReduced(flipConstraints):
+
+    def __init__(self, nA, nb, pt, fA=None, fb=None):
+        super().__init__(nA, nb, pt, fA=fA, fb=fb)
+        if self.fA is None:
+            return
+        
+        # Now let's remove any hyperplanes that don't intersect the polytope defined by fA and fb
+        # First let's find the vertices of the constraint polytope using CDD
+        _, _, vRep = createCDDrep(self.fA, self.fb)
+
+        redundantHyperplanes = \
+            -2*np.logical_or( \
+                np.all(self.nA @ vRep.T > self.nb.reshape(-1,1), axis=1), \
+                np.all(self.nA @ vRep.T < self.nb.reshape(-1,1), axis=1) \
+            )+1
+
+        self.nA = np.diag(redundantHyperplanes) @ self.nA
+        self.nb = np.diag(redundantHyperplanes) @ self.nb
+        self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
+        
+        # Modify root node:
+        print(len(np.nonzero(redundantHyperplanes<0)[0]))
+        for k in np.nonzero(redundantHyperplanes<0)[0]:
+            self.root += 1 << int(k)
+
+        #print(self.root)
+
+
+# Helper functions:
+def createCDDrep(inputConstraintsA, inputConstraintsb):
+    
+    inputMat = cdd.Matrix(np.hstack((-1*inputConstraintsb,inputConstraintsA)))
+    inputMat.rep_type = cdd.RepType.INEQUALITY
+    inputPolytope = cdd.Polyhedron(inputMat)
+    vrep = np.array(inputPolytope.get_generators())
+    if len(vrep) == 0:
+        raise ValueError('No vertices for input constraint polyhedron!')
+    
+    if np.sum(vrep[:,0]) < len(vrep):
+        raise ValueError('Input constraints do not specify a closed, bounded polyhedron!')
+    inputVrep = vrep[:,1:]
+
+    return inputMat, inputPolytope, inputVrep
 
 
 class intSet:
