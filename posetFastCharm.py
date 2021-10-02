@@ -35,17 +35,6 @@ class PosetNode():
             return self.nodeInt == other.nodeInt
 
 
-class OldPosetNode:
-
-    def __init__(self, INTrep, level, facesInt=-1):
-        self.INTrep = INTrep
-        self.level = level
-        self.regionProcessed = False
-        self.facesInt = facesInt
-        self.facesList = []
-        self.successors = []
-
-
 class Poset(Chare):
     
     def __init__(self, peSpec, batchSize):
