@@ -275,10 +275,23 @@ class successorWorker(Chare):
         p = 6148914691236517205*(nodeInt^(nodeInt>>32))
         hashInt = (17316035218449499591*(p^(p>>32))) & ((1 << 33)-1)
         return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
-
+    @coro
     def hashAndSend(self,nodeInt):
         val = self.hashNode(nodeInt)
         self.outChannels[val[0]].send(val)
+        msg = self.feedbackChannel.recv()
+        # If a hash worker on my PE has something to do, suspend here until it's done, and then continue
+        # If a hash worker broadcasts termination (msg > charm.numPes()), then signal termination
+        if msg == -1 * charm.myPe():
+            while True:
+                msg = self.feedbackChannel.recv()
+                if msg == charm.myPe():
+                    return True
+                elif msg > charm.numPes():
+                    return False
+        else:
+            # Message has nothing to do with my PE, so keep computing successors
+            return True
 
     @coro
     def tester(self):
@@ -319,16 +332,20 @@ class successorWorker(Chare):
         #     print('Now I got here!')
         self.reduce(callback, set([]).union(*successorList), Reducer.Union)
     
-    # @coro
+    @coro
     def computeSuccessorsNew(self):
+        term = False
         if len(self.workInts) > 0:
             successorList = [None] * len(self.workInts)
             for ii in range(len(successorList)):
                 successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
+                if successorList[ii][1] < 0:
+                    term = True
+                    break
         else:
             successorList = [[set([]),-1]]
         
-        self.sendAll(-2)
+        self.sendAll(-2 if not term else -3)
         
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
         successorList = [successorList[ii][0] for ii in range(len(successorList))]
@@ -338,7 +355,7 @@ class successorWorker(Chare):
     def retrieveFaces(self):
         return self.workInts
 
-
+    @coro
     def processNodeSuccessorsCDD(self,INTrep,N,H2,solver='glpk'):
         H = copy(H2)
         # global H2
@@ -379,9 +396,11 @@ class successorWorker(Chare):
                 successors.append( \
                         INTrep + idx \
                     )
-                self.hashAndSend(INTrep + idx)
+                cont = self.thisProxy[self.thisIndex].hashAndSend(INTrep + idx,ret=True).get()
+                if not cont:
+                    return [set(successors), -1]
         
-        return [set(successors), facesInt]
+        return [set(successors), facesInt]     
 
 
 
@@ -446,7 +465,7 @@ class successorWorker(Chare):
             idx += 1
         return to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
 
-    # @coro
+    @coro
     def processNodeSuccessorsFastLP(self,INTrep,N,H2,solver='glpk',findAll=False):
         
         # H = copy(H2)
@@ -573,9 +592,11 @@ class successorWorker(Chare):
                         nNode \
                     )
                 # print('Processing node!')
-                self.hashAndSend(nNode)
+                cont = self.thisProxy[self.thisIndex].hashAndSend(nNode,ret=True).get()
+                if not cont:
+                    return [set(successors), -1]
         
-        return [set(successors), facesInt]
+        return [set(successors), facesInt]            
 
 
         

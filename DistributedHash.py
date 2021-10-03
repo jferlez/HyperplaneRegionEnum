@@ -109,7 +109,9 @@ class HashWorker(Chare):
             ackFut = Future()
             self.messages[ch]['fut'] = ackFut
             self.loopback.send(chIdx)
+            self.parentProxy.sendFeedbackMessage(-1*charm.myPe())
             ackFut.get()
+            self.parentProxy.sendFeedbackMessage(charm.myPe())
             self.messages[ch]['msg'] = None
             self.messages[ch]['fut'] = None
             if val == -3 or val == -2:
@@ -149,15 +151,20 @@ class HashWorker(Chare):
             msgCount[ch] += 1
             if val == -3:
                 for ch in self.inChannels:
-                    if self.status[ch] != -2:
-                        self.workerDone[ch].send(1)
+                    if self.status[ch] != -2 and self.status[ch] != -3:
+                        self.workerDone[ch].send(True)
                     self.status[ch] = -3
+                # Possibly redundant
                 self.parentChannel.send(-3)
+                # Send termination signal to all of the feeder workers
+                self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
             elif val == -2:
-                self.status[ch] = -2
-                self.workerDone[ch].send(1)
+                if self.status[ch] != -2 and self.status[ch] != -3:
+                        self.workerDone[ch].send(True)
+                        self.status[ch] = -2
+                # self.workerDone[ch].send(True)
                 self.levelDone = True
-            elif type(val) == tuple and len(val) == 3:
+            elif type(val) == tuple and len(val) >= 3:
                 # if self.status[ch] == -1:
                     # Process node
                 newNode = self.nodeConstructor(self.localVarGroup[charm.myPe()], self, *val)
@@ -173,7 +180,8 @@ class HashWorker(Chare):
             # We're all done with this message, so report back
             localFut = msg['fut']
             self.messages[ch]['fut'] = None
-            localFut.send(1)
+            if not localFut is None:
+                localFut.send(1)
         # print('Shutting down main listener on PE ' + str(charm.myPe()))
         return 1
 
@@ -235,6 +243,12 @@ class DistHash(Chare):
 
         myFut = self.hWorkersFull.addOriginChannel(feederProxies,awaitable=True)
         myFut.get()
+
+    @coro
+    def sendFeedbackMessage(self,msg):
+        for ch in self.feedbackChannels:
+            ch.send(msg)
+
 
     # This method is superceded by the DistributedHash.initListening -> DistributedHash.levelDone().get() sequence
     # It should be replaced by a method to signal the feeders on the feedback channel when early termination happens
