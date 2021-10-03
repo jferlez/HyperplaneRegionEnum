@@ -164,7 +164,9 @@ class Poset(Chare):
             self.succGroup.computeSuccessorsNew()
 
             # print('Started looking for successors')
-            self.distHashTable.levelDone(awaitable=True).get()
+            checkVal = self.distHashTable.levelDone(ret=True).get()
+            if not checkVal:
+                break
             # print('Done with level')
             nextLevel = self.distHashTable.getLevelList(ret=True).get()
 
@@ -191,7 +193,7 @@ class Poset(Chare):
         lpCount = lpCountFut.get()
         print('Total LPs used: ' + str(lpCount))
 
-        
+        print('Checker returned value: ' + str(checkVal))
         
         # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
         print('Computed a (partial) poset of size: ' + str(posetLen))
@@ -316,21 +318,21 @@ class successorWorker(Chare):
         for ch in self.outChannels:
             ch.send(val)
 
-    @coro
-    def computeSuccessors(self, callback):
-        if len(self.workInts) > 0:
-            successorList = [None] * len(self.workInts)
-            for ii in range(len(successorList)):
-                successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
-        else:
-            successorList = [[set([]),-1]]
+    # @coro
+    # def computeSuccessors(self, callback):
+    #     if len(self.workInts) > 0:
+    #         successorList = [None] * len(self.workInts)
+    #         for ii in range(len(successorList)):
+    #             successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
+    #     else:
+    #         successorList = [[set([]),-1]]
 
 
-        self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
-        successorList = [successorList[ii][0] for ii in range(len(successorList))]
-        # if charm.myPe() == 0:
-        #     print('Now I got here!')
-        self.reduce(callback, set([]).union(*successorList), Reducer.Union)
+    #     self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
+    #     successorList = [successorList[ii][0] for ii in range(len(successorList))]
+    #     # if charm.myPe() == 0:
+    #     #     print('Now I got here!')
+    #     self.reduce(callback, set([]).union(*successorList), Reducer.Union)
     
     @coro
     def computeSuccessorsNew(self):

@@ -104,6 +104,7 @@ class HashWorker(Chare):
             # print('Listener started')
             # charm.wait([ch])
             val = ch.recv()
+            msgCount += 1
             # print(val)
             self.messages[ch]['msg'] = val
             ackFut = Future()
@@ -173,8 +174,18 @@ class HashWorker(Chare):
                 if not newNode in self.table:
                     self.table[newNode] = {'nodeInt': val[2], 'checked':False}
                     self.levelList.append(val[2])
- 
-            else:
+                    # Check node here:
+                    if False: # If result of node check is False return False on all the workerDone Futures
+                        if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
+                            self.workerDone[ch].send(False)
+                        self.status[ch] = -3
+                        self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
+                        self.levelDone = True
+            # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
+            elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
+                print(self.status)
+                print(msg)
+                print(val)
                 print('Received unexpected message ' + str(val) + ' on hash worker ' + str(self.thisIndex))
             
             # We're all done with this message, so report back
@@ -187,9 +198,9 @@ class HashWorker(Chare):
 
     @coro
     def awaitLevel(self):
-        for ch in self.inChannels:
-            self.workerDone[ch].get()
+        retVal = all([self.workerDone[ch].get() for ch in self.inChannels])
         self.levelDone = True
+        return retVal
 
     @coro
     def getLevelList(self, levelListFut):
@@ -267,7 +278,7 @@ class DistHash(Chare):
     
     @coro
     def levelDone(self):
-        self.hWorkers.awaitLevel(awaitable=True).get()
+        return all(self.hWorkers.awaitLevel(ret=True).get())
     
     @coro
     def getLevelList(self):
