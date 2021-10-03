@@ -8,12 +8,13 @@ import itertools
 
 class Node():
 
-    def __init__(self,lsb,msb,nodeInt,localProxy, parentChare):
+    def __init__(self,localProxy, parentChare, lsb,msb,nodeInt, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeInt = nodeInt
         self.localProxy = localProxy
         self.parentChare = parentChare
+        self.data = args
     
     def __hash__(self):
         return self.msbHash
@@ -159,7 +160,7 @@ class HashWorker(Chare):
             elif type(val) == tuple and len(val) == 3:
                 # if self.status[ch] == -1:
                     # Process node
-                newNode = self.nodeConstructor(*val, self.localVarGroup[charm.myPe()], self)
+                newNode = self.nodeConstructor(self.localVarGroup[charm.myPe()], self, *val)
                 if self.nodeCalls & 1:
                     newNode.init()
                 if not newNode in self.table:
