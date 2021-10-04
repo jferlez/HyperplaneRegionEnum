@@ -174,53 +174,66 @@ class HashWorker(Chare):
                 #     self.rateChannel.send(control)
                 #     continue
             # print('PE'+str(charm.myPe()) + ': Waiting on loopback; mode ' + ('free' if free else 'not free;') + ' status '+ str([self.messages[ch]['fut'] for ch in self.inChannels]))
-            chIdx = self.loopback.recv()
-            # print('PE'+str(charm.myPe()) + ': Revieved on loopback')
-            ch = self.inChannels[chIdx]
-            msg = self.messages[ch]
-            # print('Processed message ' + str(msg) + ' on PE ' + str(charm.myPe()))
-            val = msg['msg']
-            msgCount[ch] += 1
-            if val == -3:
-                for ch in self.inChannels:
-                    if self.status[ch] != -2 and self.status[ch] != -3:
-                        self.workerDone[ch].send(True)
-                    self.status[ch] = -3
-            elif val == -2:
-                if self.status[ch] != -2 and self.status[ch] != -3:
-                        self.workerDone[ch].send(True)
-                        self.status[ch] = -2
-                # self.workerDone[ch].send(True)
-                self.levelDone = True
-            elif type(val) == tuple and len(val) >= 3:
-                # if self.status[ch] == -1:
-                    # Process node
-                newNode = self.nodeConstructor(self.localVarGroup[charm.myPe()], self, *val)
-                if self.nodeCalls & 1:
-                    newNode.init()
-                if not newNode in self.table:
-                    self.table[newNode] = {'nodeInt': val[2], 'checked':False}
-                    self.levelList.append(val[2])
-                    # Check node here:
-                    if False: # If result of node check is False return False on all the workerDone Futures
-                        if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
-                            self.workerDone[ch].send(False)
+            # print(numPending)
+            chList = []
+            firstPass = True
+            while True:
+                chIdx = self.loopback.recv()
+                if firstPass:
+                    numPending = sum([not self.messages[ch]['fut'] is None for ch in self.inChannels])
+                    firstPass = False
+                # print('PE'+str(charm.myPe()) + ': Revieved on loopback')
+                ch = self.inChannels[chIdx]
+                msg = self.messages[ch]
+                chList.append(ch)
+                # print('Processed message ' + str(msg) + ' on PE ' + str(charm.myPe()))
+                val = msg['msg']
+                msgCount[ch] += 1
+                if val == -3:
+                    for ch in self.inChannels:
+                        if self.status[ch] != -2 and self.status[ch] != -3:
+                            self.workerDone[ch].send(True)
                         self.status[ch] = -3
-                        self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
-                        self.levelDone = True
-            # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
-            elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
-                print(self.status)
-                print(msg)
-                print(val)
-                print('Received unexpected message ' + str(val) + ' on hash worker ' + str(self.thisIndex))
+                elif val == -2:
+                    if self.status[ch] != -2 and self.status[ch] != -3:
+                            self.workerDone[ch].send(True)
+                            self.status[ch] = -2
+                    # self.workerDone[ch].send(True)
+                    self.levelDone = True
+                elif type(val) == tuple and len(val) >= 3:
+                    # if self.status[ch] == -1:
+                        # Process node
+                    newNode = self.nodeConstructor(self.localVarGroup[charm.myPe()], self, *val)
+                    if self.nodeCalls & 1:
+                        newNode.init()
+                    if not newNode in self.table:
+                        self.table[newNode] = {'nodeInt': val[2], 'checked':False}
+                        self.levelList.append(val[2])
+                        # Check node here:
+                        if False: # If result of node check is False return False on all the workerDone Futures
+                            if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
+                                self.workerDone[ch].send(False)
+                            self.status[ch] = -3
+                            self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
+                            self.levelDone = True
+                # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
+                elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
+                    print(self.status)
+                    print(msg)
+                    print(val)
+                    print('Received unexpected message ' + str(val) + ' on hash worker ' + str(self.thisIndex))
+                
+                if len(chList) == numPending:
+                    # Done processing the number of buffered nodes we saw at first, so break out of the while
+                    # loop to reset those buffers
+                    break
             
-          
-            # We're all done with this message, so report back
-            localFut = msg['fut']
-            self.messages[ch]['fut'] = None
-            if not localFut is None:
-                localFut.send(1)
+            for ch in chList:
+                # We're all done with this message, so report back
+                localFut = self.messages[ch]['fut']
+                self.messages[ch]['fut'] = None
+                if not localFut is None:
+                    localFut.send(1)
             
             # Release the feeder to get back to work:
             if not self.rateChannel is None and not free:
