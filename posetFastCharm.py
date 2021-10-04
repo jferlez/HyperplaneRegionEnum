@@ -140,8 +140,6 @@ class Poset(Chare):
         initFut.get()
 
 
-        self.succGroup.resetMessageState(awaitable=True).get()
-
         self.successorProxies[0].hashAndSend(thisLevel[0],ret=True).get()
 
         self.succGroup.sendAll(-2)
@@ -166,8 +164,6 @@ class Poset(Chare):
             initFut = Future()
             self.distHashTable.initListening(initFut)
             initFut.get()
-
-            self.succGroup.resetMessageState(awaitable=True).get()
 
             self.succGroup.computeSuccessorsNew(awaitable=True).get()
 
@@ -296,17 +292,12 @@ class successorWorker(Chare):
         val = self.hashNode(nodeInt)
         self.outChannels[val[0]].send(val)
         if not self.rateChannel is None:
-            # print('PE'+str(charm.myPe()) + ': sending on rateChannel')
             self.rateChannel.send(1)
-            # print('PE'+str(charm.myPe()) + ': Waiting on rateChannel')
             control = self.rateChannel.recv()
-            # print('PE'+str(charm.myPe()) + ': Recieved on rateChannel')
-            # print(control)
             while control > 0:
                 control = self.rateChannel.recv()
             if control == -3:
                 return False
-            # print('About to leave hashAndSend')
         return True
 
     @coro
@@ -331,29 +322,13 @@ class successorWorker(Chare):
             return
         for ch in self.outChannels:
             ch.send(val)
-    @coro
-    def resetMessageState(self):
-        self.rateChannelDone = False
+
     @coro
     def flushMessages(self):
         if not charm.myPe() in self.overlapPElist:
             return
         self.rateChannel.send(2)
-    # @coro
-    # def computeSuccessors(self, callback):
-    #     if len(self.workInts) > 0:
-    #         successorList = [None] * len(self.workInts)
-    #         for ii in range(len(successorList)):
-    #             successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
-    #     else:
-    #         successorList = [[set([]),-1]]
 
-
-    #     self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
-    #     successorList = [successorList[ii][0] for ii in range(len(successorList))]
-    #     # if charm.myPe() == 0:
-    #     #     print('Now I got here!')
-    #     self.reduce(callback, set([]).union(*successorList), Reducer.Union)
     
     @coro
     def computeSuccessorsNew(self):

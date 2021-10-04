@@ -159,11 +159,7 @@ class HashWorker(Chare):
             if not self.rateChannel is None and not free:
                 control = self.rateChannel.recv()
                 if control == 2:
-                    # print('Entering free-run mode')
                     free = True
-                # print(control)
-                # print([self.status[ch] <= -2 for ch in self.inChannels])
-                # print('PE ' + str(charm.myPe()) + str([self.messages[ch]['fut'] is None for ch in self.inChannels]))
                 if all([self.status[ch] <= -2 for ch in self.inChannels]):
                     self.rateChannel.send(min([self.status[ch] for ch in self.inChannels]))
                     continue
@@ -173,8 +169,6 @@ class HashWorker(Chare):
                 # if control <= 0:
                 #     self.rateChannel.send(control)
                 #     continue
-            # print('PE'+str(charm.myPe()) + ': Waiting on loopback; mode ' + ('free' if free else 'not free;') + ' status '+ str([self.messages[ch]['fut'] for ch in self.inChannels]))
-            # print(numPending)
             chList = []
             firstPass = True
             while True:
@@ -182,11 +176,9 @@ class HashWorker(Chare):
                 if firstPass:
                     numPending = sum([not self.messages[ch]['fut'] is None for ch in self.inChannels])
                     firstPass = False
-                # print('PE'+str(charm.myPe()) + ': Revieved on loopback')
                 ch = self.inChannels[chIdx]
                 msg = self.messages[ch]
                 chList.append(ch)
-                # print('Processed message ' + str(msg) + ' on PE ' + str(charm.myPe()))
                 val = msg['msg']
                 msgCount[ch] += 1
                 if val == -3:
@@ -201,8 +193,6 @@ class HashWorker(Chare):
                     # self.workerDone[ch].send(True)
                     self.levelDone = True
                 elif type(val) == tuple and len(val) >= 3:
-                    # if self.status[ch] == -1:
-                        # Process node
                     newNode = self.nodeConstructor(self.localVarGroup[charm.myPe()], self, *val)
                     if self.nodeCalls & 1:
                         newNode.init()
