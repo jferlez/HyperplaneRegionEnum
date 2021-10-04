@@ -139,11 +139,17 @@ class Poset(Chare):
         self.distHashTable.initListening(initFut)
         initFut.get()
 
-        self.successorProxies[0].hashAndSend(thisLevel[0])
+
+        self.succGroup.resetMessageState(awaitable=True).get()
+
+        self.successorProxies[0].hashAndSend(thisLevel[0],ret=True).get()
 
         self.succGroup.sendAll(-2)
+        self.succGroup.flushMessages(ret=True).get()
+        
+        # print('Done sending message on RateChannel')
         self.distHashTable.levelDone(awaitable=True).get()
-
+        # print('Waiting for level done')
         while level < self.N+1 and len(thisLevel) > 0:
 
             # successorProxies = self.succGroup.getProxies(ret=True).get()
@@ -161,7 +167,11 @@ class Poset(Chare):
             self.distHashTable.initListening(initFut)
             initFut.get()
 
-            self.succGroup.computeSuccessorsNew()
+            self.succGroup.resetMessageState(awaitable=True).get()
+
+            self.succGroup.computeSuccessorsNew(awaitable=True).get()
+
+            self.succGroup.flushMessages(ret=True).get()
 
             # print('Started looking for successors')
             checkVal = self.distHashTable.levelDone(ret=True).get()
@@ -254,10 +264,14 @@ class successorWorker(Chare):
             self.numBytes = int(self.N/4)+1
         # print(self.outChannels)
     @coro
-    def addFeedbackChannel(self,proxy):
+    def addFeedbackRateChannelOrigin(self,overlapPElist ):
+        self.rateChannel = None
+        self.overlapPElist = overlapPElist
         if not charm.myPe() in self.posetPElist:
             return
-        self.feedbackChannel = Channel(self,remote=proxy)
+        if charm.myPe() in overlapPElist:
+            self.rateChannel = Channel(self,remote=overlapPElist[charm.myPe()][1])
+        # self.feedbackChannel = Channel(self,remote=proxy)
     @coro
     def testSend(self):
         for k in range(self.numHashWorkers):
@@ -281,19 +295,19 @@ class successorWorker(Chare):
     def hashAndSend(self,nodeInt):
         val = self.hashNode(nodeInt)
         self.outChannels[val[0]].send(val)
-        msg = self.feedbackChannel.recv()
-        # If a hash worker on my PE has something to do, suspend here until it's done, and then continue
-        # If a hash worker broadcasts termination (msg > charm.numPes()), then signal termination
-        if msg == -1 * charm.myPe():
-            while True:
-                msg = self.feedbackChannel.recv()
-                if msg == charm.myPe():
-                    return True
-                elif msg > charm.numPes():
-                    return False
-        else:
-            # Message has nothing to do with my PE, so keep computing successors
-            return True
+        if not self.rateChannel is None:
+            # print('PE'+str(charm.myPe()) + ': sending on rateChannel')
+            self.rateChannel.send(1)
+            # print('PE'+str(charm.myPe()) + ': Waiting on rateChannel')
+            control = self.rateChannel.recv()
+            # print('PE'+str(charm.myPe()) + ': Recieved on rateChannel')
+            # print(control)
+            while control > 0:
+                control = self.rateChannel.recv()
+            if control == -3:
+                return False
+            # print('About to leave hashAndSend')
+        return True
 
     @coro
     def tester(self):
@@ -317,7 +331,14 @@ class successorWorker(Chare):
             return
         for ch in self.outChannels:
             ch.send(val)
-
+    @coro
+    def resetMessageState(self):
+        self.rateChannelDone = False
+    @coro
+    def flushMessages(self):
+        if not charm.myPe() in self.overlapPElist:
+            return
+        self.rateChannel.send(2)
     # @coro
     # def computeSuccessors(self, callback):
     #     if len(self.workInts) > 0:
@@ -348,6 +369,7 @@ class successorWorker(Chare):
             successorList = [[set([]),-1]]
         
         self.sendAll(-2 if not term else -3)
+
         
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
         successorList = [successorList[ii][0] for ii in range(len(successorList))]
@@ -595,6 +617,7 @@ class successorWorker(Chare):
                     )
                 # print('Processing node!')
                 cont = self.thisProxy[self.thisIndex].hashAndSend(nNode,ret=True).get()
+                # print(cont)
                 if not cont:
                     return [set(successors), -1]
         

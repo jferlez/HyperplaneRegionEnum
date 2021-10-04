@@ -64,6 +64,7 @@ class HashWorker(Chare):
     def addOriginChannel(self,feederProxies):
         if not charm.myPe() in self.hashPElist:
             return
+        self.feederProxies = feederProxies
         self.numFeederWorkers = len(feederProxies)
         self.inChannels = [Channel(self, remote=proxy) for proxy in feederProxies]
         self.status = {}
@@ -97,6 +98,17 @@ class HashWorker(Chare):
         if not charm.myPe() in self.hashPElist:
             return
         self.feedbackChannel = Channel(self,remote=proxy)
+    @coro
+    def addFeedbackRateChannelDest(self,overlapPElist):
+        self.rateChannel = None
+        self.termProxy = None
+        self.overlapPElist = overlapPElist
+        if not charm.myPe() in self.hashPElist:
+            return
+        if charm.myPe() in overlapPElist:
+            self.rateChannel = Channel(self,remote=overlapPElist[charm.myPe()][0])
+        elif len(overlapPElist) > 0:
+            self.termProxy = self.overlapPElist[ list(self.overlapPElist.keys())[0] ][0]
 
     @coro
     def localListener(self,ch,chIdx):
@@ -104,15 +116,14 @@ class HashWorker(Chare):
             # print('Listener started')
             # charm.wait([ch])
             val = ch.recv()
-            msgCount += 1
             # print(val)
             self.messages[ch]['msg'] = val
             ackFut = Future()
             self.messages[ch]['fut'] = ackFut
             self.loopback.send(chIdx)
-            self.parentProxy.sendFeedbackMessage(-1*charm.myPe())
+            # self.parentProxy.sendFeedbackMessage(-1*charm.myPe())
             ackFut.get()
-            self.parentProxy.sendFeedbackMessage(charm.myPe())
+            # self.parentProxy.sendFeedbackMessage(charm.myPe())
             self.messages[ch]['msg'] = None
             self.messages[ch]['fut'] = None
             if val == -3 or val == -2:
@@ -140,14 +151,34 @@ class HashWorker(Chare):
     @coro
     def listen(self):
         # print('Started main listener')
+        free = False
         msgCount = {}
         for ch in self.inChannels:
             msgCount[ch] = 0
-        while any([self.status[ch] > -2 for ch in self.inChannels]):
+        while any([self.status[ch] > -2 for ch in self.inChannels]) or not free:
+            if not self.rateChannel is None and not free:
+                control = self.rateChannel.recv()
+                if control == 2:
+                    # print('Entering free-run mode')
+                    free = True
+                # print(control)
+                # print([self.status[ch] <= -2 for ch in self.inChannels])
+                # print('PE ' + str(charm.myPe()) + str([self.messages[ch]['fut'] is None for ch in self.inChannels]))
+                if all([self.status[ch] <= -2 for ch in self.inChannels]):
+                    self.rateChannel.send(min([self.status[ch] for ch in self.inChannels]))
+                    continue
+                if all([self.messages[ch]['fut'] is None for ch in self.inChannels]):
+                    self.rateChannel.send(0)
+                    continue
+                # if control <= 0:
+                #     self.rateChannel.send(control)
+                #     continue
+            # print('PE'+str(charm.myPe()) + ': Waiting on loopback; mode ' + ('free' if free else 'not free;') + ' status '+ str([self.messages[ch]['fut'] for ch in self.inChannels]))
             chIdx = self.loopback.recv()
+            # print('PE'+str(charm.myPe()) + ': Revieved on loopback')
             ch = self.inChannels[chIdx]
             msg = self.messages[ch]
-            # print('Processed message ' + str(msg))
+            # print('Processed message ' + str(msg) + ' on PE ' + str(charm.myPe()))
             val = msg['msg']
             msgCount[ch] += 1
             if val == -3:
@@ -155,10 +186,6 @@ class HashWorker(Chare):
                     if self.status[ch] != -2 and self.status[ch] != -3:
                         self.workerDone[ch].send(True)
                     self.status[ch] = -3
-                # Possibly redundant
-                self.parentChannel.send(-3)
-                # Send termination signal to all of the feeder workers
-                self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
             elif val == -2:
                 if self.status[ch] != -2 and self.status[ch] != -3:
                         self.workerDone[ch].send(True)
@@ -188,11 +215,18 @@ class HashWorker(Chare):
                 print(val)
                 print('Received unexpected message ' + str(val) + ' on hash worker ' + str(self.thisIndex))
             
+          
             # We're all done with this message, so report back
             localFut = msg['fut']
             self.messages[ch]['fut'] = None
             if not localFut is None:
                 localFut.send(1)
+            
+            # Release the feeder to get back to work:
+            if not self.rateChannel is None and not free:
+                self.rateChannel.send(self.status[ch])
+            elif self.status[ch] == -3:
+                self.termProxy.sendAll(-3)
         # print('Shutting down main listener on PE ' + str(charm.myPe()))
         return 1
 
@@ -216,6 +250,9 @@ class DistHash(Chare):
     def __init__(self, feederGroup, nodeConstructor, localVarGroup, hashPEs, posetPEs):
         self.feederGroup = feederGroup
         self.posetPEs = posetPEs
+        self.posetPElist = list(itertools.chain.from_iterable( \
+               [list(range(r[0],r[1],r[2])) for r in self.posetPEs] \
+            ))
         self.nodeConstructor = nodeConstructor
         if self.nodeConstructor is None:
             self.nodeConstructor = Node
@@ -244,9 +281,30 @@ class DistHash(Chare):
             ))
         # print(feederProxies)
         # Establish a feedback channel so that the hash table can send messages to the feeder workers:
-        myFut = self.feederGroup.addFeedbackChannel(self.thisProxy, awaitable=True)
+        feeders = sorted(zip(self.posetPElist,feederProxies))
+        hashes = sorted(zip(self.hashPElist,self.hashWorkerProxies))
+        self.overlapPElist = {}
+        self.mappedPElist = {}
+        feederIdx = 0
+        hashIdx = 0
+        # Everything is sorted by PE, so we can proceed sequentially
+        while feederIdx < len(feeders) and hashIdx < len(hashes):
+            if feeders[feederIdx][0] == hashes[hashIdx][0]:
+                self.overlapPElist[feeders[feederIdx][0]] = (feeders[feederIdx][1], hashes[hashIdx][1])
+                feederIdx += 1
+            else:
+                if feeders[feederIdx][0] in self.mappedPElist:
+                    self.mappedPElist[hashes[hashIdx][0]].append((feeders[feederIdx][1], hashes[hashIdx][1]))
+                else:
+                    self.mappedPElist[hashes[hashIdx][0]] = [(feeders[feederIdx][1], hashes[hashIdx][1])]
+            hashIdx += 1
+
+        myFut = self.feederGroup.addFeedbackRateChannelOrigin(self.overlapPElist, awaitable=True)
         myFut.get()        
         self.feedbackChannels = [Channel(self, remote=proxy) for proxy in feederProxies]
+
+        myFut = self.hWorkersFull.addFeedbackRateChannelDest(self.overlapPElist,awaitable=True)
+        myFut.get()
         
         # Establish channels from each feeder worker to each hash worker
         myFut = self.feederGroup.addDestChannel(self.hashWorkerProxies , awaitable=True)
