@@ -228,7 +228,7 @@ class HashWorker(Chare):
             # Release the feeder to get back to work:
             if not self.rateChannel is None and not free:
                 self.rateChannel.send(self.status[ch])
-            elif self.status[ch] == -3:
+            elif not self.termProxy is None and self.status[ch] == -3:
                 self.termProxy.sendAll(-3)
         # print('Shutting down main listener on PE ' + str(charm.myPe()))
         return 1
