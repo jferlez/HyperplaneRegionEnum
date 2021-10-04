@@ -334,7 +334,7 @@ class successorWorker(Chare):
     def computeSuccessorsNew(self):
         term = False
         if len(self.workInts) > 0:
-            successorList = [None] * len(self.workInts)
+            successorList = [[None,None]] * len(self.workInts)
             for ii in range(len(successorList)):
                 successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
                 if successorList[ii][1] < 0:
