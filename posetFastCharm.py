@@ -143,10 +143,12 @@ class Poset(Chare):
         self.successorProxies[0].hashAndSend(thisLevel[0],ret=True).get()
 
         self.succGroup.sendAll(-2)
+        self.succGroup.closeQueryChannels(awaitable=True).get()
         self.succGroup.flushMessages(ret=True).get()
-        
+        # print('Message flush successful')
         # print('Done sending message on RateChannel')
         self.distHashTable.levelDone(awaitable=True).get()
+        # print('Root node hashed')
         # print('Waiting for level done')
         while level < self.N+1 and len(thisLevel) > 0:
 
@@ -167,15 +169,16 @@ class Poset(Chare):
 
             self.succGroup.computeSuccessorsNew(awaitable=True).get()
 
+            self.succGroup.closeQueryChannels(awaitable=True).get()
             self.succGroup.flushMessages(ret=True).get()
 
-            # print('Started looking for successors')
+            # print('Finished looking for successors on level ' + str(level))
             checkVal = self.distHashTable.levelDone(ret=True).get()
             if not checkVal:
                 break
             # print('Done with level')
             nextLevel = self.distHashTable.getLevelList(ret=True).get()
-
+            # print('Got level list')
             
 
             posetLen += len(nextLevel)
@@ -259,6 +262,31 @@ class successorWorker(Chare):
         else:
             self.numBytes = int(self.N/4)+1
         # print(self.outChannels)
+
+    @coro
+    def addQueryDestChannel(self, procGroupProxies):
+        if not charm.myPe() in self.posetPElist:
+            return
+        # self.numHashWorkers = len(procGroupProxies)
+        self.queryChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
+        # self.numHashBits = 1
+        # while self.numHashBits < self.numHashWorkers:
+        #     self.numHashBits = self.numHashBits << 1
+        # self.hashMask = self.numHashBits - 1
+        # self.numHashBits -= 1
+        # if self.N % 4 == 0:
+        #     self.numBytes = self.N/4
+        # else:
+        #     self.numBytes = int(self.N/4)+1
+        # print(self.outChannels)
+    
+    @coro
+    def closeQueryChannels(self):
+        if not charm.myPe() in self.posetPElist:
+            return
+        for ch in self.queryChannels:
+            ch.send(-2)
+
     @coro
     def addFeedbackRateChannelOrigin(self,overlapPElist ):
         self.rateChannel = None
@@ -293,7 +321,7 @@ class successorWorker(Chare):
         self.outChannels[val[0]].send(val)
         if not self.rateChannel is None:
             self.rateChannel.send(1)
-            control = self.rateChannel.recv()
+            control = self.rateChannel.recv() 
             while control > 0:
                 control = self.rateChannel.recv()
             if control == -3:
@@ -343,7 +371,7 @@ class successorWorker(Chare):
         else:
             successorList = [[set([]),-1]]
         
-        self.sendAll(-2 if not term else -3)
+        self.thisProxy[self.thisIndex].sendAll(-2 if not term else -3, awaitable=True).get()
 
         
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
@@ -517,7 +545,7 @@ class successorWorker(Chare):
         # the number N instead:
         if findAll and N > 3*d:
             doBounding = True
-        
+        doBounding = False
         if doBounding:
             #lp = encapsulateLP(solver, opts={'dim':d})
             # Find a bounding box
