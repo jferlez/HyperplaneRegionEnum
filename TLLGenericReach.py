@@ -75,7 +75,7 @@ class TLLGenericReach(Chare):
         stat = self.checkerGroup.initialize(self.pairedLocalLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.localLinearFns, self.selectorMats, awaitable=True)
         stat.get()
 
-        self.poset = Chare(posetFastCharm.Poset,args=[self.checkerGroup,[],False,None,50],onPE=charm.myPe())
+        self.poset = Chare(posetFastCharm.Poset,args=[{'poset':[(0,4,1)],'hash':[(0,4,1)]},10, None, None],onPE=charm.myPe())
         
         stat = self.poset.initialize(self.pairedLocalLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
         stat.get()
@@ -122,7 +122,7 @@ class TLLGenericReach(Chare):
 
         t = time.time()
         # checkFut = Future()
-        checkFut = self.poset.populatePoset(awaitable=True) # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
+        checkFut = self.poset.populatePoset(method='fastLP', solver='glpk', findAll=False, awaitable=True) # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
         retVal = checkFut.get()
         self.posetTime += time.time() - t
 
