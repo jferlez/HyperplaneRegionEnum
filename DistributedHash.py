@@ -286,6 +286,7 @@ class HashWorker(Chare):
             chList = []
             answeredSelf = False
             if pendingQueries:
+                self.initiatedQueryProc = False
                 numPending = sum([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannels])
                 # print('numPending on PE ' + str(charm.myPe()) + ' is ' + str(numPending))
                 i = 0
@@ -316,7 +317,7 @@ class HashWorker(Chare):
                     self.queryMessages[ch]['fut'] = None
                     if not localFut is None:
                         localFut.send(1)
-                self.initiatedQueryProc = False
+                
                 
                 pendingQueries = False
 
@@ -328,6 +329,7 @@ class HashWorker(Chare):
             # print(prefix + ' PendingChecks is ' + str(pendingChecks) + ' and pendingQueries is ' + str(pendingQueries))
             if pendingChecks and (not queryOnly or free) and yieldCount >= self.maxNodeYields:
                 # print(prefix + ' Pending messages on PE ' + str(charm.myPe()) + ' are ' + str(self.messages))
+                self.initiatedNodeProc = False
                 numPending = sum([not self.messages[ch]['fut'] is None for ch in self.inChannels])
                 # print(prefix + 'numPending nodes is ' + str(numPending) + 'on PE ' + str(charm.myPe()))
                 for i in range(numPending):
@@ -386,7 +388,7 @@ class HashWorker(Chare):
                     if not localFut is None:
                         localFut.send(1)
                 
-                self.initiatedNodeProc = False
+                
             
             # Release the feeder to get back to work:
             retControl = -3 if any([self.status[ch] == -3 for ch in self.inChannels]) else -1
