@@ -353,15 +353,14 @@ class successorWorker(Chare):
             # print('Waiting for query mutex on PE ' + str(charm.myPe()))
             self.queryMutexChannel.recv()
             # print('Received query mutex on PE ' + str(charm.myPe()))
-        if charm.myPe() == val[0]:
-            self.thisProxy[self.thisIndex].deferControl(code=3,ret=True).get()
-            # print('Got Control Back from self query')
-        else:
-            self.thisProxy[self.thisIndex].deferControl(code=4,ret=True).get()
+            if charm.myPe() == val[0]:
+                self.thisProxy[self.thisIndex].deferControl(code=3,ret=True).get()
+                # print('Got Control Back from self query')
+            else:
+                self.thisProxy[self.thisIndex].deferControl(code=4,ret=True).get()
             # print('Got Control Back.')
-        if not self.queryMutexChannel is None:
             self.queryMutexChannel.send(1)
-        retVal = self.queryChannels[val[0]].recv()
+        retVal = self.queryChannels[val[0]].recv()        
         # print('^^^^^^ Recieved answer to query ' + str(q) + ' of ' + str(retVal))
         return retVal
 
