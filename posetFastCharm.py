@@ -142,7 +142,7 @@ class Poset(Chare):
 
         self.successorProxies[0].hashAndSend(thisLevel[0],ret=True).get()
 
-        self.succGroup.sendAll(-2)
+        self.succGroup.sendAll(-2,awaitable=True).get()
         self.succGroup.closeQueryChannels(awaitable=True).get()
         self.succGroup.flushMessages(ret=True).get()
         # print('Message flush successful')
@@ -170,13 +170,13 @@ class Poset(Chare):
             self.succGroup.computeSuccessorsNew(awaitable=True).get()
 
             self.succGroup.closeQueryChannels(awaitable=True).get()
-            self.succGroup.flushMessages(ret=True).get()
+            # self.succGroup.flushMessages(ret=True).get()
 
             # print('Finished looking for successors on level ' + str(level))
             checkVal = self.distHashTable.levelDone(ret=True).get()
             if not checkVal:
                 break
-            # print('Done with level')
+            # print('Done with level ' + str(level))
             nextLevel = self.distHashTable.getLevelList(ret=True).get()
             # print('Got level list')
             
@@ -264,11 +264,14 @@ class successorWorker(Chare):
         # print(self.outChannels)
 
     @coro
-    def addQueryDestChannel(self, procGroupProxies):
+    def addQueryDestChannel(self, procGroupProxies, distHashProxy):
         if not charm.myPe() in self.posetPElist:
             return
         # self.numHashWorkers = len(procGroupProxies)
         self.queryChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
+        self.queryMutexChannel = None
+        if not self.rateChannel is None:
+            self.queryMutexChannel = Channel(self, remote=distHashProxy) 
         # self.numHashBits = 1
         # while self.numHashBits < self.numHashWorkers:
         #     self.numHashBits = self.numHashBits << 1
@@ -286,6 +289,8 @@ class successorWorker(Chare):
             return
         for ch in self.queryChannels:
             ch.send(-2)
+        if not self.queryMutexChannel is None:
+            self.queryMutexChannel.send(-2)
 
     @coro
     def addFeedbackRateChannelOrigin(self,overlapPElist ):
@@ -312,6 +317,7 @@ class successorWorker(Chare):
         return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
     
     def hashNode(self,nodeInt):
+        # print('nodeInt is ' + str(type(nodeInt)))
         p = 6148914691236517205*(nodeInt^(nodeInt>>32))
         hashInt = (17316035218449499591*(p^(p>>32))) & ((1 << 33)-1)
         return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
@@ -319,14 +325,45 @@ class successorWorker(Chare):
     def hashAndSend(self,nodeInt):
         val = self.hashNode(nodeInt)
         self.outChannels[val[0]].send(val)
+        # print('Trying to hash integer ' + str(nodeInt))
+        retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
+        retVal = self.thisProxy[self.thisIndex].deferControl(ret=True).get()
+        # print('Saw defercontrol return the following within HashAndSend ' + str(retVal))
+        return retVal
+    
+    @coro
+    def deferControl(self, code=1):
         if not self.rateChannel is None:
-            self.rateChannel.send(1)
+            self.rateChannel.send(code)
             control = self.rateChannel.recv() 
             while control > 0:
                 control = self.rateChannel.recv()
             if control == -3:
                 return False
         return True
+    
+    @coro
+    def query(self, q):
+        # print('PE' + str(charm.myPe()) + ' Query to send is ' + str(q))
+        val = self.hashNode(q)
+        self.queryChannels[val[0]].send(val)
+        # print('PE' + str(charm.myPe()) + ' sending query ' + str(val))
+        if not self.queryMutexChannel is None:
+            self.queryMutexChannel.send(charm.myPe())
+            # print('Waiting for query mutex on PE ' + str(charm.myPe()))
+            self.queryMutexChannel.recv()
+            # print('Received query mutex on PE ' + str(charm.myPe()))
+        if charm.myPe() == val[0]:
+            self.thisProxy[self.thisIndex].deferControl(code=3,ret=True).get()
+            # print('Got Control Back from self query')
+        else:
+            self.thisProxy[self.thisIndex].deferControl(code=4,ret=True).get()
+            # print('Got Control Back.')
+        if not self.queryMutexChannel is None:
+            self.queryMutexChannel.send(1)
+        retVal = self.queryChannels[val[0]].recv()
+        # print('^^^^^^ Recieved answer to query ' + str(q) + ' of ' + str(retVal))
+        return retVal
 
     @coro
     def tester(self):
@@ -356,6 +393,7 @@ class successorWorker(Chare):
         if not charm.myPe() in self.overlapPElist:
             return
         self.rateChannel.send(2)
+       
 
     
     @coro
@@ -364,7 +402,8 @@ class successorWorker(Chare):
         if len(self.workInts) > 0:
             successorList = [[None,None]] * len(self.workInts)
             for ii in range(len(successorList)):
-                successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
+                # successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
+                successorList[ii] = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP(self.workInts[ii],self.N,self.constraints,solver='glpk',findAll=False,ret=True).get()
                 if successorList[ii][1] < 0:
                     term = True
                     break
@@ -372,6 +411,7 @@ class successorWorker(Chare):
             successorList = [[set([]),-1]]
         
         self.thisProxy[self.thisIndex].sendAll(-2 if not term else -3, awaitable=True).get()
+        self.thisProxy[self.thisIndex].flushMessages(awaitable=True).get()
 
         
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
@@ -430,8 +470,8 @@ class successorWorker(Chare):
         return [set(successors), facesInt]     
 
 
-
-    def concreteMinHRep(self,H2,cnt=None,randomize=False,copyMat=True,solver='glpk',safe=False):
+    @coro
+    def concreteMinHRep(self,H2,cnt=None,randomize=False,copyMat=True,solver='glpk',safe=False,restoreInt=None):
         if not randomize:
             if copyMat:
                 H = copy(H2)
@@ -457,6 +497,15 @@ class successorWorker(Chare):
         e = np.zeros((len(H),1))
         to_keep = list(range(len(H)))
         while idx < len(H) and cntr > 0:
+            origInt = restoreInt(idx)
+            q = self.thisProxy[self.thisIndex].query(origInt,ret=True).get()
+            # print('PE' + str(charm.myPe()) + ' Queried table with node ' + str(origInt) + ' and received reply ' + str(q))
+            # If the node corresponding to the hyperplane we're about to flip is already in the table
+            # then treat it as redundant and skip it (saving the LP)
+            if q > 0:
+                cntr -= 1
+                idx += 1
+                continue
             e[idx,0] = 1        
             if safe:
                 status, x = self.lp.runLP( \
@@ -521,7 +570,7 @@ class successorWorker(Chare):
             # Now all of the flippable hyperplanes will be at the beginning
             # flippable = sorted(list(set(range(N))-set(unflippable)))
             H = H2[np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx]]),:]
-            reorder = np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx], np.array(range(N,H2.shape[0]),dtype=np.int32)])
+            reorder = np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx], np.array(range(N,H2.shape[0]),dtype=np.int64)])
             H[flipIdx:,:] = -H[flipIdx:,:]
             H3 = np.vstack([H, H2[N:,:]])
             H=H3
@@ -591,8 +640,10 @@ class successorWorker(Chare):
         idx = 0
         loc = 0
         e = np.zeros((len(H),1))
+        rereorder = np.sort(reorder).tolist()
         
-        to_keep_sub = self.concreteMinHRep(H[to_keep,:],cnt=findSize,copyMat=False,solver=solver)
+        to_keep_sub = self.thisProxy[self.thisIndex].concreteMinHRep(H[to_keep,:],cnt=findSize,copyMat=False,solver=solver,restoreInt=(lambda idx: INTrep + (1 << rereorder[idx])),ret=True).get()
+        # print('to_keep_sub = ' + str(to_keep_sub))
         if findSize is None:
             findSize = len(to_keep)
         to_keep_faces = to_keep[to_keep_sub].tolist() + to_keep[findSize:len(to_keep)].tolist()
