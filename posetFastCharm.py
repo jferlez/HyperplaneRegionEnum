@@ -496,16 +496,20 @@ class successorWorker(Chare):
         loc = 0
         e = np.zeros((len(H),1))
         to_keep = list(range(len(H)))
+        to_keep_redundant = []
         while idx < len(H) and cntr > 0:
-            origInt = restoreInt(idx)
-            q = self.thisProxy[self.thisIndex].query(origInt,ret=True).get()
-            # print('PE' + str(charm.myPe()) + ' Queried table with node ' + str(origInt) + ' and received reply ' + str(q))
-            # If the node corresponding to the hyperplane we're about to flip is already in the table
-            # then treat it as redundant and skip it (saving the LP)
-            if q > 0:
-                cntr -= 1
-                idx += 1
-                continue
+            if to_keep[loc] < len(restoreInt):
+                origInt = restoreInt[to_keep[loc]]
+                q = self.thisProxy[self.thisIndex].query(origInt,ret=True).get()
+                # print('PE' + str(charm.myPe()) + ' Queried table with node ' + str(origInt) + ' and received reply ' + str(q))
+                # If the node corresponding to the hyperplane we're about to flip is already in the table
+                # then treat it as redundant and skip it (saving the LP)
+                if q > 0:
+                    to_keep_redundant.append(loc)
+                    loc += 1
+                    cntr -= 1
+                    idx += 1
+                    continue
             e[idx,0] = 1        
             if safe:
                 status, x = self.lp.runLP( \
@@ -539,7 +543,10 @@ class successorWorker(Chare):
                 loc += 1
                 cntr -= 1
             idx += 1
-        return to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
+        to_keep = to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
+        for k in range(len(to_keep_redundant)-1,-1,-1):
+            to_keep.pop(to_keep_redundant[k])
+        return to_keep
 
     @coro
     def processNodeSuccessorsFastLP(self,INTrep,N,H2,solver='glpk',findAll=False):
@@ -548,8 +555,8 @@ class successorWorker(Chare):
         # global H2
         # H = np.array(H2)
         # H = np.array(processNodeSuccessors.H)
-        flippable = np.zeros((N,),dtype=np.int32)
-        unflippable = np.zeros((N,),dtype=np.int32)
+        flippable = np.zeros((N,),dtype=np.int64)
+        unflippable = np.zeros((N,),dtype=np.int64)
         flipIdx = 0
         unflipIdx = 0
         idx = 1
@@ -624,13 +631,15 @@ class successorWorker(Chare):
 
             to_keep = np.nonzero(np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((len(H),1))) >= -1e-07,axis=1))[0]
         else:
-            to_keep = np.array(range(H.shape[0]),dtype=np.int32)
+            to_keep = np.array(range(H.shape[0]),dtype=np.int64)
         
+        rereorder = []
         if not findAll:
             findSize = 0
             for ii in range(len(to_keep)):
                 if to_keep[ii] >= flipIdx:
                     break
+                rereorder.append(int(flippable[to_keep[ii]]))
                 findSize += 1
         else:
             findSize = None
@@ -640,9 +649,10 @@ class successorWorker(Chare):
         idx = 0
         loc = 0
         e = np.zeros((len(H),1))
-        rereorder = np.sort(reorder).tolist()
+        rereorder = [INTrep + (1 << k) for k in rereorder]
         
-        to_keep_sub = self.thisProxy[self.thisIndex].concreteMinHRep(H[to_keep,:],cnt=findSize,copyMat=False,solver=solver,restoreInt=(lambda idx: INTrep + (1 << rereorder[idx])),ret=True).get()
+        to_keep_sub = self.thisProxy[self.thisIndex].concreteMinHRep(H[to_keep,:],cnt=findSize,copyMat=False,solver=solver,safe=False,restoreInt=rereorder,ret=True).get()
+
         # print('to_keep_sub = ' + str(to_keep_sub))
         if findSize is None:
             findSize = len(to_keep)
