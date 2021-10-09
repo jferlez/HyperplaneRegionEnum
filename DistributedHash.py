@@ -283,6 +283,15 @@ class HashWorker(Chare):
                     queryOnly = True
                     selfQuery = True
                     processOnly = False
+                if all([self.status[ch] <= -2 for ch in self.inChannels]) and \
+                        all([self.queryStatus[ch] <= -2 for ch in self.queryChannels]):
+                    self.rateChannel.send(min([self.status[ch] for ch in self.inChannels]))
+                    break
+                # print('Received control of ' + str(control) + ' on PE ' + str(charm.myPe()))
+                if all([self.messages[ch]['fut'] is None for ch in self.inChannels]) and \
+                    all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannels]):
+                    self.rateChannel.send(-1)
+                    continue
                 if queryOnly and not selfQuery and all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannels]):
                     self.rateChannel.send(-1)
                     continue
