@@ -51,7 +51,7 @@ class HashWorker(Chare):
             call = getattr(self.nodeConstructor,checkCall,None)
             if callable(call):
                 self.nodeCalls += 1 << callIdx
-                callIdx += 1
+            callIdx += 1
         self.localVarGroup = localVarGroup
         self.parentProxy = parentProxy
         self.parentChannel = Channel(self,remote=self.parentProxy)
