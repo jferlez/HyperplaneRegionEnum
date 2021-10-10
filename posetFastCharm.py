@@ -743,18 +743,20 @@ class flipConstraintsReduced(flipConstraints):
         # First let's find the vertices of the constraint polytope using CDD
         _, _, vRep = createCDDrep(self.fA, self.fb)
 
-        redundantHyperplanes = \
+        self.redundantHyperplanes = \
             -2*np.logical_or( \
                 np.all(self.nA @ vRep.T > self.nb.reshape(-1,1), axis=1), \
                 np.all(self.nA @ vRep.T < self.nb.reshape(-1,1), axis=1) \
             )+1
 
-        self.nA = np.diag(redundantHyperplanes) @ self.nA
-        self.nb = np.diag(redundantHyperplanes) @ self.nb
+        self.nA = np.diag(self.redundantHyperplanes) @ self.nA
+        self.nb = np.diag(self.redundantHyperplanes) @ self.nb
         self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
-        
+        # print(self.flipMapSet)
+        self.flipMapSet = frozenset(np.nonzero(np.diag(self.redundantHyperplanes) @ self.flipMapN < 0)[0])
+
         # Modify root node:
-        for k in np.nonzero(redundantHyperplanes<0)[0]:
+        for k in np.nonzero(self.redundantHyperplanes<0)[0]:
             self.root += 1 << int(k)
 
         #print(self.root)
