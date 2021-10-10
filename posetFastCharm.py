@@ -117,6 +117,9 @@ class Poset(Chare):
 
         return 1
 
+    @coro
+    def getConstraintsObject(self):
+        return self.flippedConstraints
 
     @coro
     def populatePoset(self, method='fastLP', solver='clp', findAll=False ):
