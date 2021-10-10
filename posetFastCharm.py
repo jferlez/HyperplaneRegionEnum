@@ -222,19 +222,26 @@ class successorWorker(Chare):
         self.workInts = []
         self.N = N
         self.constraints = constraints
-        self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver='glpk')
+        # self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver='glpk')
+        self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP
+        self.processNodesArgs = {'solver':'glpk','ret':True}
         # Defaults to glpk, so this empty call is ok:
         self.lp = encapsulateLP.encapsulateLP()
         self.outChannels = []
         self.endian = sys.byteorder
     
-    def setMethod(self,method='fastLP',solver='clp',findAll=True):
+    def setMethod(self,method='fastLP',solver='clp',findAll=True,lpopts={}):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         if method=='cdd':
-            self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsCDD, self, solver=solver)
+            self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsCDD
+            self.processNodesArgs = {'solver':solver}
         elif method=='fastLP':
-            self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver=solver, findAll=findAll)
-
+            self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP
+            self.processNodesArgs = {'solver':solver,'findAll':findAll}
+        if len(lpopts) == 0:
+            self.processNodesArgs['lpopts'] = lpopts
+        self.processNodesArgs['ret'] = True
+        self.method = method
         self.solver = solver
         self.findAll = findAll
 
@@ -401,8 +408,7 @@ class successorWorker(Chare):
         if len(self.workInts) > 0:
             successorList = [[None,None]] * len(self.workInts)
             for ii in range(len(successorList)):
-                # successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints)
-                successorList[ii] = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP(self.workInts[ii],self.N,self.constraints,solver='glpk',findAll=False,ret=True).get()
+                successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints,**self.processNodesArgs).get()
                 if successorList[ii][1] < 0:
                     term = True
                     break
@@ -548,7 +554,7 @@ class successorWorker(Chare):
         return to_keep
 
     @coro
-    def processNodeSuccessorsFastLP(self,INTrep,N,H2,solver='glpk',findAll=False):
+    def processNodeSuccessorsFastLP(self,INTrep,N,H2,solver='glpk',findAll=False,lpopts={}):
         
         # H = copy(H2)
         # global H2
