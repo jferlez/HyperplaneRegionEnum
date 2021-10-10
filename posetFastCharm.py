@@ -586,10 +586,6 @@ class successorWorker(Chare):
         
         d = H.shape[1]-1
 
-        if solver=='clp':
-            s = CyClpSimplex()
-            xVar = s.addVariable('x', d)
-            s.logLevel = 0
         
         doBounding = False
         # Don't compute the bounding box if the number of flippable hyperplanes is almost 2*d,
