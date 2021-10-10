@@ -43,9 +43,9 @@ class localVar(Chare):
 
 class Poset(Chare):
     
-    def __init__(self, peSpec, batchSize, nodeConstructor, localVarGroup):
+    def __init__(self, peSpec, nodeConstructor, localVarGroup):
         
-        self.stackNum = batchSize
+        # self.stackNum = batchSize
         # To do: check to make sure we're passed a valid Group in localVarGroup
         self.localVarGroup = localVarGroup
         self.useDefaultLocalVarGroup = False
