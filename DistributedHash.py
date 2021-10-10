@@ -4,6 +4,7 @@ from numpy import may_share_memory
 import time
 import itertools
 import random
+from copy import copy
 
 
 
@@ -34,8 +35,9 @@ Reducer.addReducer(Join)
 
 class HashWorker(Chare):
 
-    def __init__(self,nodeConstructor,localVarGroup,parentProxy,pes):
+    def __init__(self,nodeConstructor,localVarGroup,parentProxy,pes,overlapPEs):
         self.hashPElist = pes
+        self.overlapPElist = overlapPEs
         self.inChannels = []
         self.level = -1
         self.levelList = []
@@ -325,14 +327,13 @@ class HashWorker(Chare):
                 i = 0
                 while i < numPending:
                     chIdx = self.queryLoopback.recv()
-                    
                     ch = self.queryChannels[chIdx]
                     msg = self.queryMessages[ch]
                     chList.append(ch)
                     val = msg['msg']
                     # print(prefix + ' Processing QUERY message ' + str(val) + ' on PE ' + str(charm.myPe()))
                     if type(val) is tuple and len(val) >= 3:
-                        if charm.myPe() != self.hashPElist[chIdx] or (not selfQuery or charm.myPe() == self.hashPElist[chIdx]):
+                        if (not charm.myPe() in self.overlapPElist) or (not selfQuery or charm.myPe() == chIdx):
                             answeredSelf = True
                         newNode = self.nodeConstructor(self.localVarGroup[charm.myPe()], self, *val)
                         if newNode in self.table:
@@ -492,7 +493,29 @@ class DistHash(Chare):
         self.hashPElist = list(itertools.chain.from_iterable( \
                [list(range(r[0],r[1],r[2])) for r in self.hashPEs] \
             ))
-        self.hWorkersFull = Group(HashWorker,args=[self.nodeConstructor, self.localVarGroup, self.thisProxy, self.hashPElist])
+
+        # Get a list of proxies for all memembers of the feeder group:
+        secs = self.feederGroup.getProxies(ret=True).get()
+        self.feederProxies = list(itertools.chain.from_iterable( \
+                [secs[r[0]:r[1]:r[2]] for r in self.posetPEs]
+            ))
+        # print(feederProxies)
+
+        feeders = sorted(self.posetPElist)
+        hashes = sorted(self.hashPElist)
+        overlapPElist = {}
+        feederIdx = 0
+        hashIdx = 0
+        # Everything is sorted by PE, so we can proceed sequentially
+        while feederIdx < len(feeders) and hashIdx < len(hashes):
+            if feeders[feederIdx] == hashes[hashIdx]:
+                overlapPElist[feeders[feederIdx]] = (feeders[feederIdx], hashes[hashIdx])
+                feederIdx += 1
+            hashIdx += 1
+        self.overlapPElist = copy(overlapPElist)
+
+
+        self.hWorkersFull = Group(HashWorker,args=[self.nodeConstructor, self.localVarGroup, self.thisProxy, self.hashPElist, overlapPElist])
         charm.awaitCreation(self.hWorkersFull)
         secs = [self.hWorkersFull[r[0]:r[1]:r[2]] for r in self.hashPEs]
         self.hWorkers = charm.combine(*secs)
@@ -505,30 +528,27 @@ class DistHash(Chare):
 
     @coro
     def initialize(self):
-        # Get a list of proxies for all memembers of the feeder group:
-        secs = self.feederGroup.getProxies(ret=True).get()
-        feederProxies = list(itertools.chain.from_iterable( \
-                [secs[r[0]:r[1]:r[2]] for r in self.posetPEs]
-            ))
-        # print(feederProxies)
+
         # Establish a feedback channel so that the hash table can send messages to the feeder workers:
-        feeders = sorted(zip(self.posetPElist,feederProxies))
+        feeders = sorted(zip(self.posetPElist,self.feederProxies))
         hashes = sorted(zip(self.hashPElist,self.hashWorkerProxies))
         self.overlapPElist = {}
         self.mappedPElist = {}
-        feederIdx = 0
-        hashIdx = 0
-        # Everything is sorted by PE, so we can proceed sequentially
-        while feederIdx < len(feeders) and hashIdx < len(hashes):
-            if feeders[feederIdx][0] == hashes[hashIdx][0]:
-                self.overlapPElist[feeders[feederIdx][0]] = (feeders[feederIdx][1], hashes[hashIdx][1])
-                feederIdx += 1
-            else:
-                if feeders[feederIdx][0] in self.mappedPElist:
-                    self.mappedPElist[hashes[hashIdx][0]].append((feeders[feederIdx][1], hashes[hashIdx][1]))
-                else:
-                    self.mappedPElist[hashes[hashIdx][0]] = [(feeders[feederIdx][1], hashes[hashIdx][1])]
-            hashIdx += 1
+        for idx in self.overlapPElist:
+            self.overlapPElist[idx] = (feeders[self.overlapPElist[idx][0]][1], hashes[self.overlapPElist[idx][1]][1]) 
+        # feederIdx = 0
+        # hashIdx = 0
+        # # Everything is sorted by PE, so we can proceed sequentially
+        # while feederIdx < len(feeders) and hashIdx < len(hashes):
+        #     if feeders[feederIdx][0] == hashes[hashIdx][0]:
+        #         self.overlapPElist[feeders[feederIdx][0]] = (feeders[feederIdx][1], hashes[hashIdx][1])
+        #         feederIdx += 1
+        #     else:
+        #         if feeders[feederIdx][0] in self.mappedPElist:
+        #             self.mappedPElist[hashes[hashIdx][0]].append((feeders[feederIdx][1], hashes[hashIdx][1]))
+        #         else:
+        #             self.mappedPElist[hashes[hashIdx][0]] = [(feeders[feederIdx][1], hashes[hashIdx][1])]
+        #     hashIdx += 1
 
         myFut = self.feederGroup.addFeedbackRateChannelOrigin(self.overlapPElist, awaitable=True)
         myFut.get()        
@@ -541,7 +561,7 @@ class DistHash(Chare):
         myFut = self.feederGroup.addDestChannel(self.hashWorkerProxies , awaitable=True)
         myFut.get()
 
-        myFut = self.hWorkersFull.addOriginChannel(feederProxies,awaitable=True)
+        myFut = self.hWorkersFull.addOriginChannel(self.feederProxies,awaitable=True)
         myFut.get()
 
         # Force the node channels to bind first, so that we can add query channels
@@ -562,7 +582,7 @@ class DistHash(Chare):
             self.queryMutexFuts[ch] = None
         self.queryMutexDone = None
 
-        myFut = self.hWorkersFull.addQueryOriginChannel(feederProxies,awaitable=True)
+        myFut = self.hWorkersFull.addQueryOriginChannel(self.feederProxies,awaitable=True)
         myFut.get()
 
     @coro
@@ -632,7 +652,8 @@ class DistHash(Chare):
     def getLevelList(self):
         nextlevel = Future()
         self.hWorkersFull.getLevelList(nextlevel)
-        self.queryMutexDone.get()
+        if not self.queryMutexDone is None:
+            self.queryMutexDone.get()
         return nextlevel.get()
 
     def getWorkerProxy(self):
@@ -641,10 +662,11 @@ class DistHash(Chare):
     def initListening(self,allDone):
         for ch in self.queryMutexChannels:
             self.queryMutexStatus[ch] = 0
-        for k in range(len(self.queryMutexChannels)):
-            self.thisProxy.queryMutexLocalListener(self.queryMutexChannels[k],k)
-        self.queryMutexDone = Future()
-        self.thisProxy.queryMutexListen()
+        if len(self.queryMutexChannels) > 0:
+            for k in range(len(self.queryMutexChannels)):
+                self.thisProxy.queryMutexLocalListener(self.queryMutexChannels[k],k)
+            self.queryMutexDone = Future()
+            self.thisProxy.queryMutexListen()
         doneFuts = [Future() for k in range(len(self.hashWorkerProxies))]
         for k in range(len(doneFuts)):
             self.hashWorkerProxies[k].initListen(doneFuts[k])
