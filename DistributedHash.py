@@ -536,19 +536,7 @@ class DistHash(Chare):
         self.mappedPElist = {}
         for idx in self.overlapPElist:
             self.overlapPElist[idx] = (feeders[self.overlapPElist[idx][0]][1], hashes[self.overlapPElist[idx][1]][1]) 
-        # feederIdx = 0
-        # hashIdx = 0
-        # # Everything is sorted by PE, so we can proceed sequentially
-        # while feederIdx < len(feeders) and hashIdx < len(hashes):
-        #     if feeders[feederIdx][0] == hashes[hashIdx][0]:
-        #         self.overlapPElist[feeders[feederIdx][0]] = (feeders[feederIdx][1], hashes[hashIdx][1])
-        #         feederIdx += 1
-        #     else:
-        #         if feeders[feederIdx][0] in self.mappedPElist:
-        #             self.mappedPElist[hashes[hashIdx][0]].append((feeders[feederIdx][1], hashes[hashIdx][1]))
-        #         else:
-        #             self.mappedPElist[hashes[hashIdx][0]] = [(feeders[feederIdx][1], hashes[hashIdx][1])]
-        #     hashIdx += 1
+
 
         myFut = self.feederGroup.addFeedbackRateChannelOrigin(self.overlapPElist, awaitable=True)
         myFut.get()        
@@ -563,10 +551,6 @@ class DistHash(Chare):
 
         myFut = self.hWorkersFull.addOriginChannel(self.feederProxies,awaitable=True)
         myFut.get()
-
-        # Force the node channels to bind first, so that we can add query channels
-        # self.feederGroup.sendAll(-2,awaitable=True).get()
-        # self.hWorkersFull.receiveOnNodeChannel(ret=True).get()
 
         # Establish Query channels from each feeder worker to each hash worker
         myFut = self.feederGroup.addQueryDestChannel(self.hashWorkerProxies , self.thisProxy, awaitable=True)
