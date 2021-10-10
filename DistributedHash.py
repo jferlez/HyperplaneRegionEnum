@@ -405,11 +405,11 @@ class HashWorker(Chare):
                             self.table[newNode] = {'nodeInt': val[2], 'checked':False}
                             self.levelList.append(val[2])
                             # Check node here:
-                            if False: # If result of node check is False return False on all the workerDone Futures
+                            if self.nodeCalls & 4 and not newNode.check(): # If result of node check is False return False on all the workerDone Futures
                                 if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
                                     self.workerDone[ch].send(False)
                                 self.status[ch] = -3
-                                self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
+                                # self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
                                 self.levelDone = True
                     # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
                     elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
@@ -455,10 +455,12 @@ class HashWorker(Chare):
 
     @coro
     def awaitLevel(self):
-        retVal = all([self.workerDone[ch].get() for ch in self.inChannels]) and \
-            all([self.queryDone[ch].get() for ch in self.queryChannels])
+        retVal = all([self.workerDone[ch].get() for ch in self.inChannels])
         self.levelDone = True
         return retVal
+    @coro
+    def awaitQueries(self):
+        return all([self.queryDone[ch].get() for ch in self.queryChannels])
 
     @coro
     def getLevelList(self, levelListFut):
@@ -638,6 +640,7 @@ class DistHash(Chare):
         self.hWorkersFull.getLevelList(nextlevel)
         if not self.queryMutexDone is None:
             self.queryMutexDone.get()
+        all(self.hWorkers.awaitQueries(ret=True).get())
         return nextlevel.get()
 
     def getWorkerProxy(self):
