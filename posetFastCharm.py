@@ -132,7 +132,7 @@ class Poset(Chare):
         
         #self.succGroup.testSend()
 
-
+        checkVal = True
         level = 0
         thisLevel = [self.flippedConstraints.root]
         posetLen = 1
@@ -150,7 +150,9 @@ class Poset(Chare):
         self.succGroup.flushMessages(ret=True).get()
         # print('Message flush successful')
         # print('Done sending message on RateChannel')
-        self.distHashTable.levelDone(awaitable=True).get()
+        checkVal = self.distHashTable.levelDone(ret=True).get()
+        if not checkVal:
+            level = self.N+2
         # print('Root node hashed')
         # print('Waiting for level done')
         while level < self.N+1 and len(thisLevel) > 0:
@@ -211,7 +213,7 @@ class Poset(Chare):
         print('Computed a (partial) poset of size: ' + str(posetLen))
         # return [i.iINT for i in self.hashTable.keys()]
         self.populated = True
-        return posetLen
+        return checkVal
 
 
 
