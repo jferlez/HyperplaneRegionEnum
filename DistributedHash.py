@@ -393,10 +393,11 @@ class HashWorker(Chare):
                             self.status[ch] = -3
                     elif val == -2:
                         if self.status[ch] != -2 and self.status[ch] != -3:
-                                self.workerDone[ch].send(True)
-                                self.status[ch] = -2
+                            self.workerDone[ch].send(True)
+                            self.status[ch] = -2
                         # self.workerDone[ch].send(True)
-                        self.levelDone = True
+                        if all([self.status[chIt] <= -2 for chIt in self.inChannels]):
+                            self.levelDone = True
                     elif type(val) == tuple and len(val) >= 3:
                         newNode = self.nodeConstructor(self.localVarGroup[charm.myPe()], self, *val)
                         if self.nodeCalls & 1:
