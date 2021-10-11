@@ -80,8 +80,6 @@ class TLLHypercubeReach(Chare):
         self.checkerLocalVars = Group(setupCheckerVars,args=[self.selectorMats])
         charm.awaitCreation(self.checkerLocalVars)
 
-        # stat = self.checkerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
-        # stat.get()
 
         self.poset = Chare(posetFastCharm.Poset,args=[{'poset':[(0,4,1)],'hash':[(0,4,1)]}, PosetNodeTLLVer, self.checkerLocalVars],onPE=charm.myPe())
         charm.awaitCreation(self.poset)
@@ -190,25 +188,9 @@ class TLLHypercubeReach(Chare):
     def verifyLB(self,lb, out=0):
         if out >= self.m:
             raise ValueError('Output ' + str(out) + ' is greater than m = ' + str(self.m))
-        # Alternate method of resetting poset problem for the new lower bound:
-        # ** BETTER DOUBLE CHECK THESE METHODS -- THEY MAY BE OUT OF DATE **
-
-        # constraints = posetFastCharm.constraints( \
-        #     -1*self.localLinearFns[out][0], \
-        #     self.localLinearFns[out][1] - lb*np.ones((self.N,1)), \
-        #     self.pt, \
-        #     self.inputConstraintsA, \
-        #     self.inputConstraintsb \
-        # )
-        # stat = self.checkerGroup.initializeFromConstraints(constraints, self.selectorMats[out],awaitable=True)
-        # stat.get()
-        # stat = self.poset.initializeFromConstraintObject(constraints)
-        # stat.get()
         
         t = time.time()
         
-        # stat = self.checkerGroup.setConstraint(lb, out=out, awaitable=True)
-        # stat.get()
         stat = self.poset.setConstraint(lb, out=out, awaitable=True)
         stat.get()
         self.checkerLocalVars.setConstraint(self.poset.getConstraintsObject(ret=True).get(),out,awaitable=True).get()
