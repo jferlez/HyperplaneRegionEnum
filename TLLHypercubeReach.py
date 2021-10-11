@@ -182,6 +182,8 @@ class TLLHypercubeReach(Chare):
             print('Total time required for region check workers to initialize: ' + str(self.workerInitTime))
             print('Total time required for (partial) poset calculation: ' + str(self.posetTime))
             print('Iterations used: ' + str(self.maxIts - itCnt))
+            if not lb:
+                print('Total number of LPs used for Upper Bound verification: ' + str(sum(self.ubCheckerGroup.getLPcount(ret=True).get())))
             print('***********************************************************')
         return windLB if lb else windUB
 
@@ -261,6 +263,8 @@ class minGroupFeasibleUB(Chare):
                     ) \
                 )
         
+        self.lp = encapsulateLP.encapsulateLP()
+
         self.selectorIndex = -1
     
     @coro
@@ -274,21 +278,14 @@ class minGroupFeasibleUB(Chare):
         ubShift = self.AbPairs[out][1][list(self.selectorSetsFull[out][mySelector]),:]
         ubShift = ubShift - ub*np.ones(ubShift.shape)
         bVec = np.vstack([ ubShift , -1*self.fixedb ]).T.flatten()
-        sol = cvxopt.solvers.lp( \
-                cvxopt.matrix(np.ones(self.n),(self.n,1),'d'), \
-                cvxopt.matrix( \
-                        -1*np.vstack([ self.AbPairs[out][0][list(self.selectorSetsFull[out][mySelector]),:], self.fixedA ]),
-                        (len(list(self.selectorSetsFull[out][mySelector]))+len(self.fixedA), self.n), \
-                        'd' \
-                    ), \
-                cvxopt.matrix( \
-                        bVec,
-                        (len(bVec),1),
-                        'd' \
-                    ) \
+        status, sol = self.lp.runLP( \
+                np.ones(self.n,dtype=np.float64), \
+                -1*np.vstack([ self.AbPairs[out][0][list(self.selectorSetsFull[out][mySelector]),:], self.fixedA ]), \
+                bVec, \
+                lpopts = {'solver':'glpk'}
             )
         # TO DO: account for intersections that are on the boundary of the input polytope
-        if sol['status'] == 'optimal':
+        if status == 'optimal':
             self.status.send(True)
         else:
             self.status.send(False)
@@ -296,6 +293,9 @@ class minGroupFeasibleUB(Chare):
     @coro
     def collectMinGroupStats(self, stat_result):
         self.reduce(stat_result, self.status.get(), Reducer.logical_or)
+    @coro
+    def getLPcount(self):
+        return self.lp.lpCount
 
 
 
