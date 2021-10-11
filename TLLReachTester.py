@@ -100,4 +100,4 @@ class Main(Chare):
 
         charm.exit()
         
-charm.start(Main,modules=['posetFastCharm','TLLHypercubeReach','NodeCheckerLowerBdVerify'])
+charm.start(Main,modules=['posetFastCharm','TLLHypercubeReach','DistributedHash'])
