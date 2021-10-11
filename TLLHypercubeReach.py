@@ -3,11 +3,9 @@ import TLLnet
 import numpy as np
 import charm4py
 from charm4py import charm, Chare, coro, Reducer, Group, Future, Channel
-import scipy.optimize
 import cdd
 import cvxopt
 import posetFastCharm
-import NodeCheckerLowerBdVerify
 from copy import copy,deepcopy
 import time
 from posetFastCharm import activeHyperplaneSet, unflipInt, posHyperplaneSet, unflipIntFixed
