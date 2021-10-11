@@ -225,19 +225,11 @@ class TLLHypercubeReach(Chare):
     def verifyUB(self,ub,out=0):
         if out >= self.m:
             raise ValueError('Output ' + str(out) + ' is greater than m = ' + str(self.m))
-        for ii in range(0, len(self.selectorMats[out]), charm.numPes()):
-            for k in range(charm.numPes()):
-                if ii+k < len(self.selectorMats[out]):
-                    self.ubCheckerGroup[k].checkMinGroup(ub,ii+k,out)
-                else:
-                    self.ubCheckerGroup[k].checkMinGroup(ub,-1, out)
-            minCheckFut = Future()
-            self.ubCheckerGroup.collectMinGroupStats(minCheckFut)
-            val = minCheckFut.get()
-            if val:
-                return True
-        return False
-
+        self.ubCheckerGroup.reset(awaitable=True).get()
+        self.ubCheckerGroup.checkMinGroup(ub,out)
+        minCheckFut = Future()
+        self.ubCheckerGroup.collectMinGroupStats(minCheckFut)
+        return minCheckFut.get()
 
 
 class minGroupFeasibleUB(Chare):
@@ -265,29 +257,40 @@ class minGroupFeasibleUB(Chare):
         self.lp = encapsulateLP.encapsulateLP()
 
         self.selectorIndex = -1
-    
+        self.loopback = Channel(self,remote=self.thisProxy[self.thisIndex])
+        self.workDone = False
+        pes = list(range(charm.numPes()))
+        pes.pop(charm.myPe())
+        self.otherProxies = [self.thisProxy[k] for k in pes]
     @coro
-    def checkMinGroup(self, ub, mySelector, out):
+    def reset(self):
+        self.workDone = False
+    @coro
+    def checkMinGroup(self, ub, out):
         self.status = Future()
-        if mySelector < 0:
-            self.status.send(False)
-            return
-        self.selectorIndex = mySelector
-        # Actually do the feasibility check:
-        ubShift = self.AbPairs[out][1][list(self.selectorSetsFull[out][mySelector]),:]
-        ubShift = ubShift - ub*np.ones(ubShift.shape)
-        bVec = np.vstack([ ubShift , -1*self.fixedb ]).T.flatten()
-        status, sol = self.lp.runLP( \
-                np.ones(self.n,dtype=np.float64), \
-                -1*np.vstack([ self.AbPairs[out][0][list(self.selectorSetsFull[out][mySelector]),:], self.fixedA ]), \
-                bVec, \
-                lpopts = {'solver':'glpk'}
-            )
-        # TO DO: account for intersections that are on the boundary of the input polytope
-        if status == 'optimal':
-            self.status.send(True)
-        else:
-            self.status.send(False)
+
+        for mySelector in range(charm.myPe(),len(self.selectorSetsFull[out]),charm.numPes()):
+            self.loopback.send(1)
+            self.loopback.recv()
+            if self.workDone:
+                break
+            # Actually do the feasibility check:
+            ubShift = self.AbPairs[out][1][list(self.selectorSetsFull[out][mySelector]),:]
+            ubShift = ubShift - ub*np.ones(ubShift.shape)
+            bVec = np.vstack([ ubShift , -1*self.fixedb ]).T.flatten()
+            status, sol = self.lp.runLP( \
+                    np.ones(self.n,dtype=np.float64), \
+                    -1*np.vstack([ self.AbPairs[out][0][list(self.selectorSetsFull[out][mySelector]),:], self.fixedA ]), \
+                    bVec, \
+                    lpopts = {'solver':'glpk'}
+                )
+            # TO DO: account for intersections that are on the boundary of the input polytope
+            if status == 'optimal':
+                for pxy in self.otherProxies:
+                    pxy.setDone()
+                self.status.send(True)
+                return
+        self.status.send(False)
 
     @coro
     def collectMinGroupStats(self, stat_result):
@@ -295,6 +298,9 @@ class minGroupFeasibleUB(Chare):
     @coro
     def getLPcount(self):
         return self.lp.lpCount
+    @coro
+    def setDone(self):
+        self.workDone = True
 
 
 
