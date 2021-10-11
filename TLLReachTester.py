@@ -11,12 +11,16 @@ import TLLHypercubeReach
 from TLLHypercubeReach import createCDDrep, findInteriorPoint
 import NodeCheckerLowerBdVerify
 import time
+import pickle
 
 
 
 class Main(Chare):
     # @coro
     def __init__(self,args):
+
+        with open('sizeVsTime_n2_input.p','rb') as fp:
+            expers = pickle.load(fp)
 
         # Simple Example #1:
         # 
@@ -80,12 +84,18 @@ class Main(Chare):
                 np.array([ [1 , -1]  ]),
                 np.array([0, -1.5])
             ]
+        
+        sizeIdx = 7
+        experIdx = 29 
+        localLinearFns = expers[sizeIdx][experIdx]['TLLparameters']['localLinearFunctions']
+        selectorMats = expers[sizeIdx][experIdx]['TLLparameters']['selectorMatrices']
+        constraints = [ expers[sizeIdx][experIdx]['inputPoly']['A'], expers[sizeIdx][experIdx]['inputPoly']['b'] ]
 
         tllReach = Chare(TLLHypercubeReach.TLLHypercubeReach, args=[localLinearFns, selectorMats, constraints, 100])
         # charm.awaitCreation(tllReach)
 
         t = time.time()
-        lbFut = tllReach.searchBound(0.1354321,lb=True,verbose=True,awaitable=True,ret=True)
+        lbFut = tllReach.searchBound(-0.135,lb=True,verbose=True,awaitable=True,ret=True)
         lb = lbFut.get()
         t = time.time()-t
 
@@ -93,10 +103,25 @@ class Main(Chare):
         print('--------------  FOUND LOWER BOUND:  --------------')
         print(lb)
         print('Total time elapsed: ' + str(t) + ' (sec)')
+        print(' ')
+        print('Minimum of samples: ' + str(np.min(expers[sizeIdx][experIdx]['samples']['output'])))
         print('--------------------------------------------------')
         print(' ')
 
-        charm.sleep(1)
+        print(' ')
+        t = time.time()
+        lbFut = tllReach.searchBound(-135,lb=False,verbose=True,awaitable=True,ret=True)
+        ub = lbFut.get()
+        t = time.time()-t
+
+        print(' ')
+        print('--------------  FOUND UPPER BOUND:  --------------')
+        print(ub)
+        print('Total time elapsed: ' + str(t) + ' (sec)')
+        print(' ')
+        print('Maximum of samples: ' + str(np.max(expers[sizeIdx][experIdx]['samples']['output'])))
+        print('--------------------------------------------------')
+        print(' ')
 
         charm.exit()
         
