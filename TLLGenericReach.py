@@ -75,7 +75,7 @@ class TLLGenericReach(Chare):
         stat = self.checkerGroup.initialize(self.pairedLocalLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.localLinearFns, self.selectorMats, awaitable=True)
         stat.get()
 
-        self.poset = Chare(posetFastCharm.Poset,args=[{'poset':[(0,4,1)],'hash':[(0,4,1)]},10, None, None],onPE=charm.myPe())
+        self.poset = Chare(posetFastCharm.Poset,args=[{'poset':[(0,4,1)],'hash':[(0,4,1)]}, None, None],onPE=charm.myPe())
         
         stat = self.poset.initialize(self.pairedLocalLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
         stat.get()
