@@ -172,13 +172,14 @@ class TLLHypercubeReach(Chare):
             else:
                 windUB = np.inf if searchDir > 0 else windUB
         if verbose:
-            print('**********    verifyLB on LB processing times:   **********')
-            print('Total time required to initialize the new lb problem: ' + str(self.copyTime))
-            # collectTimeFut = Future()
-            # self.checkerGroup.workerInitTime(collectTimeFut)
-            # self.workerInitTime = collectTimeFut.get()
-            print('Total time required for region check workers to initialize: ' + str(self.workerInitTime))
-            print('Total time required for (partial) poset calculation: ' + str(self.posetTime))
+            print('**********    ' + ('verifyLB on LB' if lb else 'verifyUB on UB') + ' processing times:   **********')
+            if lb:
+                print('Total time required to initialize the new lb problem: ' + str(self.copyTime))
+                # collectTimeFut = Future()
+                # self.checkerGroup.workerInitTime(collectTimeFut)
+                # self.workerInitTime = collectTimeFut.get()
+                print('Total time required for region check workers to initialize: ' + str(self.workerInitTime))
+                print('Total time required for (partial) poset calculation: ' + str(self.posetTime))
             print('Iterations used: ' + str(self.maxIts - itCnt))
             if not lb:
                 print('Total number of LPs used for Upper Bound verification: ' + str(sum(self.ubCheckerGroup.getLPcount(ret=True).get())))
