@@ -10,11 +10,51 @@ import posetFastCharm
 import NodeCheckerLowerBdVerify
 from copy import copy,deepcopy
 import time
+from posetFastCharm import activeHyperplaneSet, unflipInt, posHyperplaneSet, unflipIntFixed
+import encapsulateLP
+import DistributedHash
+
 
 cvxopt.solvers.options['show_progress'] = False
 
 # All hyperplanes assumes to be specified as A x >= b
 
+class PosetNodeTLLVer(DistributedHash.Node):
+    def init(self):
+        self.constraints, self.selectorSetsFull, self.nodeIntMask, self.out = self.localProxy.getConstraints(ret=True).get()
+    def check(self):
+        regSet = frozenset(
+                activeHyperplaneSet(\
+                    unflipIntFixed(self.nodeInt & self.nodeIntMask[0],self.constraints.flipMapSet,self.constraints.N), \
+                    self.constraints.N \
+                ) \
+            )
+        val = False
+        for sSet in self.selectorSetsFull[self.out]:
+            if len(sSet & regSet) == 0:
+                val = True
+                break
+
+        return val
+
+class setupCheckerVars(Chare):
+    def __init__(self,selectorMats):
+        self.selectorSetsFull = [[] for k in range(len(selectorMats))]
+        # Convert the matrices to sets of 'used' hyperplanes
+        for k in range(len(selectorMats)):
+            self.selectorSetsFull[k] = list( \
+                    map( \
+                        lambda x: frozenset(np.flatnonzero(np.count_nonzero(x, axis=0)>0)), \
+                        selectorMats[k] \
+                    ) \
+                )
+    def setConstraint(self,constraints, out):
+        self.out = out
+        # self.selectorSets = self.selectorSetsFull[out]
+        self.constraints = constraints
+        self.nodeIntMask = [(2**(self.constraints.N+1))-1]
+    def getConstraints(self):
+        return (self.constraints, self.selectorSetsFull, self.nodeIntMask, self.out)
 
 class TLLHypercubeReach(Chare):
     # @coro
@@ -32,19 +72,21 @@ class TLLHypercubeReach(Chare):
         self.M = len(selectorMats[0])
         self.m = len(localLinearFns)
 
-        self.inputConstraintsA = np.array(inputConstraints[0]).T
+        self.inputConstraintsA = np.array(inputConstraints[0])
         self.inputConstraintsb = np.array(inputConstraints[1]).reshape( (len(inputConstraints[1]),1) )
         # Create CDD representations for the input constraints
         self.inputMat, self.inputPolytope, self.inputVrep = createCDDrep(self.inputConstraintsA, self.inputConstraintsb)
         # Find a point in the middle of the polyhedron
         self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
 
-        self.checkerGroup = Group(NodeCheckerLowerBdVerify.NodeCheckerLowerBdVerify)
+        self.checkerLocalVars = Group(setupCheckerVars,args=[self.selectorMats])
+        charm.awaitCreation(self.checkerLocalVars)
 
-        stat = self.checkerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
-        stat.get()
+        # stat = self.checkerGroup.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, self.selectorMats, awaitable=True)
+        # stat.get()
 
-        self.poset = Chare(posetFastCharm.Poset,args=[self.checkerGroup,[],False,None,10],onPE=charm.myPe())
+        self.poset = Chare(posetFastCharm.Poset,args=[{'poset':[(0,4,1)],'hash':[(0,4,1)]}, PosetNodeTLLVer, self.checkerLocalVars],onPE=charm.myPe())
+        charm.awaitCreation(self.poset)
         
         stat = self.poset.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
         stat.get()
@@ -134,9 +176,9 @@ class TLLHypercubeReach(Chare):
         if verbose:
             print('**********    verifyLB on LB processing times:   **********')
             print('Total time required to initialize the new lb problem: ' + str(self.copyTime))
-            collectTimeFut = Future()
-            self.checkerGroup.workerInitTime(collectTimeFut)
-            self.workerInitTime = collectTimeFut.get()
+            # collectTimeFut = Future()
+            # self.checkerGroup.workerInitTime(collectTimeFut)
+            # self.workerInitTime = collectTimeFut.get()
             print('Total time required for region check workers to initialize: ' + str(self.workerInitTime))
             print('Total time required for (partial) poset calculation: ' + str(self.posetTime))
             print('Iterations used: ' + str(self.maxIts - itCnt))
@@ -164,20 +206,19 @@ class TLLHypercubeReach(Chare):
         
         t = time.time()
         
-        stat = self.checkerGroup.setConstraint(lb, out=out, awaitable=True)
-        stat.get()
+        # stat = self.checkerGroup.setConstraint(lb, out=out, awaitable=True)
+        # stat.get()
         stat = self.poset.setConstraint(lb, out=out, awaitable=True)
         stat.get()
+        self.checkerLocalVars.setConstraint(self.poset.getConstraintsObject(ret=True).get(),out,awaitable=True).get()
 
         self.copyTime += time.time() - t # Total time across all PEs to set up a new problem
 
         t = time.time()
-        checkFut = Future()
-        self.poset.populatePoset(checkNodesFuture=checkFut) # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
-        retVal = checkFut.get()
+        retVal = self.poset.populatePoset(method='fastLP',solver='glpk',findAll=False,ret=True).get() # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
         self.posetTime += time.time() - t
 
-        return not retVal
+        return retVal
     
     @coro
     def verifyUB(self,ub,out=0):
