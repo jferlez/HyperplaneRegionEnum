@@ -56,8 +56,10 @@ class setupCheckerVars(Chare):
 
 class TLLHypercubeReach(Chare):
     # @coro
-    def __init__(self, localLinearFns, selectorMats, inputConstraints, maxIts):
+    def __init__(self, localLinearFns, selectorMats, inputConstraints, maxIts, pes, useQuery, useBounding):
         self.maxIts = maxIts
+        self.useQuery = useQuery
+        self.useBounding = useBounding
 
         # Transpose local linear function kernels and selector matrices to correct for
         # Keras' multiply-on-the-right convention
@@ -81,7 +83,7 @@ class TLLHypercubeReach(Chare):
         charm.awaitCreation(self.checkerLocalVars)
 
 
-        self.poset = Chare(posetFastCharm.Poset,args=[{'poset':[(0,4,1)],'hash':[(0,4,1)]}, PosetNodeTLLVer, self.checkerLocalVars],onPE=charm.myPe())
+        self.poset = Chare(posetFastCharm.Poset,args=[pes, PosetNodeTLLVer, self.checkerLocalVars],onPE=charm.myPe())
         charm.awaitCreation(self.poset)
         
         stat = self.poset.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
@@ -198,7 +200,7 @@ class TLLHypercubeReach(Chare):
         self.copyTime += time.time() - t # Total time across all PEs to set up a new problem
 
         t = time.time()
-        retVal = self.poset.populatePoset(method='fastLP',solver='glpk',findAll=False,ret=True).get() # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
+        retVal = self.poset.populatePoset(method='fastLP',solver='glpk',findAll=False,useQuery=self.useQuery,useBounding=self.useBounding,ret=True).get() # specify retChannelEndPoint=self.thisProxy to send to a channel as follows
         self.posetTime += time.time() - t
 
         return retVal
