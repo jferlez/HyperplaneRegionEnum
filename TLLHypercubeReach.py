@@ -247,6 +247,7 @@ class minGroupFeasibleUB(Chare):
         pes = list(range(charm.numPes()))
         pes.pop(charm.myPe())
         self.otherProxies = [self.thisProxy[k] for k in pes]
+        self.tol = 1e-10
     @coro
     def reset(self):
         self.workDone = False
@@ -259,22 +260,72 @@ class minGroupFeasibleUB(Chare):
             self.loopback.recv()
             if self.workDone:
                 break
+            n = self.AbPairs[out][0].shape[1]
             # Actually do the feasibility check:
             ubShift = self.AbPairs[out][1][list(self.selectorSetsFull[out][mySelector]),:]
             ubShift = ubShift - ub*np.ones(ubShift.shape)
             bVec = np.vstack([ ubShift , -1*self.fixedb ]).T.flatten()
+            selHypers = self.AbPairs[out][0][list(self.selectorSetsFull[out][mySelector]),:]
             status, sol = self.lp.runLP( \
                     np.ones(self.n,dtype=np.float64), \
-                    -1*np.vstack([ self.AbPairs[out][0][list(self.selectorSetsFull[out][mySelector]),:], self.fixedA ]), \
+                    -1*np.vstack([ selHypers, self.fixedA ]), \
                     bVec, \
                     lpopts = {'solver':'glpk'}
                 )
             # TO DO: account for intersections that are on the boundary of the input polytope
             if status == 'optimal':
-                for pxy in self.otherProxies:
-                    pxy.setDone()
-                self.status.send(True)
-                return
+                full = np.vstack([ selHypers, self.fixedA ]) 
+                actHypers = np.nonzero(np.abs( full @ sol + bVec) <= self.tol)[0]
+                # print('actHypers = ' + str(actHypers))
+                # print(sol)
+                if len(actHypers) == 0:
+                    for pxy in self.otherProxies:
+                        pxy.setDone()
+                    self.status.send(True)
+                    return
+                distinctCount = 1
+                solList = [np.array(sol)]
+                # print(solList)
+                for k in actHypers:
+                    # Try to get away from the kth active hyperplane
+                    newStatus, newSol = self.lp.runLP( \
+                                -full[k,:], \
+                                -1*full, \
+                                bVec, \
+                                lpopts = {'solver':'glpk'}
+                            )
+                    # print('newSol = ' + str(newSol))
+                    # print('Solution difference: '  + str(np.abs(newSol - sol)))
+                    if k < len(selHypers) and np.abs(selHypers[k,:] @ newSol + ubShift[k]) <= self.tol \
+                        and np.abs(selHypers[k,:] @ solList[-1] + ubShift[k]) <= self.tol \
+                        and all([np.linalg.norm(prevSol - newSol) > self.tol for prevSol in solList]):
+                        # The feasible set contains a local linear function that is always equal to the upper bound
+                        # we're testing, hence the min of this selector set is exactly equal to that upper bound
+                        # Hence, this min term does not generate a violation, so we should move on to the next min term
+                        print('Degeneracy condition: ' + str(np.abs(selHypers[k,:] @ newSol + ubShift[k])))
+                        print('Solution difference: '  + str(np.linalg.norm(newSol - sol)))
+                        print('newSol = ' + str(newSol))
+                        print('Degenerate upper bound detected')
+                        break
+                    # print('solList internal: ' + str(solList))
+                    if all([np.linalg.norm(prevSol - newSol) > self.tol for prevSol in solList]):
+                        # This is a new solution
+                        distinctCount += 1
+                        solList.append(np.array(newSol))
+                        interiorPoint = np.sum(np.hstack(solList),axis=1)/(n+1)
+                        # print('Violation condition: ' + str((selHypers @ interiorPoint)+ubShift.flatten()  ) + ' Distinct count ' + str(distinctCount) + ' ' + str(n))
+                        # print('LHS = ' + str(selHypers @ np.hstack(solList)) + ' RHS = '  + str(ubShift))
+                        # print('Compare LHS = ' + str((np.transpose(selHypers @ np.hstack(solList)) + ubShift.flatten()) + self.tol >= 0) )
+                        # print('solList ' + str(solList))
+                        # print('selHypers @ interiorPoint = ' + str((selHypers @ interiorPoint) + ubShift.flatten()))
+                        if distinctCount == n + 1 and \
+                            np.all(selHypers @ interiorPoint + ubShift.flatten() > self.tol):
+                            # This feasible set has a nonempty interior, so we have a violation
+                            # print('sending true')
+                            for pxy in self.otherProxies:
+                                pxy.setDone()
+                            self.status.send(True)
+                            return
         self.status.send(False)
 
     @coro
