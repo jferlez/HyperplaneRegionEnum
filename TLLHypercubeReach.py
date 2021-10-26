@@ -278,7 +278,7 @@ class minGroupFeasibleUB(Chare):
                 actHypers = np.nonzero(np.abs( full @ sol + bVec) <= self.tol)[0]
                 # print('actHypers = ' + str(actHypers))
                 # print(sol)
-                if len(actHypers) == 0:
+                if len(actHypers) == 0 or np.all((selHypers @ sol + ubShift.flatten()) + self.tol >= 0):
                     for pxy in self.otherProxies:
                         pxy.setDone()
                     self.status.send(True)
@@ -318,8 +318,9 @@ class minGroupFeasibleUB(Chare):
                         # print('Compare LHS = ' + str((np.transpose(selHypers @ np.hstack(solList)) + ubShift.flatten()) + self.tol >= 0) )
                         # print('solList ' + str(solList))
                         # print('selHypers @ interiorPoint = ' + str((selHypers @ interiorPoint) + ubShift.flatten()))
-                        if distinctCount == n + 1 and \
-                            np.all(selHypers @ interiorPoint + ubShift.flatten() > self.tol):
+                        if (distinctCount == n + 1 and \
+                            np.all(selHypers @ interiorPoint + ubShift.flatten() > self.tol)) or \
+                            np.all((selHypers @ newSol + ubShift.flatten()) + self.tol >= 0):
                             # This feasible set has a nonempty interior, so we have a violation
                             # print('sending true')
                             for pxy in self.otherProxies:
