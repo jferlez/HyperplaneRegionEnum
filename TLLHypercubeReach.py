@@ -211,7 +211,10 @@ class TLLHypercubeReach(Chare):
         self.ubCheckerGroup.checkMinGroup(ub,out)
         minCheckFut = Future()
         self.ubCheckerGroup.collectMinGroupStats(minCheckFut)
-        return minCheckFut.get()
+        
+        retVal = minCheckFut.get()
+        print('Upper Bound verifiction used ' + str(sum(self.ubCheckerGroup.getLPcount(ret=True).get())) + ' total LPs.')
+        return retVal
 
 
 class minGroupFeasibleUB(Chare):
