@@ -81,21 +81,26 @@ class Main(Chare):
 
         # Specify the contraints for a 1-d input:
         constraints = [ \
-                np.array([ [1 , -1]  ]),
-                np.array([0, -1.5])
+                np.array([ [1 , -1]  ]).T,
+                np.array([0, -1])
             ]
         
         sizeIdx = 7
-        experIdx = 29 
+        experIdx = 18
         localLinearFns = expers[sizeIdx][experIdx]['TLLparameters']['localLinearFunctions']
         selectorMats = expers[sizeIdx][experIdx]['TLLparameters']['selectorMatrices']
         constraints = [ expers[sizeIdx][experIdx]['inputPoly']['A'], expers[sizeIdx][experIdx]['inputPoly']['b'] ]
 
-        tllReach = Chare(TLLHypercubeReach.TLLHypercubeReach, args=[localLinearFns, selectorMats, constraints, 100])
+        pes = {'poset':[(0,3,1)],'hash':[(3,4,1)]}
+        useQuery = True
+        useBounding = True
+        tllReach = Chare(TLLHypercubeReach.TLLHypercubeReach, args=[localLinearFns, selectorMats, constraints, 100, pes, useQuery, useBounding])
         # charm.awaitCreation(tllReach)
 
         t = time.time()
         lbFut = tllReach.searchBound(-0.135,lb=True,verbose=True,awaitable=True,ret=True)
+        # lbFut = tllReach.verifyUB(100,ret=True) # verify NN >= 100
+        # lbFut = tllReach.verifyLB(-100,ret=True) # verify NN <= 100
         lb = lbFut.get()
         t = time.time()-t
 
@@ -104,13 +109,17 @@ class Main(Chare):
         print(lb)
         print('Total time elapsed: ' + str(t) + ' (sec)')
         print(' ')
-        print('Minimum of samples: ' + str(np.min(expers[sizeIdx][experIdx]['samples']['output'])))
+        try:
+            print('Minimum of samples: ' + str(np.min(expers[sizeIdx][experIdx]['samples']['output'])))
+        except NameError:
+            pass
         print('--------------------------------------------------')
         print(' ')
 
         print(' ')
         t = time.time()
         lbFut = tllReach.searchBound(-135,lb=False,verbose=True,awaitable=True,ret=True)
+        # lbFut = tllReach.verifyUB(4.1,ret=True) # verify NN <= 100
         ub = lbFut.get()
         t = time.time()-t
 
@@ -119,7 +128,10 @@ class Main(Chare):
         print(ub)
         print('Total time elapsed: ' + str(t) + ' (sec)')
         print(' ')
-        print('Maximum of samples: ' + str(np.max(expers[sizeIdx][experIdx]['samples']['output'])))
+        try:
+            print('Maximum of samples: ' + str(np.max(expers[sizeIdx][experIdx]['samples']['output'])))
+        except NameError:
+            pass
         print('--------------------------------------------------')
         print(' ')
 
