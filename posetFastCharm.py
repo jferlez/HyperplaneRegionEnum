@@ -122,12 +122,12 @@ class Poset(Chare):
         return self.flippedConstraints
 
     @coro
-    def populatePoset(self, method='fastLP', solver='clp', findAll=False ):
+    def populatePoset(self, method='fastLP', solver='clp', findAll=False, useQuery=False, useBounding=False ):
         if self.populated:
             return
         
 
-        self.succGroup.setMethod(method=method,solver=solver,findAll=findAll)
+        self.succGroup.setMethod(method=method,solver=solver,findAll=findAll, useQuery=useQuery, useBounding=useBounding)
 
         
         #self.succGroup.testSend()
@@ -235,8 +235,10 @@ class successorWorker(Chare):
         self.outChannels = []
         self.endian = sys.byteorder
     
-    def setMethod(self,method='fastLP',solver='clp',findAll=True,lpopts={}):
+    def setMethod(self,method='fastLP',solver='clp',findAll=True,useQuery=False,useBounding=False,lpopts={}):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
+        self.useQuery = useQuery
+        self.useBounding = useBounding
         if method=='cdd':
             self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsCDD
             self.processNodesArgs = {'solver':solver}
@@ -508,18 +510,18 @@ class successorWorker(Chare):
         to_keep = list(range(len(H)))
         to_keep_redundant = []
         while idx < len(H) and cntr > 0:
-            # if to_keep[loc] < len(restoreInt):
-            #     origInt = restoreInt[to_keep[loc]]
-            #     q = self.thisProxy[self.thisIndex].query(origInt,ret=True).get()
-            #     # print('PE' + str(charm.myPe()) + ' Queried table with node ' + str(origInt) + ' and received reply ' + str(q))
-            #     # If the node corresponding to the hyperplane we're about to flip is already in the table
-            #     # then treat it as redundant and skip it (saving the LP)
-            #     if q > 0:
-            #         to_keep_redundant.append(loc)
-            #         loc += 1
-            #         cntr -= 1
-            #         idx += 1
-            #         continue
+            if self.useQuery and to_keep[loc] < len(restoreInt):
+                origInt = restoreInt[to_keep[loc]]
+                q = self.thisProxy[self.thisIndex].query(origInt,ret=True).get()
+                # print('PE' + str(charm.myPe()) + ' Queried table with node ' + str(origInt) + ' and received reply ' + str(q))
+                # If the node corresponding to the hyperplane we're about to flip is already in the table
+                # then treat it as redundant and skip it (saving the LP)
+                if q > 0:
+                    to_keep_redundant.append(loc)
+                    loc += 1
+                    cntr -= 1
+                    idx += 1
+                    continue
             e[idx,0] = 1        
             if safe:
                 status, x = self.lp.runLP( \
@@ -607,7 +609,7 @@ class successorWorker(Chare):
         # the number N instead:
         if findAll and N > 3*d:
             doBounding = True
-        doBounding = False
+        doBounding = doBounding and self.useBounding
         if doBounding:
             #lp = encapsulateLP(solver, opts={'dim':d})
             # Find a bounding box
