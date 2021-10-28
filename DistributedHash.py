@@ -467,6 +467,8 @@ class HashWorker(Chare):
     def getLevelList(self, levelListFut):
         if self.levelDone:
             self.reduce(levelListFut, self.levelList, Reducer.Join)
+            self.levelList = []
+            self.table = {}
         else:
             print('Warning: tried to retrieve level list before level was done!')
             self.reduce(levelListFut, [], Reducer.Join)
