@@ -36,16 +36,17 @@ class PosetNodeTLLVer(DistributedHash.Node):
         return val
 
 class setupCheckerVars(Chare):
-    def __init__(self,selectorMats):
-        self.selectorSetsFull = [[] for k in range(len(selectorMats))]
-        # Convert the matrices to sets of 'used' hyperplanes
-        for k in range(len(selectorMats)):
-            self.selectorSetsFull[k] = list( \
-                    map( \
-                        lambda x: frozenset(np.flatnonzero(np.count_nonzero(x, axis=0)>0)), \
-                        selectorMats[k] \
-                    ) \
-                )
+    def __init__(self,selectorSetsFull):
+        self.selectorSetsFull = selectorSetsFull
+        # self.selectorSetsFull = [[] for k in range(len(selectorMats))]
+        # # Convert the matrices to sets of 'used' hyperplanes
+        # for k in range(len(selectorMats)):
+        #     self.selectorSetsFull[k] = list( \
+        #             map( \
+        #                 lambda x: frozenset(np.flatnonzero(np.count_nonzero(x, axis=0)>0)), \
+        #                 selectorMats[k] \
+        #             ) \
+        #         )
     def setConstraint(self,constraints, out):
         self.out = out
         # self.selectorSets = self.selectorSetsFull[out]
@@ -79,7 +80,17 @@ class TLLHypercubeReach(Chare):
         # Find a point in the middle of the polyhedron
         self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
 
-        self.checkerLocalVars = Group(setupCheckerVars,args=[self.selectorMats])
+        self.selectorSetsFull = [[] for k in range(len(selectorMats))]
+        # Convert the matrices to sets of 'used' hyperplanes
+        for k in range(len(self.selectorMats)):
+            self.selectorSetsFull[k] = list( \
+                    map( \
+                        lambda x: frozenset(np.flatnonzero(np.count_nonzero(x, axis=0)>0)), \
+                        self.selectorMats[k] \
+                    ) \
+                )
+
+        self.checkerLocalVars = Group(setupCheckerVars,args=[self.selectorSetsFull])
         charm.awaitCreation(self.checkerLocalVars)
 
 
