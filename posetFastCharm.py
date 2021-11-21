@@ -88,7 +88,7 @@ class Poset(Chare):
     def setConstraint(self,lb=0,out=0):
         self.populated = False
         self.incomplete = True
-        self.flippedConstraints = flipConstraintsReduced( \
+        self.flippedConstraints = flipConstraints( \
                 -1*self.AbPairs[out][0], \
                 self.AbPairs[out][1] - lb*np.ones((self.N,1)), \
                 self.pt, \

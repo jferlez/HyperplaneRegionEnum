@@ -76,9 +76,10 @@ class TLLHypercubeReach(Chare):
         self.inputConstraintsA = np.array(inputConstraints[0])
         self.inputConstraintsb = np.array(inputConstraints[1]).reshape( (len(inputConstraints[1]),1) )
         # Create CDD representations for the input constraints
-        self.inputMat, self.inputPolytope, self.inputVrep = createCDDrep(self.inputConstraintsA, self.inputConstraintsb)
+        # self.inputMat, self.inputPolytope, self.inputVrep = createCDDrep(self.inputConstraintsA, self.inputConstraintsb)
         # Find a point in the middle of the polyhedron
-        self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
+        # self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
+        self.pt = np.zeros(self.n).reshape(self.n,1)
 
         self.selectorSetsFull = [[] for k in range(len(selectorMats))]
         # Convert the matrices to sets of 'used' hyperplanes
