@@ -1,3 +1,4 @@
+from platform import node
 import charm4py
 from charm4py import charm, Chare, coro, Reducer, Group, Future, Array, Channel
 import cdd
@@ -88,7 +89,7 @@ class Poset(Chare):
     def setConstraint(self,lb=0,out=0):
         self.populated = False
         self.incomplete = True
-        self.flippedConstraints = flipConstraintsReduced( \
+        self.flippedConstraints = flipConstraints( \
                 -1*self.AbPairs[out][0], \
                 self.AbPairs[out][1] - lb*np.ones((self.N,1)), \
                 self.pt, \
@@ -184,7 +185,7 @@ class Poset(Chare):
             nextLevel = self.distHashTable.getLevelList(ret=True).get()
             # print('Got level list')
             # print(nextLevel)
-            
+
 
             posetLen += len(nextLevel)
             # print(posetLen)
@@ -332,16 +333,8 @@ class successorWorker(Chare):
     
     # https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
     def hashNode(self,nodeBytes):
-        # nodeInt is now an immutable bytes array
-        # print('nodeInt is ' + str(type(nodeInt)))
-        for idx in range(0,len(nodeBytes),8):
-            nodeInt = int.from_bytes(nodeBytes[idx:min(idx+8,len(nodeBytes))],'little')
-            p = 6148914691236517205*(nodeInt^(nodeInt>>32))
-            if idx == 0:
-                hashInt = (17316035218449499591*(p^(p>>32)))
-            else:
-                hashInt = hashInt ^ (17316035218449499591*(p^(p>>32)))
-        return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeBytes )
+        hashInt = hashNodeBytes(nodeBytes)
+        return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeBytes)
     
     @coro
     def hashAndSend(self,nodeBytes):
@@ -425,7 +418,7 @@ class successorWorker(Chare):
             for ii in range(len(successorList)):
                 successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints,**self.processNodesArgs).get()
                 
-                if not type(successorList[ii][1]) is bytes:
+                if type(successorList[ii][1]) is int:
                     term = True
                     break
         else:
@@ -436,7 +429,7 @@ class successorWorker(Chare):
 
         
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
-        successorList = [successorList[ii][0] for ii in range(len(successorList))]
+        # successorList = [successorList[ii][0] for ii in range(len(successorList))]
 
 
     @coro
@@ -503,14 +496,13 @@ class successorWorker(Chare):
         else:
             # This version of H has an extra row, that we can use for the another constraint
             H = np.vstack([H2, [H2[0,:]] ])
-        
-        H[:,1:] = -H[:,1:]
 
         to_keep = np.full(len(intIdx),False,dtype=bool)
         for idx in range(len(intIdx)):
             if self.useQuery:
                 boolIdx[intIdx[idx]] = 1
-                q = self.thisProxy[self.thisIndex].query( bytes(np.packbits(boolIdx,bitorder='little')), ret=True).get()
+                # q = self.thisProxy[self.thisIndex].query( bytes(np.packbits(boolIdx,bitorder='little')), ret=True).get()
+                q = self.thisProxy[self.thisIndex].query( boolIdx, ret=True).get()
                 boolIdx[intIdx[idx]] = 0
                 # print('PE' + str(charm.myPe()) + ' Queried table with node ' + str(origInt) + ' and received reply ' + str(q))
                 # If the node corresponding to the hyperplane we're about to flip is already in the table
@@ -522,8 +514,8 @@ class successorWorker(Chare):
                 H[-1,:] = -H[intIdx[idx],:]
             H[intIdx[idx],0] += 1
             status, x = self.lp.runLP( \
-                    -H[intIdx[idx],1:], \
-                    H[:,1:], \
+                    H[intIdx[idx],1:], \
+                    -H[:,1:], \
                     H[:,0], \
                     lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
                     msgID = str(charm.myPe()) \
@@ -535,36 +527,40 @@ class successorWorker(Chare):
                 print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
                 print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
                 return [set([]), 0]
-            if (safe and H[intIdx[idx],1:]@x < H[intIdx[idx],0]) \
-                or (not safe and (status == 'primal infeasible' or np.all(H[intIdx[idx],1:]@x - H[intIdx[idx],0] <= 1e-10))):
+            if (safe and -H[intIdx[idx],1:]@x < H[intIdx[idx],0]) \
+                or (not safe and (status == 'primal infeasible' or np.all(-H[intIdx[idx],1:]@x - H[intIdx[idx],0] <= 1e-10))):
                 # inequality is redundant, so skip it
                 pass
             else:
                 to_keep[idx] = True
-        # to_keep = to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
-        # for k in range(len(to_keep_redundant)-1,-1,-1):
-        #     to_keep.pop(to_keep_redundant[k])
-        
-        H[:,1:] = -H[:,1:]
 
         return to_keep
 
     @coro
     def processNodeSuccessorsFastLP(self,INTrep,N,H,solver='glpk',findAll=False,lpopts={}):
         # We assume INTrep is a bytearray object (but this may have to change for efficiency reasons)
-        boolIdxNoFlip = np.unpackbits(bytearray(INTrep), count=self.N, bitorder='little').astype(bool)
-        intIdxNoFlip = np.where(boolIdxNoFlip)[0]
-        boolIdx = np.logical_not(boolIdxNoFlip)
-        intIdx = np.where(boolIdx)[0]
-        # boolIdx and intIdx now identify the flippable hyperplanes
+        intIdx = []
+        intIdxNoFlip = []
+        for bIdx in range(len(INTrep)):
+            for bitIdx in range(8) if bIdx < len(INTrep) - 1 else range(len(INTrep) - int(self.N/8)):
+                if INTrep[bIdx] & (1<<bitIdx) == 0:
+                    intIdx.append(8*bIdx + bitIdx)
+                else:
+                    intIdxNoFlip.append(8*bIdx + bitIdx)
+        if bIdx * 8 + bitIdx < self.N:
+            for i in range(bIdx * 8 + bitIdx + 1, self.N):
+                intIdx.append(i)
+
+        intIdx = tuple(intIdx)
+        intIdxNoFlip = tuple(intIdxNoFlip)
 
         # Flip the un-flippable hyperplanes; this must be undone later
         H[intIdxNoFlip,:] = -H[intIdxNoFlip,:]
 
         
-        if findAll:
-            boolIdx = np.full(self.N,1,dtype=boolIdx.dtype)
-            intIdx = np.where(boolIdx)[0]
+        # if findAll:
+        #     boolIdx = np.full(self.N,1,dtype=boolIdx.dtype)
+        #     intIdx = np.where(boolIdx)[0]
 
         
         d = H.shape[1]-1
@@ -607,37 +603,47 @@ class successorWorker(Chare):
 
             boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
 
-            to_drop = np.nonzero(np.all(((-H[0:self.N,1:] @ boxCorners) - H[0:self.N,0].reshape((-1,1))) <= 1e-07,axis=1))[0]
+            to_keep = np.nonzero(np.any(((-H[0:self.N,1:] @ boxCorners) - H[0:self.N,0].reshape((-1,1))) >= 1e-07,axis=1))[0]
             # Now modify boolIdx and intIdx to remove these hyperplanes from consideration
-            for drp in to_drop:
-                boolIdx[drp] = 0
-            intIdx = np.where(boolIdx)[0]
+            intIdx = []
+            for drp in to_keep:
+                # boolIdx[drp] = 0
+                if INTrep[int(drp/8)] & self.bitInts[drp % 8] == 0:
+                    intIdx.append(drp)
+            if bIdx * 8 + bitIdx < self.N:
+                for i in range(bIdx * 8 + bitIdx + 1, self.N):
+                    intIdx.append(i)
+            intIdx = tuple(intIdx)
+
+            # intIdx = np.where(boolIdx)[0]
         
         
-        faces = self.thisProxy[self.thisIndex].concreteMinHRep(H,boolIdx,intIdx,solver=solver,safe=False,ret=True).get()
-        
+        faces = self.thisProxy[self.thisIndex].concreteMinHRep(H,INTrep,intIdx,solver=solver,safe=False,ret=True).get()
+
         successors = []
-        for i in np.where(faces)[0]:
-            if boolIdxNoFlip[intIdx[i]] == 0:
-                boolIdxNoFlip[intIdx[i]] = 1
+        for i in np.nonzero(faces)[0]:
+            if INTrep[int(intIdx[i]/8)] & 1<<(intIdx[i] % 8) == 0:
+                # boolIdxNoFlip[intIdx[i]] = 1
+                INTrep[int(intIdx[i]/8)] = INTrep[int(intIdx[i]/8)] | 1<<(intIdx[i] % 8)
                 successors.append( \
-                        bytes(np.packbits(boolIdxNoFlip,bitorder='little')) \
+                        copy(INTrep)
                     )
-                boolIdxNoFlip[intIdx[i]] = 0
-                
-                # print('Processing node!')
+                INTrep[int(intIdx[i]/8)] = INTrep[int(intIdx[i]/8)] ^ 1<<(intIdx[i] % 8)
+                               
                 cont = self.thisProxy[self.thisIndex].hashAndSend(successors[-1],ret=True).get()
-                # print(cont)
+                
                 if not cont:
-                    return [set(successors), -1]
+                    return [successors, -1]
         facesInt = np.full(self.N,0,dtype=bool)
-        sel = intIdx[faces]
+        
+        sel = np.array(intIdx,dtype=np.uint64)[faces]
         facesInt[sel] = np.full(len(sel),1,dtype=bool)
 
         # Undo the flip we did before, since it affects a referenced (as opposed to copied) array:
         H[intIdxNoFlip,:] = -H[intIdxNoFlip,:]
 
-        return [set(successors), bytes(np.packbits(facesInt,bitorder='little'))]            
+        # return [successors, bytes(np.packbits(facesInt,bitorder='little'))]            
+        return [[], [1]]            
 
 
         
@@ -677,7 +683,8 @@ class flipConstraints:
             self.fb = None
             self.constraints = np.hstack((-self.nb,self.nA))
 
-        self.root = bytes( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
+        self.root = bytearray( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
+        # self.root = int.from_bytes(self.root, 'little')
 
 
 class flipConstraintsReduced(flipConstraints):
@@ -707,7 +714,8 @@ class flipConstraintsReduced(flipConstraints):
         self.root = np.unpackbits(bytearray(self.root),count=self.N,bitorder='little')
         for k in np.nonzero(self.redundantHyperplanes<0)[0]:
             self.root[k] = 1
-        self.root = bytes(np.packbits(self.root,bitorder='little'))
+        self.root = bytearray(np.packbits(self.root,bitorder='little'))
+        # self.root = int.from_bytes(self.root, 'little')
 
         #print(self.root)
 
@@ -838,3 +846,19 @@ def activeHyperplaneSet(INT,n):
             retIdx += 1
         idx = idx << 1
     return retList[0:retIdx]
+
+def hashNodeBytes(nodeBytes):
+    chunks = np.array( \
+        [int.from_bytes(nodeBytes[idx:min(idx+8,len(nodeBytes))],'little') for idx in range(0,len(nodeBytes),8)], \
+        dtype=np.uint64 \
+        )
+    p = 6148914691236517205 * np.bitwise_xor(chunks, np.right_shift(chunks,32))
+    hashInt = 17316035218449499591 * np.bitwise_xor(p, np.right_shift(p,32))
+    
+    return int(np.bitwise_xor.reduce(hashInt))
+
+def oldHashNode(nodeBytes):
+    nodeInt = int.from_bytes(nodeBytes,'little')
+    p = 6148914691236517205*(nodeInt^(nodeInt>>32))
+    hashInt = (17316035218449499591*(p^(p>>32))) & ((1 << 33)-1)
+    return hashInt

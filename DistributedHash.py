@@ -23,6 +23,8 @@ class Node():
     
     def __eq__(self,other):
         if type(other) == bytes:
+            return self.nodeBytes == bytearray(other)
+        elif type(other) == bytearray:
             return self.nodeBytes == other
         elif isinstance(other,Node):
             return self.nodeBytes == other.nodeBytes
