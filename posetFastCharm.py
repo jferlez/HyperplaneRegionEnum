@@ -156,7 +156,6 @@ class Poset(Chare):
         # print('Root node hashed')
         # print('Waiting for level done')
         while level < self.N+1 and len(thisLevel) > 0:
-
             # successorProxies = self.succGroup.getProxies(ret=True).get()
             doneFuts = [Future() for k in range(len(self.successorProxies))]
             for k in range(len(self.successorProxies)):
@@ -184,6 +183,7 @@ class Poset(Chare):
             # print('Done with level ' + str(level))
             nextLevel = self.distHashTable.getLevelList(ret=True).get()
             # print('Got level list')
+            # print(nextLevel)
             
 
             posetLen += len(nextLevel)
@@ -330,14 +330,22 @@ class successorWorker(Chare):
         )
         return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
     
-    def hashNode(self,nodeInt):
+    # https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
+    def hashNode(self,nodeBytes):
+        # nodeInt is now an immutable bytes array
         # print('nodeInt is ' + str(type(nodeInt)))
-        p = 6148914691236517205*(nodeInt^(nodeInt>>32))
-        hashInt = (17316035218449499591*(p^(p>>32))) & ((1 << 33)-1)
-        return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
+        for idx in range(0,len(nodeBytes),8):
+            nodeInt = int.from_bytes(nodeBytes[idx:min(idx+8,len(nodeBytes))],'little')
+            p = 6148914691236517205*(nodeInt^(nodeInt>>32))
+            if idx == 0:
+                hashInt = (17316035218449499591*(p^(p>>32)))
+            else:
+                hashInt = hashInt ^ (17316035218449499591*(p^(p>>32)))
+        return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeBytes )
+    
     @coro
-    def hashAndSend(self,nodeInt):
-        val = self.hashNode(nodeInt)
+    def hashAndSend(self,nodeBytes):
+        val = self.hashNode(nodeBytes)
         self.outChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(nodeInt))
         retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
@@ -416,7 +424,8 @@ class successorWorker(Chare):
             successorList = [[None,None]] * len(self.workInts)
             for ii in range(len(successorList)):
                 successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints,**self.processNodesArgs).get()
-                if successorList[ii][1] < 0:
+                
+                if not type(successorList[ii][1]) is bytes:
                     term = True
                     break
         else:
@@ -483,119 +492,80 @@ class successorWorker(Chare):
 
 
     @coro
-    def concreteMinHRep(self,H2,cnt=None,randomize=False,copyMat=True,solver='glpk',safe=False,restoreInt=None):
-        if not randomize:
-            if copyMat:
-                H = copy(H2)
-            else:
-                H = H2
-        else:
-            H = H2[np.random.permutation(len(H2)),:]
-        if cnt is None:
-            cntr = len(H)
-        else:
-            cntr = cnt
+    def concreteMinHRep(self,H2,boolIdx,intIdx,solver='glpk',safe=False):
 
-        d = H.shape[1]-1
+        if len(intIdx) == 0:
+            return np.full(0,0,dtype=bool) 
+
+        # H2 should be a view into the CDD-formatted H matrix selected by taking boolIdx or intIdx rows thereof
+        if safe:
+            H = H2
+        else:
+            # This version of H has an extra row, that we can use for the another constraint
+            H = np.vstack([H2, [H2[0,:]] ])
         
-        # if solver=='clp':
-        #     s = CyClpSimplex()
-        #     xVar = s.addVariable('x', d)
-        #     s.logLevel = 0
-        #lp = encapsulateLP(solver, opts={'dim':d})
+        H[:,1:] = -H[:,1:]
 
-        idx = 0
-        loc = 0
-        e = np.zeros((len(H),1))
-        to_keep = list(range(len(H)))
-        to_keep_redundant = []
-        while idx < len(H) and cntr > 0:
-            if self.useQuery and to_keep[loc] < len(restoreInt):
-                origInt = restoreInt[to_keep[loc]]
-                q = self.thisProxy[self.thisIndex].query(origInt,ret=True).get()
+        to_keep = np.full(len(intIdx),False,dtype=bool)
+        for idx in range(len(intIdx)):
+            if self.useQuery:
+                boolIdx[intIdx[idx]] = 1
+                q = self.thisProxy[self.thisIndex].query( bytes(np.packbits(boolIdx,bitorder='little')), ret=True).get()
+                boolIdx[intIdx[idx]] = 0
                 # print('PE' + str(charm.myPe()) + ' Queried table with node ' + str(origInt) + ' and received reply ' + str(q))
                 # If the node corresponding to the hyperplane we're about to flip is already in the table
                 # then treat it as redundant and skip it (saving the LP)
                 if q > 0:
-                    to_keep_redundant.append(loc)
-                    loc += 1
-                    cntr -= 1
-                    idx += 1
                     continue
-            e[idx,0] = 1        
-            if safe:
-                status, x = self.lp.runLP( \
-                        H[idx,1:], \
-                        -H[to_keep,1:], \
-                        H[to_keep,0]+e[to_keep,0], \
-                        lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
-                        msgID = str(charm.myPe()) \
-                    )
-            else:
-                status, x = self.lp.runLP( \
-                        H[idx,1:], \
-                        -np.vstack([H[to_keep,1:], [-H[idx,1:]]]), \
-                        np.hstack([H[to_keep,0]+e[to_keep,0], [-H[idx,0]]]), \
-                        lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
-                        msgID = str(charm.myPe()) \
-                    )
-            e[idx,0] = 0
-            
+            if not safe:
+                # Set the extra row to the negation of the pre-relaxed current constraint
+                H[-1,:] = -H[intIdx[idx],:]
+            H[intIdx[idx],0] += 1
+            status, x = self.lp.runLP( \
+                    -H[intIdx[idx],1:], \
+                    H[:,1:], \
+                    H[:,0], \
+                    lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
+                    msgID = str(charm.myPe()) \
+                )
+            H[intIdx[idx],0] -= 1
+
             if status != 'optimal' and (safe or status != 'primal infeasible') and status != 'dual infeasible':
                 print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
                 print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
                 print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
                 return [set([]), 0]
-            if (safe and -H[idx,1:]@x < H[idx,0]) \
-                or (not safe and (status == 'primal infeasible' or np.all(-H[to_keep,1:]@x - H[to_keep,0].reshape((len(to_keep),1)) <= 1e-10))):
-                # inequality is redundant, so remove it
-                to_keep.pop(loc)
-                cntr -= 1
+            if (safe and H[intIdx[idx],1:]@x < H[intIdx[idx],0]) \
+                or (not safe and (status == 'primal infeasible' or np.all(H[intIdx[idx],1:]@x - H[intIdx[idx],0] <= 1e-10))):
+                # inequality is redundant, so skip it
+                pass
             else:
-                loc += 1
-                cntr -= 1
-            idx += 1
-        to_keep = to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
-        for k in range(len(to_keep_redundant)-1,-1,-1):
-            to_keep.pop(to_keep_redundant[k])
+                to_keep[idx] = True
+        # to_keep = to_keep[0:min(loc if not cnt is None else len(to_keep),len(to_keep))]
+        # for k in range(len(to_keep_redundant)-1,-1,-1):
+        #     to_keep.pop(to_keep_redundant[k])
+        
+        H[:,1:] = -H[:,1:]
+
         return to_keep
 
     @coro
-    def processNodeSuccessorsFastLP(self,INTrep,N,H2,solver='glpk',findAll=False,lpopts={}):
-        
-        # H = copy(H2)
-        # global H2
-        # H = np.array(H2)
-        # H = np.array(processNodeSuccessors.H)
-        flippable = np.zeros((N,),dtype=np.int64)
-        unflippable = np.zeros((N,),dtype=np.int64)
-        flipIdx = 0
-        unflipIdx = 0
-        idx = 1
-        for i in range(N):
-            if INTrep & idx > 0:
-                # H[i] = -1*H[i]
-                unflippable[unflipIdx] = i
-                unflipIdx += 1
-            else:
-                flippable[flipIdx] = i
-                flipIdx += 1
-            idx = idx << 1
-        # flippable = flippable[0:flipIdx]
-        # unflippable = unflippable[0:unflipIdx]
-        
+    def processNodeSuccessorsFastLP(self,INTrep,N,H,solver='glpk',findAll=False,lpopts={}):
+        # We assume INTrep is a bytearray object (but this may have to change for efficiency reasons)
+        boolIdxNoFlip = np.unpackbits(bytearray(INTrep), count=self.N, bitorder='little').astype(bool)
+        intIdxNoFlip = np.where(boolIdxNoFlip)[0]
+        boolIdx = np.logical_not(boolIdxNoFlip)
+        intIdx = np.where(boolIdx)[0]
+        # boolIdx and intIdx now identify the flippable hyperplanes
 
-        if not findAll:
-            # Now all of the flippable hyperplanes will be at the beginning
-            # flippable = sorted(list(set(range(N))-set(unflippable)))
-            H = H2[np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx]]),:]
-            reorder = np.hstack([flippable[0:flipIdx], unflippable[0:unflipIdx], np.array(range(N,H2.shape[0]),dtype=np.int64)])
-            H[flipIdx:,:] = -H[flipIdx:,:]
-            H3 = np.vstack([H, H2[N:,:]])
-            H=H3
-        else:
-            H = copy(H2)
-            H[unflippable[0:unflipIdx],:] = -H[unflippable[0:unflipIdx],:]
+        # Flip the un-flippable hyperplanes; this must be undone later
+        H[intIdxNoFlip,:] = -H[intIdxNoFlip,:]
+
+        
+        if findAll:
+            boolIdx = np.full(self.N,1,dtype=boolIdx.dtype)
+            intIdx = np.where(boolIdx)[0]
+
         
         d = H.shape[1]-1
 
@@ -603,7 +573,7 @@ class successorWorker(Chare):
         doBounding = False
         # Don't compute the bounding box if the number of flippable hyperplanes is almost 2*d,
         # since we have to do 2*d LPs just to get the bounding box
-        if not findAll and len(flippable) > 3*d:
+        if not findAll and len(intIdx) > 3*d:
             doBounding = True
         # If we want all the faces, we should decide whether to compute the bounding box based on
         # the number N instead:
@@ -637,63 +607,37 @@ class successorWorker(Chare):
 
             boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
 
-            to_keep = np.nonzero(np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((len(H),1))) >= -1e-07,axis=1))[0]
-        else:
-            to_keep = np.array(range(H.shape[0]),dtype=np.int64)
+            to_drop = np.nonzero(np.all(((-H[0:self.N,1:] @ boxCorners) - H[0:self.N,0].reshape((-1,1))) <= 1e-07,axis=1))[0]
+            # Now modify boolIdx and intIdx to remove these hyperplanes from consideration
+            for drp in to_drop:
+                boolIdx[drp] = 0
+            intIdx = np.where(boolIdx)[0]
         
-        rereorder = []
-        if not findAll:
-            findSize = 0
-            for ii in range(len(to_keep)):
-                if to_keep[ii] >= flipIdx:
-                    break
-                rereorder.append(int(flippable[to_keep[ii]]))
-                findSize += 1
-        else:
-            findSize = None
         
-        # to_keep = to_keep.tolist()
-        
-        idx = 0
-        loc = 0
-        e = np.zeros((len(H),1))
-        rereorder = [INTrep + (1 << k) for k in rereorder]
-        
-        to_keep_sub = self.thisProxy[self.thisIndex].concreteMinHRep(H[to_keep,:],cnt=findSize,copyMat=False,solver=solver,safe=False,restoreInt=rereorder,ret=True).get()
-
-        # print('to_keep_sub = ' + str(to_keep_sub))
-        if findSize is None:
-            findSize = len(to_keep)
-        to_keep_faces = to_keep[to_keep_sub].tolist() + to_keep[findSize:len(to_keep)].tolist()
-        to_keep = to_keep[to_keep_sub].tolist()
-
-        if not findAll:
-            to_keep = reorder[to_keep].tolist()
-            to_keep_faces = reorder[to_keep_faces].tolist()
-
-
-        # Use this to keep track of the region's faces
-        facesInt = 0
-        for k in to_keep_faces:
-            facesInt = facesInt + (1 << k)
+        faces = self.thisProxy[self.thisIndex].concreteMinHRep(H,boolIdx,intIdx,solver=solver,safe=False,ret=True).get()
         
         successors = []
-        for i in range(len(to_keep)):
-            if to_keep[i] >= N:
-                break
-            idx = 1 << to_keep[i]
-            if idx & INTrep <= 0:
-                nNode = INTrep + idx
+        for i in np.where(faces)[0]:
+            if boolIdxNoFlip[intIdx[i]] == 0:
+                boolIdxNoFlip[intIdx[i]] = 1
                 successors.append( \
-                        nNode \
+                        bytes(np.packbits(boolIdxNoFlip,bitorder='little')) \
                     )
+                boolIdxNoFlip[intIdx[i]] = 0
+                
                 # print('Processing node!')
-                cont = self.thisProxy[self.thisIndex].hashAndSend(nNode,ret=True).get()
+                cont = self.thisProxy[self.thisIndex].hashAndSend(successors[-1],ret=True).get()
                 # print(cont)
                 if not cont:
                     return [set(successors), -1]
-        
-        return [set(successors), facesInt]            
+        facesInt = np.full(self.N,0,dtype=bool)
+        sel = intIdx[faces]
+        facesInt[sel] = np.full(len(sel),1,dtype=bool)
+
+        # Undo the flip we did before, since it affects a referenced (as opposed to copied) array:
+        H[intIdxNoFlip,:] = -H[intIdxNoFlip,:]
+
+        return [set(successors), bytes(np.packbits(facesInt,bitorder='little'))]            
 
 
         
@@ -733,7 +677,7 @@ class flipConstraints:
             self.fb = None
             self.constraints = np.hstack((-self.nb,self.nA))
 
-        self.root = 0
+        self.root = bytes( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
 
 
 class flipConstraintsReduced(flipConstraints):
@@ -760,8 +704,10 @@ class flipConstraintsReduced(flipConstraints):
         self.flipMapSet = frozenset(np.nonzero(np.diag(self.redundantHyperplanes) @ self.flipMapN < 0)[0])
 
         # Modify root node:
+        self.root = np.unpackbits(bytearray(self.root),count=self.N,bitorder='little')
         for k in np.nonzero(self.redundantHyperplanes<0)[0]:
-            self.root += 1 << int(k)
+            self.root[k] = 1
+        self.root = bytes(np.packbits(self.root,bitorder='little'))
 
         #print(self.root)
 

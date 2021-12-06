@@ -10,10 +10,10 @@ from copy import copy
 
 class Node():
 
-    def __init__(self,localProxy, parentChare, lsb,msb,nodeInt, *args):
+    def __init__(self,localProxy, parentChare, lsb,msb,nodeBytes, *args):
         self.lsbHash = lsb
         self.msbHash = msb
-        self.nodeInt = nodeInt
+        self.nodeBytes = nodeBytes
         self.localProxy = localProxy
         self.parentChare = parentChare
         self.data = args
@@ -22,10 +22,10 @@ class Node():
         return self.msbHash
     
     def __eq__(self,other):
-        if type(other) == int:
-            return self.nodeInt == other
+        if type(other) == bytes:
+            return self.nodeBytes == other
         elif isinstance(other,Node):
-            return self.nodeInt == other.nodeInt
+            return self.nodeBytes == other.nodeBytes
 
 
 
@@ -338,10 +338,10 @@ class HashWorker(Chare):
                         newNode = self.nodeConstructor(self.localVarGroup[charm.myPe()], self, *val)
                         if newNode in self.table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
-                            self.queryChannels[chIdx].send(val[2])
+                            self.queryChannels[chIdx].send(1)
                         else:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
-                            self.queryChannels[chIdx].send(-val[2])
+                            self.queryChannels[chIdx].send(-1)
                     elif val < 0:
                         answeredSelf = True
                         # for chIt in self.queryChannels:
@@ -403,7 +403,7 @@ class HashWorker(Chare):
                         if self.nodeCalls & 1:
                             newNode.init()
                         if not newNode in self.table:
-                            self.table[newNode] = {'nodeInt': val[2], 'checked':False}
+                            self.table[newNode] = {'nodeBytes': val[2], 'checked':False}
                             self.levelList.append(val[2])
                             # Check node here:
                             if self.nodeCalls & 4 and not newNode.check(): # If result of node check is False return False on all the workerDone Futures
