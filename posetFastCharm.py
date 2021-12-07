@@ -83,6 +83,8 @@ class Poset(Chare):
         self.fixedb = fixedb
 
         self.N = len(self.AbPairs[0][0])
+        self.wholeBytes = (self.N + 7) // 8
+        self.tailBits = self.N - 8*(self.N // 8)
 
 
     @coro
@@ -143,8 +145,10 @@ class Poset(Chare):
         self.distHashTable.initListening(initFut)
         initFut.get()
 
-
-        self.successorProxies[0].hashAndSend(thisLevel[0],ret=True).get()
+        boolIdxNoFlip = bytearray(b'\x00') * (self.wholeBytes + (1 if self.tailBits != 0 else 0))
+        for unflipIdx in range(len(thisLevel[0])-1,-1,-1):
+            boolIdxNoFlip[thisLevel[0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][unflipIdx]//8] | (1<<(thisLevel[0][unflipIdx] % 8))
+        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0]],ret=True).get()
 
         self.succGroup.sendAll(-2,awaitable=True).get()
         self.succGroup.closeQueryChannels(awaitable=True).get()
@@ -198,7 +202,6 @@ class Poset(Chare):
                     facesList[i] = facesListWork[int((i-k)/len(self.posetPElist))]
 
 
-            
             thisLevel = nextLevel
             level += 1
 
@@ -235,6 +238,9 @@ class successorWorker(Chare):
         self.lp = encapsulateLP.encapsulateLP()
         self.outChannels = []
         self.endian = sys.byteorder
+        self.wholeBytes = (self.N + 7) // 8
+        self.tailBits = self.N - 8*(self.N // 8)
+        
     
     def setMethod(self,method='fastLP',solver='clp',findAll=True,useQuery=False,useBounding=False,lpopts={}):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
@@ -332,13 +338,13 @@ class successorWorker(Chare):
         return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
     
     # https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
-    def hashNode(self,nodeBytes):
-        hashInt = hashNodeBytes(nodeBytes)
-        return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeBytes)
+    def hashNode(self,toHash):
+        hashInt = hashNodeBytes(toHash[0])
+        return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, tuple(toHash[1]))
     
     @coro
-    def hashAndSend(self,nodeBytes):
-        val = self.hashNode(nodeBytes)
+    def hashAndSend(self,toHash):
+        val = self.hashNode(toHash)
         self.outChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(nodeInt))
         retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
@@ -485,7 +491,7 @@ class successorWorker(Chare):
 
 
     @coro
-    def concreteMinHRep(self,H2,boolIdx,intIdx,solver='glpk',safe=False):
+    def concreteMinHRep(self,H2,boolIdxNoFlip,intIdxNoFlip,intIdx,solver='glpk',safe=False):
 
         if len(intIdx) == 0:
             return np.full(0,0,dtype=bool) 
@@ -497,13 +503,18 @@ class successorWorker(Chare):
             # This version of H has an extra row, that we can use for the another constraint
             H = np.vstack([H2, [H2[0,:]] ])
 
-        to_keep = np.full(len(intIdx),False,dtype=bool)
+        to_keep = []
         for idx in range(len(intIdx)):
             if self.useQuery:
-                boolIdx[intIdx[idx]] = 1
+                boolIdxNoFlip[intIdx[idx]//8] = boolIdxNoFlip[intIdx[idx]//8] | (1<<(intIdx[idx]%8))
+                insertIdx = 0
+                while insertIdx < len(intIdxNoFlip) and intIdxNoFlip[insertIdx] < intIdx[idx]:
+                    insertIdx += 1
+                temp = copy(intIdxNoFlip)
+                temp.insert(insertIdx,intIdx[idx])
                 # q = self.thisProxy[self.thisIndex].query( bytes(np.packbits(boolIdx,bitorder='little')), ret=True).get()
-                q = self.thisProxy[self.thisIndex].query( boolIdx, ret=True).get()
-                boolIdx[intIdx[idx]] = 0
+                q = self.thisProxy[self.thisIndex].query( [boolIdxNoFlip, tuple(temp)], ret=True).get()
+                boolIdxNoFlip[intIdx[idx]//8] = boolIdxNoFlip[intIdx[idx]//8] ^ (1<<(intIdx[idx]%8))
                 # print('PE' + str(charm.myPe()) + ' Queried table with node ' + str(origInt) + ' and received reply ' + str(q))
                 # If the node corresponding to the hyperplane we're about to flip is already in the table
                 # then treat it as redundant and skip it (saving the LP)
@@ -532,35 +543,28 @@ class successorWorker(Chare):
                 # inequality is redundant, so skip it
                 pass
             else:
-                to_keep[idx] = True
+                to_keep.append(idx)
 
         return to_keep
 
     @coro
     def processNodeSuccessorsFastLP(self,INTrep,N,H,solver='glpk',findAll=False,lpopts={}):
-        # We assume INTrep is a bytearray object (but this may have to change for efficiency reasons)
-        intIdx = []
-        intIdxNoFlip = []
-        for bIdx in range(len(INTrep)):
-            for bitIdx in range(8) if bIdx < len(INTrep) - 1 else range(len(INTrep) - int(self.N/8)):
-                if INTrep[bIdx] & (1<<bitIdx) == 0:
-                    intIdx.append(8*bIdx + bitIdx)
-                else:
-                    intIdxNoFlip.append(8*bIdx + bitIdx)
-        if bIdx * 8 + bitIdx < self.N:
-            for i in range(bIdx * 8 + bitIdx + 1, self.N):
-                intIdx.append(i)
-
-        intIdx = tuple(intIdx)
-        intIdxNoFlip = tuple(intIdxNoFlip)
+        # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
+        # t = time.time()
+        intIdxNoFlip = list(INTrep)
+        boolIdxNoFlip = bytearray(b'\x00') *  (self.wholeBytes + (1 if self.tailBits != 0 else 0))
+        intIdx = list(range(self.N))
+        # boolIdx[-1] = boolIdx[-1] & ((1<<(self.tailBits+1))-1)
+        for unflipIdx in range(len(INTrep)-1,-1,-1):
+            boolIdxNoFlip[INTrep[unflipIdx]//8] = boolIdxNoFlip[INTrep[unflipIdx]//8] | (1<<(INTrep[unflipIdx] % 8))
+            intIdx.pop(INTrep[unflipIdx])
 
         # Flip the un-flippable hyperplanes; this must be undone later
-        H[intIdxNoFlip,:] = -H[intIdxNoFlip,:]
+        H[INTrep,:] = -H[INTrep,:]
 
         
-        # if findAll:
-        #     boolIdx = np.full(self.N,1,dtype=boolIdx.dtype)
-        #     intIdx = np.where(boolIdx)[0]
+        if findAll:
+            intIdx = list(range(self.N))
 
         
         d = H.shape[1]-1
@@ -604,46 +608,43 @@ class successorWorker(Chare):
             boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
 
             to_keep = np.nonzero(np.any(((-H[0:self.N,1:] @ boxCorners) - H[0:self.N,0].reshape((-1,1))) >= 1e-07,axis=1))[0]
-            # Now modify boolIdx and intIdx to remove these hyperplanes from consideration
-            intIdx = []
-            for drp in to_keep:
-                # boolIdx[drp] = 0
-                if INTrep[int(drp/8)] & self.bitInts[drp % 8] == 0:
-                    intIdx.append(drp)
-            if bIdx * 8 + bitIdx < self.N:
-                for i in range(bIdx * 8 + bitIdx + 1, self.N):
-                    intIdx.append(i)
-            intIdx = tuple(intIdx)
+            intIdx = is_in_set_idx(to_keep,intIdx).tolist()
 
-            # intIdx = np.where(boolIdx)[0]
         
-        
-        faces = self.thisProxy[self.thisIndex].concreteMinHRep(H,INTrep,intIdx,solver=solver,safe=False,ret=True).get()
+        faces = self.thisProxy[self.thisIndex].concreteMinHRep(H,boolIdxNoFlip,intIdxNoFlip,intIdx,solver=solver,safe=False,ret=True).get()
 
         successors = []
-        for i in np.nonzero(faces)[0]:
-            if INTrep[int(intIdx[i]/8)] & 1<<(intIdx[i] % 8) == 0:
+        for i in faces:
+            if boolIdxNoFlip[intIdx[i]//8] & 1<<(intIdx[i] % 8) == 0:
                 # boolIdxNoFlip[intIdx[i]] = 1
-                INTrep[int(intIdx[i]/8)] = INTrep[int(intIdx[i]/8)] | 1<<(intIdx[i] % 8)
+                # t = time.time()
+                boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] | 1<<(intIdx[i] % 8)
+                insertIdx = 0
+                while insertIdx < len(intIdxNoFlip) and intIdxNoFlip[insertIdx] < intIdx[i]:
+                    insertIdx += 1
+                temp = copy(intIdxNoFlip)
+                temp.insert(insertIdx,intIdx[i])
                 successors.append( \
-                        copy(INTrep)
+                        [ copy(boolIdxNoFlip), tuple(temp) ]
                     )
-                INTrep[int(intIdx[i]/8)] = INTrep[int(intIdx[i]/8)] ^ 1<<(intIdx[i] % 8)
-                               
+                boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] ^ 1<<(intIdx[i] % 8)
+                # self.conversionTime += time.time() - t
                 cont = self.thisProxy[self.thisIndex].hashAndSend(successors[-1],ret=True).get()
                 
                 if not cont:
                     return [successors, -1]
-        facesInt = np.full(self.N,0,dtype=bool)
         
-        sel = np.array(intIdx,dtype=np.uint64)[faces]
-        facesInt[sel] = np.full(len(sel),1,dtype=bool)
+        # facesInt = np.full(self.N,0,dtype=bool)
+        sel = tuple(np.array(intIdx,dtype=np.uint64)[faces].tolist())
+        # facesInt[sel] = np.full(len(sel),1,dtype=bool)
 
         # Undo the flip we did before, since it affects a referenced (as opposed to copied) array:
-        H[intIdxNoFlip,:] = -H[intIdxNoFlip,:]
+        t = time.time()
+        H[INTrep,:] = -H[INTrep,:]
+        self.conversionTime += time.time() - t
 
         # return [successors, bytes(np.packbits(facesInt,bitorder='little'))]            
-        return [[], [1]]            
+        return [[], sel]            
 
 
         
@@ -683,8 +684,9 @@ class flipConstraints:
             self.fb = None
             self.constraints = np.hstack((-self.nb,self.nA))
 
-        self.root = bytearray( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
+        # self.root = bytearray( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
         # self.root = int.from_bytes(self.root, 'little')
+        self.root = tuple()
 
 
 class flipConstraintsReduced(flipConstraints):
@@ -711,11 +713,12 @@ class flipConstraintsReduced(flipConstraints):
         self.flipMapSet = frozenset(np.nonzero(np.diag(self.redundantHyperplanes) @ self.flipMapN < 0)[0])
 
         # Modify root node:
-        self.root = np.unpackbits(bytearray(self.root),count=self.N,bitorder='little')
-        for k in np.nonzero(self.redundantHyperplanes<0)[0]:
-            self.root[k] = 1
-        self.root = bytearray(np.packbits(self.root,bitorder='little'))
+        # self.root = np.unpackbits(bytearray(self.root),count=self.N,bitorder='little')
+        # for k in np.nonzero(self.redundantHyperplanes<0)[0]:
+        #     self.root[k] = 1
+        # self.root = bytearray(np.packbits(self.root,bitorder='little'))
         # self.root = int.from_bytes(self.root, 'little')
+        self.root = tuple(np.nonzero(self.redundantHyperplanes<0)[0].tolist())
 
         #print(self.root)
 
@@ -862,3 +865,16 @@ def oldHashNode(nodeBytes):
     p = 6148914691236517205*(nodeInt^(nodeInt>>32))
     hashInt = (17316035218449499591*(p^(p>>32))) & ((1 << 33)-1)
     return hashInt
+
+def is_in_set_idx(a, b):
+    a = a.ravel()
+    n = len(a)
+    n = len(a)
+    result = np.full(n, 0)
+    set_b = set(b)
+    idx = 0
+    for i in range(n):
+        if a[i] in set_b:
+            result[idx] = i
+            idx += 1
+    return result[0:idx].flatten()
