@@ -640,9 +640,7 @@ class successorWorker(Chare):
         # facesInt[sel] = np.full(len(sel),1,dtype=bool)
 
         # Undo the flip we did before, since it affects a referenced (as opposed to copied) array:
-        t = time.time()
         H[INTrep,:] = -H[INTrep,:]
-        self.conversionTime += time.time() - t
 
         # return [successors, bytes(np.packbits(facesInt,bitorder='little'))]            
         return [[], sel]            
