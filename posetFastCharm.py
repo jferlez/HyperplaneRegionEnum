@@ -504,6 +504,7 @@ class successorWorker(Chare):
             H = np.vstack([H2, [H2[0,:]] ])
 
         to_keep = []
+        constraint_list = np.full(len(H),True,dtype=bool)
         for idx in range(len(intIdx)):
             if self.useQuery:
                 boolIdxNoFlip[intIdx[idx]//8] = boolIdxNoFlip[intIdx[idx]//8] | (1<<(intIdx[idx]%8))
@@ -526,8 +527,8 @@ class successorWorker(Chare):
             H[intIdx[idx],0] += 1
             status, x = self.lp.runLP( \
                     H[intIdx[idx],1:], \
-                    -H[:,1:], \
-                    H[:,0], \
+                    -H[constraint_list,1:], \
+                    H[constraint_list,0], \
                     lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
                     msgID = str(charm.myPe()) \
                 )
@@ -541,7 +542,7 @@ class successorWorker(Chare):
             if (safe and -H[intIdx[idx],1:]@x < H[intIdx[idx],0]) \
                 or (not safe and (status == 'primal infeasible' or np.all(-H[intIdx[idx],1:]@x - H[intIdx[idx],0] <= 1e-10))):
                 # inequality is redundant, so skip it
-                pass
+                constraint_list[intIdx[idx]] = False
             else:
                 to_keep.append(idx)
 
