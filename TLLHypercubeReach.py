@@ -11,6 +11,7 @@ import time
 from posetFastCharm import activeHyperplaneSet, unflipInt, posHyperplaneSet, unflipIntFixed
 import encapsulateLP
 import DistributedHash
+import numba as nb
 
 
 cvxopt.solvers.options['show_progress'] = False
@@ -35,7 +36,7 @@ class PosetNodeTLLVer(DistributedHash.Node):
                 break
 
         return val
-
+@nb.cfunc(nb.int64[:](nb.int64[:],nb.int64[:]) )
 def is_in_set_idx(a, b):
     a = a.ravel()
     n = len(a)
@@ -47,15 +48,17 @@ def is_in_set_idx(a, b):
             result[idx] = i
             idx += 1
     return result[0:idx].flatten()
-
+@nb.cfunc(nb.types.boolean(nb.int64[:],nb.types.Set(nb.int64, reflected=True)) )
 def is_non_empty_intersection(a, set_b):
+    retVal = False
     a = a.ravel()
     n = len(a)
     # set_b = set(b)
     for i in range(n):
         if a[i] in set_b:
-            return True
-    return False
+            retVal = True
+            return retVal
+    return retVal
 
 class setupCheckerVars(Chare):
     def __init__(self,selectorSetsFull):
@@ -107,7 +110,7 @@ class TLLHypercubeReach(Chare):
         for k in range(len(self.selectorMats)):
             self.selectorSetsFull[k] = list( \
                     map( \
-                        lambda x: frozenset(np.flatnonzero(np.count_nonzero(x, axis=0)>0)), \
+                        lambda x: set(np.flatnonzero(np.count_nonzero(x, axis=0)>0)), \
                         self.selectorMats[k] \
                     ) \
                 )
