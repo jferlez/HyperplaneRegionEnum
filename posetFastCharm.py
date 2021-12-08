@@ -12,7 +12,6 @@ import DistributedHash
 import cvxopt
 from cylp.cy import CyClpSimplex
 from cylp.py.modeling.CyLPModel import CyLPArray
-import hashlib
 import sys
 import warnings
 import numba as nb
@@ -336,14 +335,6 @@ class successorWorker(Chare):
             self.outChannels[k].send((self.thisIndex,k))
             #print('Message sent!')
 
-    def hashNodeMD5(self,nodeInt):
-        hashInt = int.from_bytes( \
-            hashlib.md5(nodeInt.to_bytes(self.numBytes,byteorder=self.endian)).digest(), \
-            byteorder=self.endian \
-        )
-        return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, nodeInt )
-    
-    # https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
     def hashNode(self,toHash):
         hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
         # hashInt = hashNodeBytes(toHash[0])
@@ -759,7 +750,7 @@ def createCDDrep(inputConstraintsA, inputConstraintsb):
     return inputMat, inputPolytope, inputVrep
 
 
-
+# https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
 def hashNodeBytes(nodeBytes):
     chunks = np.array( \
         [int.from_bytes(nodeBytes[idx:min(idx+8,len(nodeBytes))],'little') for idx in range(0,len(nodeBytes),8)], \
