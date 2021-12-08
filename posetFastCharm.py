@@ -663,7 +663,8 @@ class flipConstraints:
         v = nA @ pt
         v = v.flatten() - nb.flatten()
         self.flipMapN = np.where(v<0,-1,1)
-        self.flipMapSet = frozenset(np.nonzero(self.flipMapN < 0)[0])
+        self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
+        self.flipMapSet = frozenset(self.flipMapSetNP)
         self.nA = np.diag(self.flipMapN) @ nA
         self.nb = np.diag(self.flipMapN) @ nb
         self.N = len(nA)

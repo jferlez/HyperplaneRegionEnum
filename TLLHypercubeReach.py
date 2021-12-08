@@ -1,5 +1,5 @@
 
-import TLLnet
+# import TLLnet
 import numpy as np
 import charm4py
 from charm4py import charm, Chare, coro, Reducer, Group, Future, Channel
@@ -21,19 +21,41 @@ class PosetNodeTLLVer(DistributedHash.Node):
     def init(self):
         self.constraints, self.selectorSetsFull, self.nodeIntMask, self.out = self.localProxy.getConstraints(ret=True).get()
     def check(self):
-        regSet = frozenset(
-                activeHyperplaneSet(\
-                    unflipIntFixed(self.nodeInt & self.nodeIntMask[0],self.constraints.flipMapSet,self.constraints.N), \
-                    self.constraints.N \
-                ) \
-            )
+        regSet = np.full(self.constraints.N, True, dtype=bool)
+        regSet[tuple(self.constraints.flipMapSet),] = np.full(len(self.constraints.flipMapSet),False,dtype=bool)
+        regSet[self.nodeBytes,] = np.full(len(self.nodeBytes),False,dtype=bool)
+        unflipped = is_in_set_idx(self.constraints.flipMapSetNP,self.nodeBytes)
+        regSet[unflipped] = np.full(len(unflipped),True,dtype=bool)
+        regSet = np.nonzero(regSet)[0]
+
         val = False
         for sSet in self.selectorSetsFull[self.out]:
-            if len(sSet & regSet) == 0:
+            if not is_non_empty_intersection(regSet,sSet):
                 val = True
                 break
 
         return val
+
+def is_in_set_idx(a, b):
+    a = a.ravel()
+    n = len(a)
+    result = np.full(n, 0)
+    set_b = set(b)
+    idx = 0
+    for i in range(n):
+        if a[i] in set_b:
+            result[idx] = i
+            idx += 1
+    return result[0:idx].flatten()
+
+def is_non_empty_intersection(a, set_b):
+    a = a.ravel()
+    n = len(a)
+    # set_b = set(b)
+    for i in range(n):
+        if a[i] in set_b:
+            return True
+    return False
 
 class setupCheckerVars(Chare):
     def __init__(self,selectorSetsFull):
