@@ -128,6 +128,13 @@ class Poset(Chare):
     @coro
     def getConstraintsObject(self):
         return self.flippedConstraints
+    
+    @coro
+    def setSuccessorCommonProperty(self,prop,val):
+        self.succGroupFull.setProperty(prop,val,awaitable=True).get()
+    @coro
+    def getSuccGroupProxy(self):
+        return self.succGroupFull
 
     @coro
     def populatePoset(self, method='fastLP', solver='clp', findAll=False, useQuery=False, useBounding=False ):
@@ -263,6 +270,10 @@ class successorWorker(Chare):
         self.method = method
         self.solver = solver
         self.findAll = findAll
+    
+    @coro
+    def setProperty(self,prop,val):
+        setattr(self,prop,val)
 
     @coro
     def getLPCount(self, lpCountFut):
