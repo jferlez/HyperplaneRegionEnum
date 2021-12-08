@@ -47,7 +47,7 @@ class localVar(Chare):
 
 class Poset(Chare):
     
-    def __init__(self, peSpec, nodeConstructor, localVarGroup):
+    def __init__(self, peSpec, nodeConstructor, localVarGroup, successorChare):
         
         # self.stackNum = batchSize
         # To do: check to make sure we're passed a valid Group in localVarGroup
@@ -58,6 +58,9 @@ class Poset(Chare):
         self.nodeConstructor = nodeConstructor
         if self.nodeConstructor is None:
             self.nodeConstructor = PosetNode
+        self.successorChare = successorChare
+        if self.successorChare is None:
+            self.successorChare = successorWorker
         # Create a group to paralellize the computation of successors
         # (Use all PEs unless a list was explicitly passed to us)
         if peSpec == None:
@@ -70,7 +73,7 @@ class Poset(Chare):
         self.posetPElist = list(itertools.chain.from_iterable( \
                [list(range(r[0],r[1],r[2])) for r in self.posetPEs] \
             ))
-        self.succGroupFull = Group(successorWorker,args=[self.posetPElist])
+        self.succGroupFull = Group(self.successorChare,args=[self.posetPElist])
         secs = [self.succGroupFull[r[0]:r[1]:r[2]] for r in self.posetPEs]
         self.succGroup = charm.combine(*secs)
         successorProxies = self.succGroupFull.getProxies(ret=True).get()

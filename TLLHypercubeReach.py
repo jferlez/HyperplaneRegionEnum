@@ -131,7 +131,7 @@ class TLLHypercubeReach(Chare):
         charm.awaitCreation(self.checkerLocalVars)
 
 
-        self.poset = Chare(posetFastCharm.Poset,args=[pes, PosetNodeTLLVer, self.checkerLocalVars],onPE=charm.myPe())
+        self.poset = Chare(posetFastCharm.Poset,args=[pes, PosetNodeTLLVer, self.checkerLocalVars, None],onPE=charm.myPe())
         charm.awaitCreation(self.poset)
         
         stat = self.poset.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
