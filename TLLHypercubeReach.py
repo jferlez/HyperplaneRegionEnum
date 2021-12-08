@@ -12,6 +12,7 @@ import encapsulateLP
 import DistributedHash
 import numba as nb
 import posetFastCharm_numba
+import itertools
 
 cvxopt.solvers.options['show_progress'] = False
 
@@ -62,8 +63,11 @@ class PosetNodeTLLVer(DistributedHash.Node):
 #     return retVal
 
 class setupCheckerVars(Chare):
-    def __init__(self,selectorSetsFull):
-        self.selectorSetsFull = selectorSetsFull
+    def __init__(self,selectorSetsFull,hashPElist):
+        if charm.myPe() in hashPElist:
+            self.selectorSetsFull = selectorSetsFull
+        else:
+            self.selectorSetsFull = [set()]
         # self.selectorSetsFull = [[] for k in range(len(selectorMats))]
         # # Convert the matrices to sets of 'used' hyperplanes
         # for k in range(len(selectorMats)):
@@ -116,7 +120,14 @@ class TLLHypercubeReach(Chare):
                     ) \
                 )
 
-        self.checkerLocalVars = Group(setupCheckerVars,args=[self.selectorSetsFull])
+        self.posetPElist = list(itertools.chain.from_iterable( \
+               [list(range(r[0],r[1],r[2])) for r in pes['poset']] \
+            ))
+        self.hashPElist = list(itertools.chain.from_iterable( \
+               [list(range(r[0],r[1],r[2])) for r in pes['hash']] \
+            ))
+
+        self.checkerLocalVars = Group(setupCheckerVars,args=[self.selectorSetsFull,self.hashPElist])
         charm.awaitCreation(self.checkerLocalVars)
 
 
