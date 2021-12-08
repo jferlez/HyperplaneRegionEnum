@@ -491,7 +491,7 @@ class successorWorker(Chare):
 
 
     @coro
-    def concreteMinHRep(self,H2,boolIdxNoFlip,intIdxNoFlip,intIdx,solver='glpk',safe=False):
+    def concreteMinHRep(self,H2,constraint_list,boolIdxNoFlip,intIdxNoFlip,intIdx,solver='glpk',safe=False):
 
         if len(intIdx) == 0:
             return np.full(0,0,dtype=bool) 
@@ -499,13 +499,16 @@ class successorWorker(Chare):
         # H2 should be a view into the CDD-formatted H matrix selected by taking boolIdx or intIdx rows thereof
         if safe:
             H = H2
+            constraint_list = constraint_list[0:len(H)]
         else:
             # This version of H has an extra row, that we can use for the another constraint
             H = np.vstack([H2, [H2[0,:]] ])
 
         to_keep = []
-        constraint_list = np.full(len(H),True,dtype=bool)
+        
         for idx in range(len(intIdx)):
+            if not constraint_list[intIdx[idx]]:
+                continue
             if self.useQuery:
                 boolIdxNoFlip[intIdx[idx]//8] = boolIdxNoFlip[intIdx[idx]//8] | (1<<(intIdx[idx]%8))
                 insertIdx = 0
@@ -607,12 +610,14 @@ class successorWorker(Chare):
                         return [set([]), 0]
 
             boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
-
-            to_keep = np.nonzero(np.any(((-H[0:self.N,1:] @ boxCorners) - H[0:self.N,0].reshape((-1,1))) >= 1e-07,axis=1))[0]
-            intIdx = is_in_set_idx(to_keep,intIdx).tolist()
+            constraint_list = np.full(len(H)+1,False,dtype=bool)
+            constraint_list[0:len(H)] = np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((-1,1))) >= 1e-07,axis=1)
+        else:
+            constraint_list = np.full(len(H)+1,True,dtype=bool)
+            constraint_list[-1] = False
 
         
-        faces = self.thisProxy[self.thisIndex].concreteMinHRep(H,boolIdxNoFlip,intIdxNoFlip,intIdx,solver=solver,safe=False,ret=True).get()
+        faces = self.thisProxy[self.thisIndex].concreteMinHRep(H,constraint_list,boolIdxNoFlip,intIdxNoFlip,intIdx,solver=solver,safe=False,ret=True).get()
 
         successors = []
         for i in faces:
