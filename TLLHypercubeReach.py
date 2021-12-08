@@ -64,10 +64,13 @@ class PosetNodeTLLVer(DistributedHash.Node):
 
 class setupCheckerVars(Chare):
     def __init__(self,selectorSetsFull,hashPElist):
-        if charm.myPe() in hashPElist:
-            self.selectorSetsFull = selectorSetsFull
+        if not hashPElist is None:
+            if charm.myPe() in hashPElist:
+                self.selectorSetsFull = selectorSetsFull
+            else:
+                self.selectorSetsFull = [set()]
         else:
-            self.selectorSetsFull = [set()]
+            self.selectorSetsFull = selectorSetsFull
         # self.selectorSetsFull = [[] for k in range(len(selectorMats))]
         # # Convert the matrices to sets of 'used' hyperplanes
         # for k in range(len(selectorMats)):
