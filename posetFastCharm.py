@@ -15,7 +15,7 @@ from cylp.py.modeling.CyLPModel import CyLPArray
 import sys
 import warnings
 import numba as nb
-
+# import TLLHypercubeReach 
 import posetFastCharm_numba
 
 warnings.simplefilter(action = "ignore", category = RuntimeWarning)
@@ -58,8 +58,10 @@ class Poset(Chare):
         if self.nodeConstructor is None:
             self.nodeConstructor = PosetNode
         self.successorChare = successorChare
-        if self.successorChare is None:
+        if successorChare is None:
             self.successorChare = successorWorker
+        else:
+            self.successorChare = successorChare
         # Create a group to paralellize the computation of successors
         # (Use all PEs unless a list was explicitly passed to us)
         if peSpec == None:
@@ -72,7 +74,9 @@ class Poset(Chare):
         self.posetPElist = list(itertools.chain.from_iterable( \
                [list(range(r[0],r[1],r[2])) for r in self.posetPEs] \
             ))
-        self.succGroupFull = Group(self.successorChare,args=[self.posetPElist])
+        self.succGroupFull = Group(self.successorChare,args=[])
+        charm.awaitCreation(self.succGroupFull)
+        self.succGroupFull.initPEs(self.posetPElist)
         secs = [self.succGroupFull[r[0]:r[1]:r[2]] for r in self.posetPEs]
         self.succGroup = charm.combine(*secs)
         successorProxies = self.succGroupFull.getProxies(ret=True).get()
@@ -104,7 +108,7 @@ class Poset(Chare):
                 self.fixedb \
             )
         
-        stat = self.succGroup.initialize(self.N,self.flippedConstraints.constraints,awaitable=True)
+        stat = self.succGroup.initialize(self.N,self.flippedConstraints,awaitable=True)
         stat.get()
         if self.useDefaultLocalVarGroup:
             self.localVarGroup = Group(localVar,args=[self.flippedConstraints])
@@ -235,14 +239,15 @@ class Poset(Chare):
 
 
 class successorWorker(Chare):
-
-    def __init__(self,pes):
+    
+    def initPEs(self,pes):
         self.posetPElist = pes
 
     def initialize(self,N,constraints):
         self.workInts = []
         self.N = N
-        self.constraints = constraints
+        self.flippedConstraints = constraints
+        self.constraints = self.flippedConstraints.constraints
         # self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver='glpk')
         self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP
         self.processNodesArgs = {'solver':'glpk','ret':True}
@@ -666,8 +671,7 @@ class successorWorker(Chare):
         # return [successors, bytes(np.packbits(facesInt,bitorder='little'))]            
         return [[], sel]            
 
-
-        
+      
 
 
 

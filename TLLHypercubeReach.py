@@ -88,6 +88,52 @@ class setupCheckerVars(Chare):
     def getConstraints(self):
         return (self.constraints, self.selectorSetsFull, self.nodeIntMask, self.out)
 
+
+class PosetNodeTLLVerOriginCheck(DistributedHash.Node):
+    def init(self):
+        self.posetSuccGroupProxy = self.localProxy.getPosetSuccGroupProxy(ret=True).get()
+    def check(self):
+        # print(self.posetSuccGroupProxy)
+        self.posetSuccGroupProxy[self.data[0]].checkNode(self.nodeBytes)
+        return True
+
+class setupCheckerVarsOriginCheck(Chare):
+    def init(self,succGroupProxy):
+        self.posetSuccGroupProxy = succGroupProxy
+
+    def getPosetSuccGroupProxy(self):
+        return self.posetSuccGroupProxy
+    
+    # Legacy methods
+    def setConstraint(self,constraints, out):
+        self.out = out
+        self.posetSuccGroupProxy.setProperty('out',out)
+        # self.selectorSets = self.selectorSetsFull[out]
+        self.constraints = constraints
+        self.nodeIntMask = [(2**(self.constraints.N+1))-1]
+    def getConstraints(self):
+        return (self.constraints, self.selectorSetsFull, self.nodeIntMask, self.out)
+
+class successorWorkerCheck(posetFastCharm.successorWorker,Chare):
+    
+    @coro
+    def checkNode(self,nodeBytes):
+        regSet = np.full(self.N, True, dtype=bool)
+        regSet[tuple(self.flippedConstraints.flipMapSet),] = np.full(len(self.flippedConstraints.flipMapSet),False,dtype=bool)
+        regSet[nodeBytes,] = np.full(len(nodeBytes),False,dtype=bool)
+        unflipped = posetFastCharm_numba.is_in_set_idx(self.flippedConstraints.flipMapSetNP,list(nodeBytes))
+        regSet[unflipped] = np.full(len(unflipped),True,dtype=bool)
+        regSet = np.nonzero(regSet)[0]
+
+        val = False
+        for sSet in self.selectorSetsFull[self.out]:
+            if not posetFastCharm_numba.is_non_empty_intersection(regSet,sSet):
+                val = True
+                break
+
+        if not val:
+            self.thisProxy[self.thisIndex].sendAll(-4)
+    
 class TLLHypercubeReach(Chare):
     # @coro
     def __init__(self, localLinearFns, selectorMats, inputConstraints, maxIts, pes, useQuery, useBounding):
@@ -130,12 +176,19 @@ class TLLHypercubeReach(Chare):
                [list(range(r[0],r[1],r[2])) for r in pes['hash']] \
             ))
 
-        self.checkerLocalVars = Group(setupCheckerVars,args=[self.selectorSetsFull,self.hashPElist])
+        # self.checkerLocalVars = Group(setupCheckerVars,args=[self.selectorSetsFull,self.hashPElist])
+        self.checkerLocalVars = Group(setupCheckerVarsOriginCheck,args=[])
         charm.awaitCreation(self.checkerLocalVars)
 
 
-        self.poset = Chare(posetFastCharm.Poset,args=[pes, PosetNodeTLLVer, self.checkerLocalVars, None],onPE=charm.myPe())
+        # self.poset = Chare(posetFastCharm.Poset,args=[pes, PosetNodeTLLVer, self.checkerLocalVars, None],onPE=charm.myPe())
+        self.poset = Chare(posetFastCharm.Poset,args=[pes, PosetNodeTLLVerOriginCheck, self.checkerLocalVars, successorWorkerCheck],onPE=charm.myPe())
         charm.awaitCreation(self.poset)
+
+        self.poset.setSuccessorCommonProperty('selectorSetsFull',self.selectorSetsFull)
+
+        succGroupProxy = self.poset.getSuccGroupProxy(ret=True).get()
+        self.checkerLocalVars.init(succGroupProxy)
         
         stat = self.poset.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
         stat.get()
