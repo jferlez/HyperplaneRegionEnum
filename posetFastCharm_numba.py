@@ -7,6 +7,10 @@ from numba.pycc import CC
 
 cc = CC('posetFastCharm_numba')
 cc.verbose = True
+
+# Hash function from:
+# https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
+
 # @nb.cfunc(nb.int64(nb.byte[:] ) )
 @cc.export('hashNodeBytes','uint64(uint8[:])')
 def hashNodeBytes(nodeBytes):
@@ -32,7 +36,7 @@ def hashNodeBytes(nodeBytes):
 # Equivalent pure python version
 # def hashNodeBytes(nodeBytes):
 #     chunks = np.array( \
-#         [int.from_bytes(nodeBytes[idx:min(idx+8,len(nodeBytes))],'big') for idx in range(0,len(nodeBytes),8)], \
+#         [int.from_bytes(nodeBytes[idx:min(idx+8,len(nodeBytes))],'little') for idx in range(0,len(nodeBytes),8)], \
 #         dtype=np.uint64 \
 #         )
 #     p = np.uint64(6148914691236517205) * np.bitwise_xor(chunks, np.right_shift(chunks,np.uint64(32)))
