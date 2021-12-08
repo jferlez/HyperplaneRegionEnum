@@ -491,24 +491,29 @@ class successorWorker(Chare):
 
 
     @coro
-    def concreteMinHRep(self,H2,constraint_list,boolIdxNoFlip,intIdxNoFlip,intIdx,solver='glpk',safe=False):
-
+    def concreteMinHRep(self,H2,constraint_list_in,boolIdxNoFlip,intIdxNoFlip,intIdx,solver='glpk',safe=False):
+        
         if len(intIdx) == 0:
-            return np.full(0,0,dtype=bool) 
+            return np.full(0,0,dtype=bool)
+
+        restricted = False if constraint_list_in is None else True
 
         # H2 should be a view into the CDD-formatted H matrix selected by taking boolIdx or intIdx rows thereof
         if safe:
-            H = H2
-            constraint_list = constraint_list[0:len(H)]
+            H = H2 if not restricted else H2[constraint_list_in[0:len(H2)],:]
         else:
             # This version of H has an extra row, that we can use for the another constraint
-            H = np.vstack([H2, [H2[0,:]] ])
+            H = np.vstack([H2, [H2[0,:]] ]) if not restricted else np.vstack([H2[constraint_list_in,:], [H2[0,:]] ])
 
         to_keep = []
-        
+        constraint_list = np.full(len(H),True,dtype=bool)
+        if restricted:
+            restIdxs = np.nonzero(constraint_list_in)[0]
+            offsetTab = dict(zip(restIdxs,range(len(restIdxs))))
         for idx in range(len(intIdx)):
-            if not constraint_list[intIdx[idx]]:
+            if restricted and (not constraint_list_in[intIdx[idx]]):
                 continue
+            offsetIdx = intIdx[idx] if not restricted else offsetTab[intIdx[idx]]
             if self.useQuery:
                 boolIdxNoFlip[intIdx[idx]//8] = boolIdxNoFlip[intIdx[idx]//8] | (1<<(intIdx[idx]%8))
                 insertIdx = 0
@@ -526,26 +531,26 @@ class successorWorker(Chare):
                     continue
             if not safe:
                 # Set the extra row to the negation of the pre-relaxed current constraint
-                H[-1,:] = -H[intIdx[idx],:]
-            H[intIdx[idx],0] += 1
+                H[-1,:] = -H2[intIdx[idx],:]
+            H[offsetIdx,0] += 1
             status, x = self.lp.runLP( \
-                    H[intIdx[idx],1:], \
+                    H2[intIdx[idx],1:], \
                     -H[constraint_list,1:], \
                     H[constraint_list,0], \
                     lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
                     msgID = str(charm.myPe()) \
                 )
-            H[intIdx[idx],0] -= 1
+            H[offsetIdx,0] -= 1
 
             if status != 'optimal' and (safe or status != 'primal infeasible') and status != 'dual infeasible':
                 print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
                 print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
                 print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
                 return [set([]), 0]
-            if (safe and -H[intIdx[idx],1:]@x < H[intIdx[idx],0]) \
-                or (not safe and (status == 'primal infeasible' or np.all(-H[intIdx[idx],1:]@x - H[intIdx[idx],0] <= 1e-10))):
+            if (safe and -H2[intIdx[idx],1:]@x < H2[intIdx[idx],0]) \
+                or (not safe and (status == 'primal infeasible' or np.all(-H2[intIdx[idx],1:]@x - H2[intIdx[idx],0] <= 1e-10))):
                 # inequality is redundant, so skip it
-                constraint_list[intIdx[idx]] = False
+                constraint_list[offsetIdx] = False
             else:
                 to_keep.append(idx)
 
@@ -562,6 +567,10 @@ class successorWorker(Chare):
         for unflipIdx in range(len(INTrep)-1,-1,-1):
             boolIdxNoFlip[INTrep[unflipIdx]//8] = boolIdxNoFlip[INTrep[unflipIdx]//8] | (1<<(INTrep[unflipIdx] % 8))
             intIdx.pop(INTrep[unflipIdx])
+        # boolIdxNoFlip = np.full(self.N,False,dtype=bool)
+        # boolIdxNoFlip[INTrep,] = np.full(len(INTrep),True,dtype=bool)
+        # intIdx = np.where(boolIdxNoFlip==0)[0]
+        # boolIdxNoFlip = np.packbits(boolIdxNoFlip,bitorder='little')
 
         # Flip the un-flippable hyperplanes; this must be undone later
         H[INTrep,:] = -H[INTrep,:]
@@ -610,11 +619,9 @@ class successorWorker(Chare):
                         return [set([]), 0]
 
             boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
-            constraint_list = np.full(len(H)+1,False,dtype=bool)
-            constraint_list[0:len(H)] = np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((-1,1))) >= 1e-07,axis=1)
+            constraint_list = np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((-1,1))) >= -1e-07,axis=1)
         else:
-            constraint_list = np.full(len(H)+1,True,dtype=bool)
-            constraint_list[-1] = False
+            constraint_list = None
 
         
         faces = self.thisProxy[self.thisIndex].concreteMinHRep(H,constraint_list,boolIdxNoFlip,intIdxNoFlip,intIdx,solver=solver,safe=False,ret=True).get()
