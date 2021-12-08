@@ -8,7 +8,6 @@ import cvxopt
 import posetFastCharm
 from copy import copy,deepcopy
 import time
-from posetFastCharm import activeHyperplaneSet, unflipInt, posHyperplaneSet, unflipIntFixed
 import encapsulateLP
 import DistributedHash
 import numba as nb
