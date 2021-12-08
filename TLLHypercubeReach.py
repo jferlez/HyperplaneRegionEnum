@@ -12,7 +12,7 @@ from posetFastCharm import activeHyperplaneSet, unflipInt, posHyperplaneSet, unf
 import encapsulateLP
 import DistributedHash
 import numba as nb
-
+import posetFastCharm_numba
 
 cvxopt.solvers.options['show_progress'] = False
 
@@ -25,40 +25,42 @@ class PosetNodeTLLVer(DistributedHash.Node):
         regSet = np.full(self.constraints.N, True, dtype=bool)
         regSet[tuple(self.constraints.flipMapSet),] = np.full(len(self.constraints.flipMapSet),False,dtype=bool)
         regSet[self.nodeBytes,] = np.full(len(self.nodeBytes),False,dtype=bool)
-        unflipped = is_in_set_idx(self.constraints.flipMapSetNP,self.nodeBytes)
+        unflipped = posetFastCharm_numba.is_in_set_idx(self.constraints.flipMapSetNP,list(self.nodeBytes))
         regSet[unflipped] = np.full(len(unflipped),True,dtype=bool)
         regSet = np.nonzero(regSet)[0]
 
         val = False
         for sSet in self.selectorSetsFull[self.out]:
-            if not is_non_empty_intersection(regSet,sSet):
+            if not posetFastCharm_numba.is_non_empty_intersection(regSet,sSet):
                 val = True
                 break
 
         return val
-@nb.cfunc(nb.int64[:](nb.int64[:],nb.int64[:]) )
-def is_in_set_idx(a, b):
-    a = a.ravel()
-    n = len(a)
-    result = np.full(n, 0)
-    set_b = set(b)
-    idx = 0
-    for i in range(n):
-        if a[i] in set_b:
-            result[idx] = i
-            idx += 1
-    return result[0:idx].flatten()
-@nb.cfunc(nb.types.boolean(nb.int64[:],nb.types.Set(nb.int64, reflected=True)) )
-def is_non_empty_intersection(a, set_b):
-    retVal = False
-    a = a.ravel()
-    n = len(a)
-    # set_b = set(b)
-    for i in range(n):
-        if a[i] in set_b:
-            retVal = True
-            return retVal
-    return retVal
+
+# NUMBA jit-able versions of the functions used above; they are slower then the compiled versions
+# @nb.cfunc(nb.int64[:](nb.int64[:],nb.int64[:]) )
+# def is_in_set_idx(a, b):
+#     a = a.ravel()
+#     n = len(a)
+#     result = np.full(n, 0)
+#     set_b = set(b)
+#     idx = 0
+#     for i in range(n):
+#         if a[i] in set_b:
+#             result[idx] = i
+#             idx += 1
+#     return result[0:idx].flatten()
+# @nb.cfunc(nb.types.boolean(nb.int64[:],nb.types.Set(nb.int64, reflected=True)) )
+# def is_non_empty_intersection(a, set_b):
+#     retVal = False
+#     a = a.ravel()
+#     n = len(a)
+#     # set_b = set(b)
+#     for i in range(n):
+#         if a[i] in set_b:
+#             retVal = True
+#             return retVal
+#     return retVal
 
 class setupCheckerVars(Chare):
     def __init__(self,selectorSetsFull):

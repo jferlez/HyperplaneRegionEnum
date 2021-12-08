@@ -15,6 +15,9 @@ from cylp.py.modeling.CyLPModel import CyLPArray
 import hashlib
 import sys
 import warnings
+import numba as nb
+
+import posetFastCharm_numba
 
 warnings.simplefilter(action = "ignore", category = RuntimeWarning)
 
@@ -339,7 +342,8 @@ class successorWorker(Chare):
     
     # https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
     def hashNode(self,toHash):
-        hashInt = hashNodeBytes(toHash[0])
+        hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
+        # hashInt = hashNodeBytes(toHash[0])
         return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, tuple(toHash[1]))
     
     @coro
@@ -862,6 +866,7 @@ def activeHyperplaneSet(INT,n):
         idx = idx << 1
     return retList[0:retIdx]
 
+
 def hashNodeBytes(nodeBytes):
     chunks = np.array( \
         [int.from_bytes(nodeBytes[idx:min(idx+8,len(nodeBytes))],'little') for idx in range(0,len(nodeBytes),8)], \
@@ -869,24 +874,4 @@ def hashNodeBytes(nodeBytes):
         )
     p = 6148914691236517205 * np.bitwise_xor(chunks, np.right_shift(chunks,32))
     hashInt = 17316035218449499591 * np.bitwise_xor(p, np.right_shift(p,32))
-    
-    return int(np.bitwise_xor.reduce(hashInt))
-
-def oldHashNode(nodeBytes):
-    nodeInt = int.from_bytes(nodeBytes,'little')
-    p = 6148914691236517205*(nodeInt^(nodeInt>>32))
-    hashInt = (17316035218449499591*(p^(p>>32))) & ((1 << 33)-1)
-    return hashInt
-
-def is_in_set_idx(a, b):
-    a = a.ravel()
-    n = len(a)
-    n = len(a)
-    result = np.full(n, 0)
-    set_b = set(b)
-    idx = 0
-    for i in range(n):
-        if a[i] in set_b:
-            result[idx] = i
-            idx += 1
-    return result[0:idx].flatten()
+    return int(hashInt)
