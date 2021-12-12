@@ -392,14 +392,15 @@ class HashWorker(Chare):
                                 self.workerDone[ch].send(True)
                             self.status[ch] = -3
                     elif val == -4:
-                        msgFalseSet = False
+                        # msgFalseSet = False
                         for ch in self.inChannels:
                             if self.status[ch] != -2 and self.status[ch] != -3:
                                 self.workerDone[ch].send(False)
                                 msgFalseSet = True
                             self.status[ch] = -3
-                        if not msgFalseSet:
-                            print('**WARNING**: \'False\' early termination signal was received, but didn\'t set any return values. Possible synchronization issue!')
+                        # if not msgFalseSet:
+                        #     pass
+                        #     # print('**WARNING**: \'False\' early termination signal was received, but didn\'t set any return values. Possible synchronization issue!')
                     elif val == -2:
                         if self.status[ch] != -2 and self.status[ch] != -3:
                             self.workerDone[ch].send(True)
