@@ -41,7 +41,7 @@ def hashNodeBytes(nodeBytes):
 #         )
 #     p = np.uint64(6148914691236517205) * np.bitwise_xor(chunks, np.right_shift(chunks,np.uint64(32)))
 #     hashInt = np.uint64(17316035218449499591) * np.bitwise_xor(p, np.right_shift(p,np.uint64(32)))
-#     return hashInt
+#     return int(np.bitwise_xor.reduce(hashInt))
 
 # @cc.export('is_in_set_idx','int64[:](int64[:],int64[:])')
 @cc.export('is_in_set_idx',nb.int64[:](nb.int64[:],nb.types.List(nb.int64)))

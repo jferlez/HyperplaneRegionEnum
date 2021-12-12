@@ -773,4 +773,4 @@ def hashNodeBytes(nodeBytes):
         )
     p = 6148914691236517205 * np.bitwise_xor(chunks, np.right_shift(chunks,32))
     hashInt = 17316035218449499591 * np.bitwise_xor(p, np.right_shift(p,32))
-    return int(hashInt)
+    return int(np.bitwise_xor.reduce(hashInt))
