@@ -13,6 +13,7 @@ import DistributedHash
 import numba as nb
 import posetFastCharm_numba
 import itertools
+import random
 
 cvxopt.solvers.options['show_progress'] = False
 
@@ -91,18 +92,20 @@ class setupCheckerVars(Chare):
 
 class PosetNodeTLLVerOriginCheck(DistributedHash.Node):
     def init(self):
-        self.posetSuccGroupProxy = self.localProxy.getPosetSuccGroupProxy(ret=True).get()
+        self.posetSuccGroupProxy, self.posetPElist = self.localProxy.getPosetSuccGroupProxy(ret=True).get()
     def check(self):
         # print(self.posetSuccGroupProxy)
-        self.posetSuccGroupProxy[self.data[0]].checkNode(self.nodeBytes)
+        # self.posetSuccGroupProxy[self.data[0]].checkNode(self.nodeBytes)
+        self.posetSuccGroupProxy[ random.choice(self.posetPElist) ].checkNode(self.nodeBytes)
         return True
 
 class setupCheckerVarsOriginCheck(Chare):
-    def init(self,succGroupProxy):
+    def init(self,succGroupProxy,posetPElist):
         self.posetSuccGroupProxy = succGroupProxy
+        self.posetPElist = posetPElist
 
     def getPosetSuccGroupProxy(self):
-        return self.posetSuccGroupProxy
+        return (self.posetSuccGroupProxy, self.posetPElist)
     
     # Legacy methods
     def setConstraint(self,constraints, out):
@@ -155,9 +158,10 @@ class TLLHypercubeReach(Chare):
         self.inputConstraintsA = np.array(inputConstraints[0])
         self.inputConstraintsb = np.array(inputConstraints[1]).reshape( (len(inputConstraints[1]),1) )
         # Create CDD representations for the input constraints
-        self.inputMat, self.inputPolytope, self.inputVrep = createCDDrep(self.inputConstraintsA, self.inputConstraintsb)
+        #self.inputMat, self.inputPolytope, self.inputVrep = createCDDrep(self.inputConstraintsA, self.inputConstraintsb)
         # Find a point in the middle of the polyhedron
-        self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
+        # self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
+        self.pt = np.full(self.n,0,dtype=np.float64).reshape(-1,1)
 
         self.selectorSetsFull = [[] for k in range(len(selectorMats))]
         # Convert the matrices to sets of 'used' hyperplanes
@@ -175,7 +179,6 @@ class TLLHypercubeReach(Chare):
         self.hashPElist = list(itertools.chain.from_iterable( \
                [list(range(r[0],r[1],r[2])) for r in pes['hash']] \
             ))
-
         # self.checkerLocalVars = Group(setupCheckerVars,args=[self.selectorSetsFull,self.hashPElist])
         self.checkerLocalVars = Group(setupCheckerVarsOriginCheck,args=[])
         charm.awaitCreation(self.checkerLocalVars)
@@ -188,7 +191,7 @@ class TLLHypercubeReach(Chare):
         self.poset.setSuccessorCommonProperty('selectorSetsFull',self.selectorSetsFull)
 
         succGroupProxy = self.poset.getSuccGroupProxy(ret=True).get()
-        self.checkerLocalVars.init(succGroupProxy)
+        self.checkerLocalVars.init(succGroupProxy,self.posetPElist)
         
         stat = self.poset.initialize(self.localLinearFns, self.pt, self.inputConstraintsA, self.inputConstraintsb, awaitable=True)
         stat.get()
