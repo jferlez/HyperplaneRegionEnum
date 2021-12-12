@@ -352,7 +352,8 @@ class successorWorker(Chare):
             #print('Message sent!')
 
     def hashNode(self,toHash):
-        hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
+        # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
+        hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         # hashInt = hashNodeBytes(toHash[0])
         return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, tuple(toHash[1]), charm.myPe())
     
