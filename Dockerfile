@@ -7,5 +7,6 @@ RUN echo "export PATH=/usr/local/bin:$PATH\nexport LD_LIBRARY_PATH=/usr/local/li
 WORKDIR tools/FastBATLLNN
 COPY . .
 USER root
+RUN python3 posetFastCharm_numba.py
 RUN chown -R ubuntu:ubuntu /home/ubuntu/tools
 CMD /usr/local/bin/startup.sh
