@@ -6,6 +6,6 @@ RUN chown -R ubuntu:root /home/ubuntu/tools
 USER ubuntu
 # Now copy over code
 COPY --chown=ubuntu:root . .
-# RUN python3 posetFastCharm_numba.py
+RUN python3 posetFastCharm_numba.py
 USER root
 CMD /usr/local/bin/startup.sh
