@@ -3,9 +3,9 @@ WORKDIR /tmp/docker_build
 RUN ln -snf /usr/share/zoneinfo/$CONTAINER_TIMEZONE /etc/localtime && echo $CONTAINER_TIMEZONE > /etc/timezone
 RUN apt-get update && \
     apt-get -y upgrade && \
-    apt -y install clang-13 cython3 python3-pip libopenmpi-dev cmake gcc-11 libgsl-dev libfftw3-3 libfftw3-dev libsuitesparse-dev git clang-12 clang-11 vim emacs nano screen openssh-server sudo && \
+    apt -y install clang-13 cython3 python3-pip libopenmpi-dev cmake gcc-11 libgsl-dev libfftw3-3 libfftw3-dev libsuitesparse-dev git clang-12 clang-11 vim emacs nano screen ipython3 openssh-server sudo && \
     pip3 install --upgrade pip && \
-    pip3 install tensorflow-gpu scipy greenlet
+    pip3 install tensorflow scipy greenlet
 RUN git clone https://github.com/UIUC-PPL/charm4py && \
     cd charm4py && \
     sed -i -E -e "s/(\s+)(args\ \+\=)/\1args\.remove('\+\+interactive')\n\1\2/" ./charmrun/start.py && \
