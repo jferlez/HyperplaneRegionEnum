@@ -19,7 +19,7 @@ RUN wget https://ftp.gnu.org/gnu/glpk/glpk-5.0.tar.gz && \
     cd .. && \
     git clone https://github.com/cvxopt/cvxopt.git && \
     cd cvxopt && \
-    CVXOPT_BUILD_FFTW=1 CVXOPT_BUILD_GSL=1 CVXOPT_BUILD_GLPK=1 CVXOPT_GLPK_LIB_DIR=/usr/local/lib CVXOPT_GLPK_INC_DIR=/usr/local/include CC=/usr/bin/clang-13 CXX=/usr/bin/clang++-13 CPP=/usr/bin/clang-cpp-13 python3 setup.py install --user && \
+    CVXOPT_BUILD_FFTW=1 CVXOPT_BUILD_GSL=1 CVXOPT_BUILD_GLPK=1 CVXOPT_GLPK_LIB_DIR=/usr/local/lib CVXOPT_GLPK_INC_DIR=/usr/local/include CC=/usr/bin/clang-13 CXX=/usr/bin/clang++-13 CPP=/usr/bin/clang-cpp-13 python3 setup.py install && \
     cd .. && \
     wget https://raw.githubusercontent.com/coin-or/coinbrew/master/coinbrew && \
     chmod 755 coinbrew && \
