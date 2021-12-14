@@ -43,6 +43,8 @@ RUN echo 'ubuntu:ubuntu' | chpasswd
 RUN /usr/bin/ssh-keygen -A
 RUN echo "#!/bin/bash\nnohup /usr/sbin/sshd -D &\nsudo -u ubuntu /bin/bash" > /usr/local/bin/startup.sh
 RUN chmod 700 /usr/local/bin/startup.sh
+RUN echo "export PATH=/usr/local/bin:$PATH\nexport LD_LIBRARY_PATH=/usr/local/lib\nexport COIN_INSTALL_DIR=/usr/local" >> /home/ubuntu/.bashrc
+RUN chown ubuntu:ubuntu /home/ubuntu/.bashrc
 # RUN rm /etc/ssh/ssh_host_rsa_key /etc/ssh/ssh_host_ecdsa_key && \
 #     ssh-keygen -f /etc/ssh/ssh_host_rsa_key -N '' -t rsa && \
 #     ssh-keygen -f /etc/ssh/ssh_host_dsa_key -N '' -t dsa && \
