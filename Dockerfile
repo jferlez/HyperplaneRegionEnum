@@ -6,3 +6,6 @@ RUN echo "export PATH=/usr/local/bin:$PATH\nexport LD_LIBRARY_PATH=/usr/local/li
 # Now copy over code
 WORKDIR tools/FastBATLLNN
 COPY . .
+USER root
+RUN chown -R ubuntu:ubuntu /home/ubuntu/tools
+CMD /usr/local/bin/startup.sh

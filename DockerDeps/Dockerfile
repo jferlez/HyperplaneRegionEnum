@@ -3,7 +3,7 @@ WORKDIR /tmp/docker_build
 RUN ln -snf /usr/share/zoneinfo/$CONTAINER_TIMEZONE /etc/localtime && echo $CONTAINER_TIMEZONE > /etc/timezone
 RUN apt-get update && \
     apt-get -y upgrade && \
-    apt -y install clang-13 cython3 python3-pip libopenmpi-dev cmake gcc-11 libgsl-dev libfftw3-3 libfftw3-dev libsuitesparse-dev git openssh-server sudo && \
+    apt -y install clang-13 cython3 python3-pip libopenmpi-dev cmake gcc-11 libgsl-dev libfftw3-3 libfftw3-dev libsuitesparse-dev git clang-12 clang-11 vim emacs nano screen openssh-server sudo && \
     pip3 install --upgrade pip && \
     pip3 install tensorflow-gpu scipy greenlet
 RUN git clone https://github.com/UIUC-PPL/charm4py && \
@@ -30,9 +30,24 @@ RUN wget https://ftp.gnu.org/gnu/glpk/glpk-5.0.tar.gz && \
     cd charm4py && \
     python3 setup.py install --mpi && \
     cd .. && \
+    git clone https://github.com/numba/numba && \
+    git clone https://github.com/numba/llvmlite && \
+    cd llvmlite && \
+    LLVM_CONFIG=llvm-config-11 python3 setup.py install && \
+    cd ../numba && \
+    python3 setup.py install && \
+    cd .. && \
     rm -rf *
 RUN useradd -rm -d /home/ubuntu -s /bin/bash -g root -G sudo -u 1000 ubuntu
 RUN echo 'ubuntu:ubuntu' | chpasswd
-RUN service ssh start
-EXPOSE 22
-CMD ["/usr/sbin/sshd","-D"]
+RUN /usr/bin/ssh-keygen -A
+RUN echo "#!/bin/bash\nnohup /usr/sbin/sshd -D &\nsudo -u ubuntu /bin/bash" > /usr/local/bin/startup.sh
+RUN chmod 700 /usr/local/bin/startup.sh
+# RUN rm /etc/ssh/ssh_host_rsa_key /etc/ssh/ssh_host_ecdsa_key && \
+#     ssh-keygen -f /etc/ssh/ssh_host_rsa_key -N '' -t rsa && \
+#     ssh-keygen -f /etc/ssh/ssh_host_dsa_key -N '' -t dsa && \
+#     ssh-keygen -f /etc/ssh/ssh_host_ecdsa_key -N '' -t ecdsa -b 521
+# RUN /usr/bin/ssh-keygen -A
+# RUN service ssh start
+# EXPOSE 22
+# CMD ["/bin/bash"]
