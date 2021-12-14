@@ -50,6 +50,6 @@ RUN chown ubuntu:root /home/ubuntu/.bashrc
 #     ssh-keygen -f /etc/ssh/ssh_host_dsa_key -N '' -t dsa && \
 #     ssh-keygen -f /etc/ssh/ssh_host_ecdsa_key -N '' -t ecdsa -b 521
 # RUN /usr/bin/ssh-keygen -A
-# RUN service ssh start
-# EXPOSE 22
+RUN service ssh start
+EXPOSE 22
 # CMD ["/bin/bash"]
