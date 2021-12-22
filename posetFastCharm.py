@@ -82,6 +82,9 @@ class Poset(Chare):
         self.posetPElist = list(itertools.chain.from_iterable( \
                [list(range(r[0],r[1],r[2])) for r in self.posetPEs] \
             ))
+        self.hashPElist = list(itertools.chain.from_iterable( \
+               [list(range(r[0],r[1],r[2])) for r in self.hashPEs] \
+            ))
         self.succGroupFull = Group(self.successorChare,args=[])
         charm.awaitCreation(self.succGroupFull)
         self.succGroupFull.initPEs(self.posetPElist)
@@ -99,7 +102,7 @@ class Poset(Chare):
             self.localVarGroup, \
             self.hashPEs, \
             self.posetPEs \
-        ])
+        ],onPE=self.hashPElist[0])
         charm.awaitCreation(self.distHashTable)
         # print('Initialized distHashTable group')
         initFut = self.distHashTable.initialize(awaitable=True)

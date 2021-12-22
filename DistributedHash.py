@@ -524,7 +524,7 @@ class HashWorker(Chare):
     
 
 class DistHash(Chare):
-
+    @coro
     def __init__(self, feederGroup, nodeConstructor, localVarGroup, hashPEs, posetPEs):
         self.feederGroup = feederGroup
         self.posetPEs = posetPEs
@@ -578,6 +578,10 @@ class DistHash(Chare):
         # Establish a feedback channel so that the hash table can send messages to the feeder workers:
         feeders = sorted(zip(self.posetPElist,self.feederProxies))
         hashes = sorted(zip(self.hashPElist,self.hashWorkerProxies))
+        # TO DO
+        # The presence of the following two lines seem to be a bug, since they ensure that no "overlap" PEs are detected. 
+        # As a result, no query mutex listener is started, and from experiments, it seems that queries are effectively 
+        # disabled as a result.
         self.overlapPElist = {}
         self.mappedPElist = {}
         for idx in self.overlapPElist:
