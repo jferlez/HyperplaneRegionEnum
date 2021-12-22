@@ -10,11 +10,12 @@ from copy import copy
 
 class Node():
 
-    def __init__(self,localProxy, parentChare, lsb,msb,nodeBytes, *args):
+    def __init__(self,localProxy, storePe, parentChare, lsb,msb,nodeBytes, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
         self.localProxy = localProxy
+        self.storePe = storePe
         self.parentChare = parentChare
         self.data = args
     
@@ -76,10 +77,12 @@ class HashWorker(Chare):
         self.status = {}
         self.messages = {}
         self.workerDone = {}
+        self.localListenerOnline = {}
         for ch in self.inChannels:
             self.status[ch] = 0
             self.messages[ch] = {'msg':None, 'fut':None}
             self.workerDone[ch] = None
+            self.localListenerOnline[ch] = False
     
 
     @coro
@@ -93,10 +96,12 @@ class HashWorker(Chare):
         self.queryStatus = {}
         self.queryMessages = {}
         self.queryDone = {}
+        self.queryListenerOnline = {}
         for ch in self.queryChannels:
             self.queryStatus[ch] = 0
             self.queryMessages[ch] = {'msg':None, 'fut':None}
             self.queryDone[ch] = None
+            self.queryListenerOnline[ch] = False
     
     # The following two methods allow a DistributedHash to function as a "feeder" to **another** DistributedHash!
     # To do: implement the feedback channel from the other DistributedHash...
@@ -139,12 +144,19 @@ class HashWorker(Chare):
     @coro
     def localListener(self,ch,chIdx):
         self.initiatedNodeProc = False
+        validInput = False
         while True:
             # print('Listener started')
             # charm.wait([ch])
             # sig = str(random.random())
             # before = [self.messages[chIt]['msg'] for chIt in self.inChannels]
             val = ch.recv()
+            # print('Recieved val ' + str(val) + 'on PE ' + str(charm.myPe()))
+            # Make sure we don't start reading until the previous level/poset was done
+            if not validInput:
+                if val == -100:
+                    validInput = True
+                continue
             # print(val)
             self.messages[ch]['msg'] = val
             ackFut = Future()
@@ -164,6 +176,7 @@ class HashWorker(Chare):
             if val == -3 or val == -2:
                 # print('----'*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'LocalListener ' + sig + ' -- TERMINATING!')
                 break
+        return 1
 
     @coro
     def localQueryListener(self,ch,chIdx):
@@ -193,17 +206,26 @@ class HashWorker(Chare):
             if val == -2:
                 # print('===='*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'QUERYLocalListener ' + sig + ' -- TERMINATING!')
                 break
+        return 1
 
     @coro
     def initListen(self,fut):
         if not charm.myPe() in self.hashPElist:
             return
+        # Make sure all of the loopback channels are empty:
+        for loopbackIt in [self.loopback, self.queryLoopback, self.controlLoopback]:
+            loopbackIt.send(-100)
+            while True:
+                m = loopbackIt.recv()
+                if m == -100:
+                    break
         for ch in self.inChannels:
             self.status[ch] = 0
             self.messages[ch] = {'msg':None, 'fut':None}
             self.workerDone[ch] = None
+        self.listenerStatus = []
         for k in range(len(self.inChannels)):
-            self.thisProxy[self.thisIndex].localListener(self.inChannels[k],k)
+            self.listenerStatus.append( self.thisProxy[self.thisIndex].localListener(self.inChannels[k],k, ret=True) )
             self.workerDone[self.inChannels[k]] = Future()
         
         for ch in self.queryChannels:
@@ -211,7 +233,7 @@ class HashWorker(Chare):
             self.queryMessages[ch] = {'msg':None, 'fut':None}
             self.queryDone[ch] = None
         for k in range(len(self.queryChannels)):
-            self.thisProxy[self.thisIndex].localQueryListener(self.queryChannels[k],k)
+            self.listenerStatus.append( self.thisProxy[self.thisIndex].localQueryListener(self.queryChannels[k],k,ret=True) )
             self.queryDone[self.queryChannels[k]] = Future()
         
         # print('Done initListen on PE ' + str(charm.myPe()))
@@ -220,7 +242,7 @@ class HashWorker(Chare):
         self.termCount = 0
         self.levelDone = False
         fut.send(1)
-        
+
 
 
     @coro
@@ -335,7 +357,7 @@ class HashWorker(Chare):
                     if type(val) is tuple and len(val) >= 3:
                         if (not charm.myPe() in self.overlapPElist) or (not selfQuery or charm.myPe() == chIdx):
                             answeredSelf = True
-                        newNode = self.nodeConstructor(self.localVarGroup[charm.myPe()], self, *val)
+                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, *val)
                         if newNode in self.table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             self.queryChannels[chIdx].send(1)
@@ -409,7 +431,7 @@ class HashWorker(Chare):
                         if all([self.status[chIt] <= -2 for chIt in self.inChannels]):
                             self.levelDone = True
                     elif type(val) == tuple and len(val) >= 3:
-                        newNode = self.nodeConstructor(self.localVarGroup[charm.myPe()], self, *val)
+                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, *val)
                         if self.nodeCalls & 1:
                             newNode.init()
                         if not newNode in self.table:
@@ -472,6 +494,15 @@ class HashWorker(Chare):
     @coro
     def awaitQueries(self):
         return all([self.queryDone[ch].get() for ch in self.queryChannels])
+        
+    @coro
+    def awaitListenerShutdown(self, shutdownFut):
+        cnt = 0
+        if charm.myPe() in self.hashPElist:
+            for fut in charm.iwait(self.listenerStatus):
+                cnt += fut.get()
+            self.listenerStatus = []
+        self.reduce(shutdownFut, cnt, Reducer.sum)
 
     @coro
     def getLevelList(self, levelListFut):
@@ -651,10 +682,28 @@ class DistHash(Chare):
     def getLevelList(self):
         nextlevel = Future()
         self.hWorkersFull.getLevelList(nextlevel)
+        return nextlevel.get()
+
+    @coro
+    def awaitPending(self):
+        while True:
+            pendingCnt = sum(self.localVarGroup.getSchedCount(ret=True).get())
+            if pendingCnt == 0:
+                break
+    
+    @coro
+    def awaitShutdown(self):
         if not self.queryMutexDone is None:
             self.queryMutexDone.get()
         all(self.hWorkers.awaitQueries(ret=True).get())
-        return nextlevel.get()
+        listenerShutdownFut = Future()
+        # print('Awaiting listener shutdown...')
+        self.hWorkersFull.awaitListenerShutdown(listenerShutdownFut)
+        val = listenerShutdownFut.get()
+        # print('Finished listener shutdown...')
+        # print('Count was ' + str(val))
+        return val
+
 
     def getWorkerProxy(self):
         return self.hWorkers

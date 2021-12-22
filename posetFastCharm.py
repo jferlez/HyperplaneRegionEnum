@@ -30,7 +30,7 @@ class PosetNode(DistributedHash.Node):
         pass
     # These methods are optional, and will be called at an appropriate time by DistributedHash if present
     def init(self):
-        self.constraints = self.localProxy.getConstraints(ret=True).get()
+        self.constraints = self.localProxy[self.storePe].getConstraints(ret=True).get()
 
     # def update(self):
     #     pass
@@ -39,10 +39,16 @@ class PosetNode(DistributedHash.Node):
     #     pass
 
 class localVar(Chare):
-    def __init__(self,constraints):
+    def setConstraints(self,constraints):
         self.constraints = constraints
+        self.schedCount = 0
+        self.skip = False
     def getConstraints(self):
         return self.constraints
+    # This method **must** be implemented for DistributedHash to work:
+    @coro
+    def getSchedCount(self):
+        return self.schedCount
 
 class Poset(Chare):
     
@@ -54,6 +60,8 @@ class Poset(Chare):
         self.useDefaultLocalVarGroup = False
         if localVarGroup is None:
             self.useDefaultLocalVarGroup = True
+            self.localVarGroup = Group(localVar,args=[])
+            charm.awaitCreation(self.localVarGroup)
         self.nodeConstructor = nodeConstructor
         if self.nodeConstructor is None:
             self.nodeConstructor = PosetNode
@@ -83,6 +91,19 @@ class Poset(Chare):
         self.successorProxies = list(itertools.chain.from_iterable( \
                 [successorProxies[r[0]:r[1]:r[2]] for r in self.posetPEs] \
             ))
+        
+        # Initialize a new distributed hash table:
+        self.distHashTable = Chare(DistributedHash.DistHash,args=[
+            self.succGroupFull, \
+            self.nodeConstructor, \
+            self.localVarGroup, \
+            self.hashPEs, \
+            self.posetPEs \
+        ])
+        charm.awaitCreation(self.distHashTable)
+        # print('Initialized distHashTable group')
+        initFut = self.distHashTable.initialize(awaitable=True)
+        initFut.get()
 
     
     def initialize(self, AbPairs, pt, fixedA, fixedb):
@@ -111,19 +132,7 @@ class Poset(Chare):
         stat = self.succGroup.initialize(self.N,self.flippedConstraints,awaitable=True)
         stat.get()
         if self.useDefaultLocalVarGroup:
-            self.localVarGroup = Group(localVar,args=[self.flippedConstraints])
-            charm.awaitCreation(self.localVarGroup) 
-        # Initialize a new distributed hash table:
-        self.distHashTable = Chare(DistributedHash.DistHash,args=[
-            self.succGroupFull, \
-            self.nodeConstructor, \
-            self.localVarGroup, \
-            self.hashPEs, \
-            self.posetPEs \
-        ])
-        # print('Initialized distHashTable group')
-        initFut = self.distHashTable.initialize(awaitable=True)
-        initFut.get()
+            self.localVarGroup.setConstraints(self.flippedConstraints,awaitable=True).get()
 
         self.populated = False
 
@@ -158,22 +167,26 @@ class Poset(Chare):
 
         # Send this node into the distributed hash table and check it
         initFut = Future()
-        self.distHashTable.initListening(initFut)
+        self.distHashTable.initListening(initFut,awaitable=True).get()
         initFut.get()
+        self.succGroupFull.startListening(awaitable=True).get()
 
         boolIdxNoFlip = bytearray(b'\x00') * (self.wholeBytes + (1 if self.tailBits != 0 else 0))
         for unflipIdx in range(len(thisLevel[0])-1,-1,-1):
             boolIdxNoFlip[thisLevel[0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][unflipIdx]//8] | (1<<(thisLevel[0][unflipIdx] % 8))
         self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0]],ret=True).get()
-
+        
+        self.distHashTable.awaitPending(awaitable=True).get()
+        # Send a final termination signal:
         self.succGroup.sendAll(-2,awaitable=True).get()
         self.succGroup.closeQueryChannels(awaitable=True).get()
         self.succGroup.flushMessages(ret=True).get()
-        # print('Message flush successful')
-        # print('Done sending message on RateChannel')
+        
         checkVal = self.distHashTable.levelDone(ret=True).get()
         if not checkVal:
             level = self.N+2
+        listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
+
         # print('Root node hashed')
         # print('Waiting for level done')
         while level < self.N+1 and len(thisLevel) > 0:
@@ -189,13 +202,17 @@ class Poset(Chare):
                 cnt += fut.get()
 
             initFut = Future()
-            self.distHashTable.initListening(initFut)
+            self.distHashTable.initListening(initFut,awaitable=True).get()
             initFut.get()
+            self.succGroupFull.startListening(awaitable=True).get()
 
             self.succGroup.computeSuccessorsNew(awaitable=True).get()
 
+
+            self.distHashTable.awaitPending(awaitable=True).get()
+            self.succGroup.sendAll(-2,awaitable=True).get()
             self.succGroup.closeQueryChannels(awaitable=True).get()
-            # self.succGroup.flushMessages(ret=True).get()
+            self.succGroup.flushMessages(ret=True).get()
 
             # print('Finished looking for successors on level ' + str(level))
             checkVal = self.distHashTable.levelDone(ret=True).get()
@@ -205,6 +222,7 @@ class Poset(Chare):
             nextLevel = self.distHashTable.getLevelList(ret=True).get()
             # print('Got level list')
             # print(nextLevel)
+            listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
 
             posetLen += len(nextLevel)
@@ -253,7 +271,7 @@ class successorWorker(Chare):
         self.processNodesArgs = {'solver':'glpk','ret':True}
         # Defaults to glpk, so this empty call is ok:
         self.lp = encapsulateLP.encapsulateLP()
-        self.outChannels = []
+        # self.outChannels = []
         self.endian = sys.byteorder
         self.wholeBytes = (self.N + 7) // 8
         self.tailBits = self.N - 8*(self.N // 8)
@@ -299,10 +317,10 @@ class successorWorker(Chare):
             self.numHashBits = self.numHashBits << 1
         self.hashMask = self.numHashBits - 1
         self.numHashBits -= 1
-        if self.N % 4 == 0:
-            self.numBytes = self.N/4
-        else:
-            self.numBytes = int(self.N/4)+1
+        # if self.N % 4 == 0:
+        #     self.numBytes = self.N/4
+        # else:
+        #     self.numBytes = int(self.N/4)+1
         # print(self.outChannels)
 
     @coro
@@ -350,6 +368,12 @@ class successorWorker(Chare):
             #print(self.outChannels[k])
             self.outChannels[k].send((self.thisIndex,k))
             #print('Message sent!')
+    
+    def startListening(self):
+        if not charm.myPe() in self.posetPElist:
+            return
+        for ch in self.outChannels:
+            ch.send(-100)
 
     def hashNode(self,toHash):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
@@ -445,7 +469,9 @@ class successorWorker(Chare):
         else:
             successorList = [[set([]),-1]]
         
-        self.thisProxy[self.thisIndex].sendAll(-2 if not term else -3, awaitable=True).get()
+        # self.thisProxy[self.thisIndex].sendAll(-2 if not term else -3, awaitable=True).get()
+        if term:
+            self.thisProxy[self.thisIndex].sendAll(-3, awaitable=True).get()
         self.thisProxy[self.thisIndex].flushMessages(awaitable=True).get()
 
         
