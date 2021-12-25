@@ -580,8 +580,11 @@ class DistHash(Chare):
         hashes = sorted(zip(self.hashPElist,self.hashWorkerProxies))
         # TO DO
         # The presence of the following two lines seem to be a bug, since they ensure that no "overlap" PEs are detected. 
-        # As a result, no query mutex listener is started, and from experiments, it seems that queries are effectively 
-        # disabled as a result.
+        # As a result, no query mutex listener is started, so there is effectively no deadlock prevention when two successor worker
+        # PEs suspend to query each other. These deadlocks were definitely occurring in pre-HSCC testing, but they don't seem to be
+        # occurring now. I don't know it this is because I fixed a bug in hashNode (before many, many nodes were hashed to the same
+        # value), and the deadlock is just much, much less likely to occur, or whether the query mutex is now no longer needed.
+        # This needs to be ascertained, though.
         self.overlapPElist = {}
         self.mappedPElist = {}
         for idx in self.overlapPElist:
