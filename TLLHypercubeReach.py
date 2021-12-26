@@ -357,13 +357,13 @@ class TLLHypercubeReach(Chare):
         return windLB if lb else windUB
 
     @coro
-    def verifyLB(self,lb, out=0):
+    def verifyLB(self,lb, out=0, timeout=None):
         if out >= self.m:
             raise ValueError('Output ' + str(out) + ' is greater than m = ' + str(self.m))
         
         t = time.time()
         
-        stat = self.poset.setConstraint(lb, out=out, awaitable=True)
+        stat = self.poset.setConstraint(lb, out=out, timeout=timeout, awaitable=True)
         stat.get()
         self.checkerLocalVars.setConstraint(self.poset.getConstraintsObject(ret=True).get(),out,awaitable=True).get()
 
@@ -376,16 +376,20 @@ class TLLHypercubeReach(Chare):
         return retVal
     
     @coro
-    def verifyUB(self,ub,out=0):
+    def verifyUB(self,ub,out=0, timeout=None):
         if out >= self.m:
             raise ValueError('Output ' + str(out) + ' is greater than m = ' + str(self.m))
-        self.ubCheckerGroup.reset(awaitable=True).get()
-        self.ubCheckerGroup.checkMinGroup(ub,out)
+        self.ubCheckerGroup.reset(timeout,awaitable=True).get()
+        timedOut = self.ubCheckerGroup.checkMinGroup(ub,out, ret=True)
         minCheckFut = Future()
-        self.ubCheckerGroup.collectMinGroupStats(minCheckFut)
+        self.ubCheckerGroup.collectMinGroupStats(minCheckFut,ret=True)
         
         retVal = minCheckFut.get()
+        timedOut = any(timedOut.get())
         print('Upper Bound verifiction used ' + str(sum(self.ubCheckerGroup.getLPcount(ret=True).get())) + ' total LPs.')
+        if timedOut:
+            retVal = None
+            print('Upper bound verification timed out.')
         return retVal
 
 
@@ -421,8 +425,9 @@ class minGroupFeasibleUB(Chare):
         self.otherProxies = [self.thisProxy[k] for k in pes]
         self.tol = 1e-10
     @coro
-    def reset(self):
+    def reset(self,timeout):
         self.workDone = False
+        self.clockTimeout = time.time() + timeout if timeout is not None else None
     @coro
     def checkMinGroup(self, ub, out):
         self.status = Future()
@@ -432,6 +437,9 @@ class minGroupFeasibleUB(Chare):
             self.loopback.recv()
             if self.workDone:
                 break
+            if self.clockTimeout is not None and time.time() > self.clockTimeout:
+                self.status.send(False)
+                return True
             n = self.AbPairs[out][0].shape[1]
             # Actually do the feasibility check:
             ubShift = self.AbPairs[out][1][list(self.selectorSetsFull[out][mySelector]),:]
@@ -500,6 +508,7 @@ class minGroupFeasibleUB(Chare):
                             self.status.send(True)
                             return
         self.status.send(False)
+        return False
 
     @coro
     def collectMinGroupStats(self, stat_result):

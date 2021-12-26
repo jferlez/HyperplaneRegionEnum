@@ -49,6 +49,14 @@ class localVar(Chare):
     @coro
     def getSchedCount(self):
         return self.schedCount
+    def setSkip(self,val):
+        # print('Executing setSkip on PE ' + str(charm.myPe()))
+        self.skip = val
+        # return 37
+    @coro
+    def reset(self):
+        self.skip = False
+        self.schedCount = 0
 
 class Poset(Chare):
     
@@ -121,7 +129,7 @@ class Poset(Chare):
 
 
     @coro
-    def setConstraint(self,lb=0,out=0):
+    def setConstraint(self,lb=0,out=0,timeout=None):
         self.populated = False
         self.incomplete = True
         self.flippedConstraints = flipConstraints( \
@@ -132,7 +140,7 @@ class Poset(Chare):
                 self.fixedb \
             )
         
-        stat = self.succGroup.initialize(self.N,self.flippedConstraints,awaitable=True)
+        stat = self.succGroup.initialize(self.N,self.flippedConstraints,timeout,awaitable=True)
         stat.get()
         if self.useDefaultLocalVarGroup:
             self.localVarGroup.setConstraints(self.flippedConstraints,awaitable=True).get()
@@ -167,6 +175,7 @@ class Poset(Chare):
         level = 0
         thisLevel = [self.flippedConstraints.root]
         posetLen = 1
+        timedOut = False
 
         # Send this node into the distributed hash table and check it
         initFut = Future()
@@ -209,8 +218,11 @@ class Poset(Chare):
             initFut.get()
             self.succGroupFull.startListening(awaitable=True).get()
 
-            self.succGroup.computeSuccessorsNew(awaitable=True).get()
 
+            self.succGroup.computeSuccessorsNew(ret=True).get()
+            timedOut = any(self.succGroupFull.getTimeout(ret=True).get())
+            if timedOut:
+                print('Received timeout on level ' + str(level))
 
             self.distHashTable.awaitPending(awaitable=True).get()
             self.succGroup.sendAll(-2,awaitable=True).get()
@@ -219,7 +231,8 @@ class Poset(Chare):
 
             # print('Finished looking for successors on level ' + str(level))
             checkVal = self.distHashTable.levelDone(ret=True).get()
-            if not checkVal:
+            if not checkVal or timedOut:
+                if timedOut: checkVal = None
                 break
             # print('Done with level ' + str(level))
             nextLevel = self.distHashTable.getLevelList(ret=True).get()
@@ -252,6 +265,9 @@ class Poset(Chare):
         
         # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
         print('Computed a (partial) poset of size: ' + str(posetLen))
+
+        if timedOut:
+            print('Poset computation timed out...')
         # return [i.iINT for i in self.hashTable.keys()]
         self.populated = True
         return checkVal
@@ -263,8 +279,9 @@ class successorWorker(Chare):
     
     def initPEs(self,pes):
         self.posetPElist = pes
+        self.timedOut = False
 
-    def initialize(self,N,constraints):
+    def initialize(self,N,constraints,timeout):
         self.workInts = []
         self.N = N
         self.flippedConstraints = constraints
@@ -278,7 +295,11 @@ class successorWorker(Chare):
         self.endian = sys.byteorder
         self.wholeBytes = (self.N + 7) // 8
         self.tailBits = self.N - 8*(self.N // 8)
-        
+        self.clockTimeout = (timeout + time.time()) if timeout is not None else None
+        self.timedOut = False
+    @coro
+    def getTimeout(self):
+        return self.timedOut
     
     def setMethod(self,method='fastLP',solver='clp',findAll=True,useQuery=False,useBounding=False,lpopts={}):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
@@ -463,11 +484,14 @@ class successorWorker(Chare):
         term = False
         if len(self.workInts) > 0:
             successorList = [[None,None]] * len(self.workInts)
-            for ii in range(len(successorList)):
+            for ii in range(len(successorList)):                
                 successorList[ii] = self.processNodeSuccessors(self.workInts[ii],self.N,self.constraints,**self.processNodesArgs).get()
-                
-                if type(successorList[ii][1]) is int:
+                self.timedOut = (time.time() > self.clockTimeout) if self.clockTimeout is not None else False
+                # print('Working on ' + str(self.workInts[ii]) + 'on PE ' + str(charm.myPe()) + '; with timeout ' + str(self.timedOut))
+                if type(successorList[ii][1]) is int or self.timedOut:
                     term = True
+                    if self.timedOut:
+                        successorList[ii][1] = -1
                     break
         else:
             successorList = [[set([]),-1]]
