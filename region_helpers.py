@@ -1,5 +1,6 @@
 import numpy as np
 import encapsulateLP
+from copy import copy
 
 
 
@@ -57,3 +58,57 @@ def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None):
             to_keep.append(idx)
 
     return to_keep
+
+
+def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7):
+    if lpObj is None:
+       lpObj = encapsulateLP.encapsulateLP()
+       lpObj.initSolver(solver=solver)
+
+    n = H2.shape[1]-1
+    N = H2.shape[0]
+
+    H = copy(H2)
+
+    status, sol = lpObj.runLP( \
+                    np.ones(n,dtype=np.float64), \
+                    -H[:,1:], \
+                    H[:,0], \
+                    lpopts = {'solver':solver}
+                )
+    if status == 'optimal':
+        
+        actHypers = np.nonzero(np.abs( H[:,1:] @ sol + H[:,0]) <= tol)[0]
+        if len(actHypers) == 0:
+            return None
+
+        origSol = np.array(sol,dtype=np.float64)
+        # print(solList)
+        for k in actHypers:
+            # Try to get away from the kth active hyperplane
+            newStatus, newSol = lpObj.runLP( \
+                        -H[k,1:], \
+                        -H[:,1:], \
+                        H[:,0], \
+                        lpopts = {'solver':'glpk'}
+                    )
+            if np.abs(H[k,1:]@newSol - H[k,1:]@origSol) < tol:
+                # We were unable to get off hyperplane k, so there is no interior point
+                return None
+            else:
+                # Perturb kth hyperplane into interior of the region (the result is still non-empty,
+                # since the set is convex, so origSol and newSol are connected by a segment in the region).
+                H[k,0] = 0.5*(H[k,0] - H[k,1:] @ newSol)
+        # If we were able to get away from all the active hyperplanes, then the last
+        # newSol can be connected to origSol with a segment whose midpoint is in the interior
+        # of the region.
+        return 0.5*(newSol + origSol)
+    
+    else:
+        return None
+
+
+
+
+
+
