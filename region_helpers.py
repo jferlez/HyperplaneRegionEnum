@@ -59,7 +59,8 @@ def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None):
 
     return to_keep
 
-
+# H2 is a CDD-style matrix specifying inequality constraints
+# Function returns an interior point to the associated region, if one exists, and None otherwise
 def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7):
     if lpObj is None:
        lpObj = encapsulateLP.encapsulateLP()
