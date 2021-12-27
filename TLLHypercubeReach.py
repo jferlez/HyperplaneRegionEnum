@@ -462,7 +462,7 @@ class minGroupFeasibleUB(Chare):
                     for pxy in self.otherProxies:
                         pxy.setDone()
                     self.status.send(True)
-                    return
+                    return False
                 distinctCount = 1
                 solList = [np.array(sol)]
                 # print(solList)
@@ -506,7 +506,7 @@ class minGroupFeasibleUB(Chare):
                             for pxy in self.otherProxies:
                                 pxy.setDone()
                             self.status.send(True)
-                            return
+                            return False
         self.status.send(False)
         return False
 
