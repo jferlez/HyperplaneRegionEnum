@@ -17,6 +17,7 @@ import warnings
 import numba as nb
 # import TLLHypercubeReach 
 import posetFastCharm_numba
+import region_helpers
 
 warnings.simplefilter(action = "ignore", category = RuntimeWarning)
 
@@ -132,7 +133,7 @@ class Poset(Chare):
     def setConstraint(self,lb=0,out=0,timeout=None):
         self.populated = False
         self.incomplete = True
-        self.flippedConstraints = flipConstraints( \
+        self.flippedConstraints = flipConstraintsReduced( \
                 -1*self.AbPairs[out][0], \
                 self.AbPairs[out][1] - lb*np.ones((self.N,1)), \
                 self.pt, \
@@ -780,19 +781,29 @@ class flipConstraintsReduced(flipConstraints):
         
         # Now let's remove any hyperplanes that don't intersect the polytope defined by fA and fb
         # First let's find the vertices of the constraint polytope using CDD
-        _, _, vRep = createCDDrep(self.fA, self.fb)
+        # _, _, vRep = createCDDrep(self.fA, self.fb)
 
-        self.redundantHyperplanes = \
-            -2*np.logical_or( \
-                np.all(self.nA @ vRep.T > self.nb.reshape(-1,1), axis=1), \
-                np.all(self.nA @ vRep.T < self.nb.reshape(-1,1), axis=1) \
-            )+1
+        # self.redundantHyperplanes = \
+        #     -2*np.logical_or( \
+        #         np.all(self.nA @ vRep.T > self.nb.reshape(-1,1), axis=1), \
+        #         np.all(self.nA @ vRep.T < self.nb.reshape(-1,1), axis=1) \
+        #     )+1
 
+        
+        mat = copy(self.constraints[(self.N-1):,:])
+        self.redundantHyperplanes = np.full(self.N,1,dtype=np.float64)
+        for k in range(self.N):
+            mat[0,:] = self.constraints[k,:]
+            if len(region_helpers.lpMinHRep(mat,None,[0])) == 0:
+                self.redundantHyperplanes[k] = -1
+        
         self.nA = np.diag(self.redundantHyperplanes) @ self.nA
         self.nb = np.diag(self.redundantHyperplanes) @ self.nb
         self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
-        # print(self.flipMapSet)
-        self.flipMapSet = frozenset(np.nonzero(np.diag(self.redundantHyperplanes) @ self.flipMapN < 0)[0])
+        
+        self.flipMapN = self.redundantHyperplanes * self.flipMapN
+        self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
+        self.flipMapSet = frozenset(self.flipMapSetNP)
 
         # Modify root node:
         # self.root = np.unpackbits(bytearray(self.root),count=self.N,bitorder='little')
