@@ -10,6 +10,7 @@ import posetFastCharm
 import NodeCheckerGenericReach
 from copy import copy,deepcopy
 import time
+import region_helpers
 
 cvxopt.solvers.options['show_progress'] = False
 cvxopt.solvers.options['maxiters'] = 500
@@ -40,10 +41,10 @@ class TLLGenericReach(Chare):
         else:
             self.inputConstraintsA = np.array(inputConstraints[0]).T
             self.inputConstraintsb = np.array(inputConstraints[1]).reshape( (len(inputConstraints[1]),1) )
-            # Create CDD representations for the input constraints
-            self.inputMat, self.inputPolytope, self.inputVrep = createCDDrep(self.inputConstraintsA, self.inputConstraintsb)
             # Find a point in the middle of the polyhedron
-            self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
+            self.pt = region_helpers.findInteriorPoint(np.hstack((-self.inputConstraintsb,self.inputConstraintsA)))
+            if self.pt is None:
+                raise ValueError('Input polytope has empty interior!')
         print(self.pt)
         # In the generic verifier, we need to consider the intersections between PAIRS of local linear functions,
         # so we will generate these 'auxilliary' hyperplanes
@@ -139,20 +140,6 @@ class TLLGenericReach(Chare):
 
 
 # Helper functions:
-def createCDDrep(inputConstraintsA, inputConstraintsb):
-    
-    inputMat = cdd.Matrix(np.hstack((-1*inputConstraintsb,inputConstraintsA)))
-    inputMat.rep_type = cdd.RepType.INEQUALITY
-    inputPolytope = cdd.Polyhedron(inputMat)
-    vrep = np.array(inputPolytope.get_generators())
-    if len(vrep) == 0:
-        raise ValueError('No vertices for input constraint polyhedron!')
-    
-    if np.sum(vrep[:,0]) < len(vrep):
-        raise ValueError('Input constraints do not specify a closed, bounded polyhedron!')
-    inputVrep = vrep[:,1:]
-
-    return inputMat, inputPolytope, inputVrep
 
 def findInteriorPoint(inputMat,inputPolytope,inputVrep):
     activeConstraints = inputPolytope.get_adjacency()[0]

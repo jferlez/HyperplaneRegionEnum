@@ -14,7 +14,7 @@ import numba as nb
 import posetFastCharm_numba
 import itertools
 import random
-
+import region_helpers
 cvxopt.solvers.options['show_progress'] = False
 
 # All hyperplanes assumes to be specified as A x >= b
@@ -231,11 +231,12 @@ class TLLHypercubeReach(Chare):
 
         self.inputConstraintsA = np.array(inputConstraints[0])
         self.inputConstraintsb = np.array(inputConstraints[1]).reshape( (len(inputConstraints[1]),1) )
-        # Create CDD representations for the input constraints
-        #self.inputMat, self.inputPolytope, self.inputVrep = createCDDrep(self.inputConstraintsA, self.inputConstraintsb)
+
         # Find a point in the middle of the polyhedron
-        # self.pt = findInteriorPoint(self.inputMat, self.inputPolytope, self.inputVrep)
-        self.pt = np.full(self.n,0,dtype=np.float64).reshape(-1,1)
+        self.pt = region_helpers.findInteriorPoint(np.hstack((-self.inputConstraintsb,self.inputConstraintsA)))
+        if self.pt is None:
+            raise ValueError('Input polytope has empty interior!')
+        # self.pt = np.full(self.n,0,dtype=np.float64).reshape(-1,1)
 
         self.selectorSetsFull = [[] for k in range(len(selectorMats))]
         # Convert the matrices to sets of 'used' hyperplanes
@@ -523,20 +524,6 @@ class minGroupFeasibleUB(Chare):
 
 
 # Helper functions:
-def createCDDrep(inputConstraintsA, inputConstraintsb):
-    
-    inputMat = cdd.Matrix(np.hstack((-1*inputConstraintsb,inputConstraintsA)))
-    inputMat.rep_type = cdd.RepType.INEQUALITY
-    inputPolytope = cdd.Polyhedron(inputMat)
-    vrep = np.array(inputPolytope.get_generators())
-    if len(vrep) == 0:
-        raise ValueError('No vertices for input constraint polyhedron!')
-    
-    if np.sum(vrep[:,0]) < len(vrep):
-        raise ValueError('Input constraints do not specify a closed, bounded polyhedron!')
-    inputVrep = vrep[:,1:]
-
-    return inputMat, inputPolytope, inputVrep
 
 def findInteriorPoint(inputMat,inputPolytope,inputVrep):
     activeConstraints = inputPolytope.get_adjacency()[0]

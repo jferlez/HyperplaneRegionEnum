@@ -740,21 +740,6 @@ Reducer.addReducer(Union)
 
 
 # Helper functions:
-def createCDDrep(inputConstraintsA, inputConstraintsb):
-    
-    inputMat = cdd.Matrix(np.hstack((-1*inputConstraintsb,inputConstraintsA)))
-    inputMat.rep_type = cdd.RepType.INEQUALITY
-    inputPolytope = cdd.Polyhedron(inputMat)
-    vrep = np.array(inputPolytope.get_generators())
-    if len(vrep) == 0:
-        raise ValueError('No vertices for input constraint polyhedron!')
-    
-    if np.sum(vrep[:,0]) < len(vrep):
-        raise ValueError('Input constraints do not specify a closed, bounded polyhedron!')
-    inputVrep = vrep[:,1:]
-
-    return inputMat, inputPolytope, inputVrep
-
 
 # https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
 def hashNodeBytes(nodeBytes):

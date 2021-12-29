@@ -8,8 +8,8 @@ import cdd
 import TLLnet
 import posetFastCharm
 import TLLHypercubeReach
-from TLLHypercubeReach import createCDDrep, findInteriorPoint
-import NodeCheckerLowerBdVerify
+from TLLHypercubeReach import findInteriorPoint
+# import NodeCheckerLowerBdVerify
 import time
 import pickle
 

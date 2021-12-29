@@ -8,7 +8,7 @@ import cdd
 import TLLnet
 import posetFastCharm
 import TLLGenericReach
-from TLLGenericReach import createCDDrep, findInteriorPoint
+from TLLGenericReach import findInteriorPoint
 import time
 
 
