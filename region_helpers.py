@@ -57,7 +57,7 @@ class flipConstraintsReduced(flipConstraints):
         self.redundantHyperplanes = np.full(self.N,1,dtype=np.float64)
         for k in range(self.N):
             mat[0,:] = self.constraints[k,:]
-            if len(region_helpers.lpMinHRep(mat,None,[0])) == 0:
+            if len(lpMinHRep(mat,None,[0])) == 0:
                 self.redundantHyperplanes[k] = -1
         
         self.nA = np.diag(self.redundantHyperplanes) @ self.nA
