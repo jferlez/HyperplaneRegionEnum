@@ -3,6 +3,81 @@ import encapsulateLP
 from copy import copy
 
 
+class flipConstraints:
+
+    def __init__(self, nA, nb, pt, fA=None, fb=None):
+        v = nA @ pt
+        v = v.flatten() - nb.flatten()
+        self.flipMapN = np.where(v<0,-1,1)
+        self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
+        self.flipMapSet = frozenset(self.flipMapSetNP)
+        self.nA = np.diag(self.flipMapN) @ nA
+        self.nb = np.diag(self.flipMapN) @ nb
+        self.N = len(nA)
+        self.d = len(nA[0])
+
+        if (fA is not None) and (fb is not None):
+            v = fA @ pt
+            v = v.flatten() - fb.flatten()
+            if len(np.flatnonzero(v<0)) > 0:
+                raise ValueError('Supplied point must satisfy all specified \'fixed\' constraints -- i.e. fA @ pt >= fb !')
+            self.fA = fA
+            self.fb = fb
+            self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
+
+        else:
+            self.fA = None
+            self.fb = None
+            self.constraints = np.hstack((-self.nb,self.nA))
+
+        # self.root = bytearray( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
+        # self.root = int.from_bytes(self.root, 'little')
+        self.root = tuple()
+
+
+class flipConstraintsReduced(flipConstraints):
+
+    def __init__(self, nA, nb, pt, fA=None, fb=None):
+        super().__init__(nA, nb, pt, fA=fA, fb=fb)
+        if self.fA is None:
+            return
+        
+        # Now let's remove any hyperplanes that don't intersect the polytope defined by fA and fb
+        # First let's find the vertices of the constraint polytope using CDD
+        # _, _, vRep = createCDDrep(self.fA, self.fb)
+
+        # self.redundantHyperplanes = \
+        #     -2*np.logical_or( \
+        #         np.all(self.nA @ vRep.T > self.nb.reshape(-1,1), axis=1), \
+        #         np.all(self.nA @ vRep.T < self.nb.reshape(-1,1), axis=1) \
+        #     )+1
+
+        
+        mat = copy(self.constraints[(self.N-1):,:])
+        self.redundantHyperplanes = np.full(self.N,1,dtype=np.float64)
+        for k in range(self.N):
+            mat[0,:] = self.constraints[k,:]
+            if len(region_helpers.lpMinHRep(mat,None,[0])) == 0:
+                self.redundantHyperplanes[k] = -1
+        
+        self.nA = np.diag(self.redundantHyperplanes) @ self.nA
+        self.nb = np.diag(self.redundantHyperplanes) @ self.nb
+        self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
+        
+        self.flipMapN = self.redundantHyperplanes * self.flipMapN
+        self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
+        self.flipMapSet = frozenset(self.flipMapSetNP)
+
+        # Modify root node:
+        # self.root = np.unpackbits(bytearray(self.root),count=self.N,bitorder='little')
+        # for k in np.nonzero(self.redundantHyperplanes<0)[0]:
+        #     self.root[k] = 1
+        # self.root = bytearray(np.packbits(self.root,bitorder='little'))
+        # self.root = int.from_bytes(self.root, 'little')
+        self.root = tuple(np.nonzero(self.redundantHyperplanes<0)[0].tolist())
+
+        #print(self.root)
+
 
 # H2 is a CDD-style matrix specifying inequality constraints, and intIdx is a list of indices of inequalities to check for redundancy
 # The return value is a list of indices into the list intIdx specifying which of those constraints are non-redundant
