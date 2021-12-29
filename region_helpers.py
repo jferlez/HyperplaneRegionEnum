@@ -42,17 +42,6 @@ class flipConstraintsReduced(flipConstraints):
         if self.fA is None:
             return
         
-        # Now let's remove any hyperplanes that don't intersect the polytope defined by fA and fb
-        # First let's find the vertices of the constraint polytope using CDD
-        # _, _, vRep = createCDDrep(self.fA, self.fb)
-
-        # self.redundantHyperplanes = \
-        #     -2*np.logical_or( \
-        #         np.all(self.nA @ vRep.T > self.nb.reshape(-1,1), axis=1), \
-        #         np.all(self.nA @ vRep.T < self.nb.reshape(-1,1), axis=1) \
-        #     )+1
-
-        
         mat = copy(self.constraints[(self.N-1):,:])
         self.redundantHyperplanes = np.full(self.N,1,dtype=np.float64)
         for k in range(self.N):
@@ -68,15 +57,7 @@ class flipConstraintsReduced(flipConstraints):
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
         self.flipMapSet = frozenset(self.flipMapSetNP)
 
-        # Modify root node:
-        # self.root = np.unpackbits(bytearray(self.root),count=self.N,bitorder='little')
-        # for k in np.nonzero(self.redundantHyperplanes<0)[0]:
-        #     self.root[k] = 1
-        # self.root = bytearray(np.packbits(self.root,bitorder='little'))
-        # self.root = int.from_bytes(self.root, 'little')
         self.root = tuple(np.nonzero(self.redundantHyperplanes<0)[0].tolist())
-
-        #print(self.root)
 
 
 # H2 is a CDD-style matrix specifying inequality constraints, and intIdx is a list of indices of inequalities to check for redundancy
