@@ -509,11 +509,18 @@ class HashWorker(Chare):
     def getLevelList(self, levelListFut):
         if self.levelDone:
             self.reduce(levelListFut, self.levelList, Reducer.Join)
-            self.levelList = []
-            self.table = {}
+            # self.levelList = []
+            # self.table = {}
         else:
             print('Warning: tried to retrieve level list before level was done!')
             self.reduce(levelListFut, [], Reducer.Join)
+    @coro
+    def clearHashTable(self):
+        self.levelList = []
+        self.table = {}
+    @coro
+    def resetLevelCount(self):
+        self.level=-1
     # @coro
     # def receiveOnNodeChannel(self):
     #     if not charm.myPe() in self.hashPElist:
@@ -737,3 +744,11 @@ class DistHash(Chare):
         self.hWorkers.listen()
         # print('All workers done!')
         # self.hWorkers.listen()
+    
+    @coro
+    def clearHashTable(self):
+        self.hWorkersFull.clearHashTable(awaitable=True).get()
+    
+    @coro
+    def resetLevelCount(self):
+        self.hWorkersFull.resetLevelCount(awaitable=True).get()

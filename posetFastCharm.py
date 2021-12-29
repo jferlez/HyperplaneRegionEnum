@@ -199,7 +199,8 @@ class Poset(Chare):
             level = self.N+2
         listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
-        # print('Root node hashed')
+        self.distHashTable.clearHashTable(awaitable=True).get()
+
         # print('Waiting for level done')
         while level < self.N+1 and len(thisLevel) > 0:
             # successorProxies = self.succGroup.getProxies(ret=True).get()
@@ -239,6 +240,8 @@ class Poset(Chare):
             # print('Got level list')
             # print(nextLevel)
             listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
+
+            self.distHashTable.clearHashTable(awaitable=True).get()
 
 
             posetLen += len(nextLevel)
