@@ -168,7 +168,7 @@ class Poset(Chare):
 
         self.succGroup.setMethod(method=method,solver=solver,findAll=findAll, useQuery=useQuery, useBounding=useBounding)
 
-        
+        self.distHashTable.resetLevelCount(awaitable=True).get()
         #self.succGroup.testSend()
 
         checkVal = True
