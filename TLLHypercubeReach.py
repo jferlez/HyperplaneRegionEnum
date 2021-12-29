@@ -27,8 +27,8 @@ class PosetNodeTLLVer(DistributedHash.Node):
         regSet = np.full(self.constraints.N, True, dtype=bool)
         regSet[tuple(self.constraints.flipMapSet),] = np.full(len(self.constraints.flipMapSet),False,dtype=bool)
         regSet[self.nodeBytes,] = np.full(len(self.nodeBytes),False,dtype=bool)
-        unflipped = posetFastCharm_numba.is_in_set_idx(self.constraints.flipMapSetNP,list(self.nodeBytes))
-        regSet[unflipped] = np.full(len(unflipped),True,dtype=bool)
+        unflipped = posetFastCharm_numba.is_in_set(self.constraints.flipMapSetNP,list(self.nodeBytes))
+        regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
         regSet = np.nonzero(regSet)[0]
 
         val = False
@@ -158,8 +158,8 @@ class setupCheckerVarsOriginCheck(Chare):
             regSet = np.full(self.N, True, dtype=bool)
             regSet[tuple(self.flippedConstraints.flipMapSet),] = np.full(len(self.flippedConstraints.flipMapSet),False,dtype=bool)
             regSet[nodeBytes,] = np.full(len(nodeBytes),False,dtype=bool)
-            unflipped = posetFastCharm_numba.is_in_set_idx(self.flippedConstraints.flipMapSetNP,list(nodeBytes))
-            regSet[unflipped] = np.full(len(unflipped),True,dtype=bool)
+            unflipped = posetFastCharm_numba.is_in_set(self.flippedConstraints.flipMapSetNP,list(nodeBytes))
+            regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
             regSet = np.nonzero(regSet)[0]
 
             val = False

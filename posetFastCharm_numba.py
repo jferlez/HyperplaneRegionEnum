@@ -48,13 +48,25 @@ def hashNodeBytes(nodeBytes):
 def is_in_set_idx(a, b):
     a = a.ravel()
     n = len(a)
-    n = len(a)
     result = np.full(n, 0)
     set_b = set(b)
     idx = 0
     for i in range(n):
         if a[i] in set_b:
             result[idx] = i
+            idx += 1
+    return result[0:idx].flatten()
+
+@cc.export('is_in_set',nb.int64[:](nb.int64[:],nb.types.List(nb.int64)))
+def is_in_set(a, b):
+    a = a.ravel()
+    n = len(a)
+    result = np.full(n, 0)
+    set_b = set(b)
+    idx = 0
+    for i in range(n):
+        if a[i] in set_b:
+            result[idx] = a[i]
             idx += 1
     return result[0:idx].flatten()
 
