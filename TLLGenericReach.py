@@ -141,18 +141,3 @@ class TLLGenericReach(Chare):
 
 # Helper functions:
 
-def findInteriorPoint(inputMat,inputPolytope,inputVrep):
-    activeConstraints = inputPolytope.get_adjacency()[0]
-    # Compare vertices that are non-adjacent to vertex 0, and find the furthest one away
-    d = 0
-    dIdx = -1
-    for k in range(1,len(inputVrep)):
-        if not k in activeConstraints:
-            di = np.linalg.norm(inputVrep[0] - inputVrep[k])
-            if di > d:
-                d = di
-                dIdx = k
-    pt = 0.5*(inputVrep[0] + inputVrep[dIdx])
-    pt.reshape( (len(pt),1) )
-
-    return pt
