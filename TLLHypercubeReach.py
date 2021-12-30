@@ -17,17 +17,22 @@ import random
 import region_helpers
 cvxopt.solvers.options['show_progress'] = False
 
-# All hyperplanes assumes to be specified as A x >= b
+# All hyperplanes assumed to be specified as A x >= b
 
 # For checking on *Hash* Nodes
 class PosetNodeTLLVer(DistributedHash.Node):
     def init(self):
         self.constraints, self.selectorSetsFull, self.nodeIntMask, self.out = self.localProxy[self.storePe].getConstraints(ret=True).get()
     def check(self):
-        regSet = np.full(self.constraints.N, True, dtype=bool)
+        regSet = np.full(self.constraints.allN, True, dtype=bool)
         regSet[tuple(self.constraints.flipMapSet),] = np.full(len(self.constraints.flipMapSet),False,dtype=bool)
-        regSet[self.nodeBytes,] = np.full(len(self.nodeBytes),False,dtype=bool)
-        unflipped = posetFastCharm_numba.is_in_set(self.constraints.flipMapSetNP,list(self.nodeBytes))
+        if self.constraints.N == self.constraints.allN:
+            regSet[self.nodeBytes,] = np.full(len(self.nodeBytes),False,dtype=bool)
+            unflipped = posetFastCharm_numba.is_in_set(self.constraints.flipMapSetNP,list(self.nodeBytes))
+        else:
+            sel = self.constraints.nonRedundantHyperplanes[self.nodeBytes,]
+            regSet[sel,] = np.full(len(sel),False,dtype=bool)
+            unflipped = posetFastCharm_numba.is_in_set(self.constraints.flipMapSetNP,sel.tolist())
         regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
         regSet = np.nonzero(regSet)[0]
 
@@ -143,6 +148,7 @@ class setupCheckerVarsOriginCheck(Chare):
         # self.selectorSets = self.selectorSetsFull[out]
         self.flippedConstraints = constraints
         self.N = self.flippedConstraints.N
+        self.allN = self.flippedConstraints.allN
         self.nodeIntMask = [(2**(self.N+1))-1]
         self.schedCount = 0
         self.skip = False
@@ -155,10 +161,15 @@ class setupCheckerVarsOriginCheck(Chare):
     def checkNode(self,nodeBytes):
         temp = self.skip
         if not temp:
-            regSet = np.full(self.N, True, dtype=bool)
+            regSet = np.full(self.allN, True, dtype=bool)
             regSet[tuple(self.flippedConstraints.flipMapSet),] = np.full(len(self.flippedConstraints.flipMapSet),False,dtype=bool)
-            regSet[nodeBytes,] = np.full(len(nodeBytes),False,dtype=bool)
-            unflipped = posetFastCharm_numba.is_in_set(self.flippedConstraints.flipMapSetNP,list(nodeBytes))
+            if self.N == self.allN:
+                regSet[nodeBytes,] = np.full(len(nodeBytes),False,dtype=bool)
+                unflipped = posetFastCharm_numba.is_in_set(self.flippedConstraints.flipMapSetNP,list(nodeBytes))
+            else:
+                sel = self.flippedConstraints.nonRedundantHyperplanes[nodeBytes,]
+                regSet[sel,] = np.full(len(sel),False,dtype=bool)
+                unflipped = posetFastCharm_numba.is_in_set(self.flippedConstraints.flipMapSetNP,sel.tolist())
             regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
             regSet = np.nonzero(regSet)[0]
 

@@ -33,6 +33,10 @@ class flipConstraints:
         # self.root = bytearray( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
         # self.root = int.from_bytes(self.root, 'little')
         self.root = tuple()
+        self.allConstraints = self.constraints
+        self.allN = self.N
+        self.redundantFlips = np.full(self.N,1,dtype=np.int64)
+        self.nonRedundantHyperplanes = np.arange(self.N)
 
 
 class flipConstraintsReduced(flipConstraints):
@@ -43,21 +47,48 @@ class flipConstraintsReduced(flipConstraints):
             return
         
         mat = copy(self.constraints[(self.N-1):,:])
-        self.redundantHyperplanes = np.full(self.N,1,dtype=np.float64)
+        self.redundantFlips = np.full(self.N,1,dtype=np.float64)
         for k in range(self.N):
             mat[0,:] = self.constraints[k,:]
             if len(lpMinHRep(mat,None,[0])) == 0:
-                self.redundantHyperplanes[k] = -1
+                self.redundantFlips[k] = -1
         
-        self.nA = np.diag(self.redundantHyperplanes) @ self.nA
-        self.nb = np.diag(self.redundantHyperplanes) @ self.nb
+        self.nA = np.diag(self.redundantFlips) @ self.nA
+        self.nb = np.diag(self.redundantFlips) @ self.nb
         self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
         
-        self.flipMapN = self.redundantHyperplanes * self.flipMapN
+        self.flipMapN = self.redundantFlips * self.flipMapN
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
         self.flipMapSet = frozenset(self.flipMapSetNP)
 
-        self.root = tuple(np.nonzero(self.redundantHyperplanes<0)[0].tolist())
+        self.root = tuple(np.nonzero(self.redundantFlips<0)[0].tolist())
+        self.allConstraints = self.constraints
+        self.allN = self.N
+        self.nonRedundantHyperplanes = np.arange(self.N)
+
+
+class flipConstraintsReducedMin(flipConstraints):
+
+    def __init__(self, nA, nb, pt, fA=None, fb=None):
+        super().__init__(nA, nb, pt, fA=fA, fb=fb)
+        if self.fA is None:
+            return
+        
+        mat = copy(self.constraints[(self.N-1):,:])
+        self.redundantFlips = np.full(self.N,1,dtype=np.float64)
+        for k in range(self.N):
+            mat[0,:] = self.constraints[k,:]
+            if len(lpMinHRep(mat,None,[0])) == 0:
+                self.redundantFlips[k] = -1
+        self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+
+        self.allConstraints = copy(self.constraints)
+        self.allN = self.N
+        self.constraints = np.vstack( ( np.hstack((-1*self.nb[self.nonRedundantHyperplanes,],self.nA[self.nonRedundantHyperplanes,:])), np.hstack((-1*self.fb,self.fA)) ) )
+        self.N = len(self.nonRedundantHyperplanes)
+        
+
+        self.root = tuple()
 
 
 # H2 is a CDD-style matrix specifying inequality constraints, and intIdx is a list of indices of inequalities to check for redundancy

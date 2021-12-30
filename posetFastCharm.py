@@ -124,22 +124,26 @@ class Poset(Chare):
         self.fixedA = fixedA
         self.fixedb = fixedb
 
-        self.N = len(self.AbPairs[0][0])
-        self.wholeBytes = (self.N + 7) // 8
-        self.tailBits = self.N - 8*(self.N // 8)
+        # self.N = len(self.AbPairs[0][0])
+        # self.wholeBytes = (self.N + 7) // 8
+        # self.tailBits = self.N - 8*(self.N // 8)
 
 
     @coro
     def setConstraint(self,lb=0,out=0,timeout=None):
         self.populated = False
         self.incomplete = True
-        self.flippedConstraints = region_helpers.flipConstraintsReduced( \
+        self.N = len(self.AbPairs[0][0])
+        self.flippedConstraints = region_helpers.flipConstraintsReducedMin( \
                 -1*self.AbPairs[out][0], \
                 self.AbPairs[out][1] - lb*np.ones((self.N,1)), \
                 self.pt, \
                 self.fixedA, \
                 self.fixedb \
             )
+        self.N = self.flippedConstraints.N
+        self.wholeBytes = (self.N + 7) // 8
+        self.tailBits = self.N - 8*(self.N // 8)
         
         stat = self.succGroup.initialize(self.N,self.flippedConstraints,timeout,awaitable=True)
         stat.get()
