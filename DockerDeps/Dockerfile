@@ -43,7 +43,7 @@ RUN sed -i -E -e 's/(assert not self.running and charm.runningEntryMethod is Non
 RUN useradd -rm -d /home/ubuntu -s /bin/bash -g root -G sudo -u 1000 ubuntu
 RUN echo 'ubuntu:ubuntu' | chpasswd
 RUN /usr/bin/ssh-keygen -A
-RUN echo "#!/bin/bash\nnohup /usr/sbin/sshd -D &\nsudo -u ubuntu /bin/bash" > /usr/local/bin/startup.sh
+RUN echo "#!/bin/bash\nnohup /usr/sbin/sshd -D &> /root/nohup.out &\nsudo -u ubuntu /bin/bash" > /usr/local/bin/startup.sh
 RUN chmod 700 /usr/local/bin/startup.sh
 RUN echo "export PATH=/usr/local/bin:$PATH\nexport LD_LIBRARY_PATH=/usr/local/lib\nexport COIN_INSTALL_DIR=/usr/local" >> /home/ubuntu/.bashrc
 RUN chown ubuntu:root /home/ubuntu/.bashrc
