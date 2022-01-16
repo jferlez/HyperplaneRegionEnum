@@ -178,7 +178,7 @@ class Poset(Chare):
 
         checkVal = True
         level = 0
-        thisLevel = [self.flippedConstraints.root]
+        thisLevel = [(self.flippedConstraints.root,)]
         posetLen = 1
         timedOut = False
 
@@ -189,9 +189,9 @@ class Poset(Chare):
         self.succGroupFull.startListening(awaitable=True).get()
 
         boolIdxNoFlip = bytearray(b'\x00') * (self.wholeBytes + (1 if self.tailBits != 0 else 0))
-        for unflipIdx in range(len(thisLevel[0])-1,-1,-1):
-            boolIdxNoFlip[thisLevel[0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][unflipIdx]//8] | (1<<(thisLevel[0][unflipIdx] % 8))
-        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0]],ret=True).get()
+        for unflipIdx in range(len(thisLevel[0][0])-1,-1,-1):
+            boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
+        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0]],ret=True).get()
         
         self.distHashTable.awaitPending(awaitable=True).get()
         # Send a final termination signal:
@@ -407,15 +407,18 @@ class successorWorker(Chare):
         for ch in self.outChannels:
             ch.send(-100)
 
-    def hashNode(self,toHash):
+    def hashNode(self,toHash,payload=None):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
         # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         hashInt = hashNodeBytes(toHash[0])
-        return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, tuple(toHash[1]), charm.myPe())
+        if payload is not None:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, tuple(toHash[1]), charm.myPe(), payload)
+        else:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, tuple(toHash[1]), charm.myPe(), )
     
     @coro
-    def hashAndSend(self,toHash):
-        val = self.hashNode(toHash)
+    def hashAndSend(self,toHash,payload=None):
+        val = self.hashNode(toHash,payload=payload)
         self.outChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(nodeInt))
         retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
@@ -634,6 +637,7 @@ class successorWorker(Chare):
 
     @coro
     def processNodeSuccessorsFastLP(self,INTrep,N,H,solver='glpk',findAll=False,lpopts={}):
+        INTrep = INTrep[0]
         # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
         # t = time.time()
         intIdxNoFlip = list(INTrep)

@@ -10,14 +10,15 @@ from copy import copy
 
 class Node():
 
-    def __init__(self,localProxy, storePe, parentChare, lsb,msb,nodeBytes, *args):
+    def __init__(self,localProxy, storePe, parentChare, lsb,msb,nodeBytes, originPe, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
         self.localProxy = localProxy
         self.storePe = storePe
         self.parentChare = parentChare
-        self.data = args
+        self.originPe = originPe
+        self.payload = args
     
     def __hash__(self):
         return self.msbHash
@@ -437,7 +438,7 @@ class HashWorker(Chare):
                             newNode.init()
                         if not newNode in self.table:
                             self.table[newNode] = {'nodeBytes': val[2], 'checked':False}
-                            self.levelList.append(val[2])
+                            self.levelList.append((val[2],*newNode.payload))
                             # Check node here:
                             if self.nodeCalls & 4 and not newNode.check(): # If result of node check is False return False on all the workerDone Futures
                                 if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
