@@ -134,7 +134,7 @@ class Poset(Chare):
         self.populated = False
         self.incomplete = True
         self.N = len(self.AbPairs[0][0])
-        self.flippedConstraints = region_helpers.flipConstraintsReducedMin( \
+        self.flippedConstraints = region_helpers.flipConstraints( \
                 -1*self.AbPairs[out][0], \
                 self.AbPairs[out][1] - lb*np.ones((self.N,1)), \
                 self.pt, \
