@@ -1,4 +1,5 @@
 from platform import node
+from typing import Dict
 import charm4py
 from charm4py import charm, Chare, coro, Reducer, Group, Future, Array, Channel
 import cdd
@@ -7,6 +8,7 @@ from copy import copy
 import time
 import itertools
 from functools import partial
+from collections import defaultdict
 import encapsulateLP
 import DistributedHash
 import cvxopt
@@ -264,10 +266,10 @@ class Poset(Chare):
             level += 1
 
         # Note, this print has to go here because this coroutine is only suspending until checkNodes is set
-        lpCountFut = Future()
-        self.succGroupFull.getLPCount(lpCountFut)
-        lpCount = lpCountFut.get()
-        print('Total LPs used: ' + str(lpCount))
+        statsFut = Future()
+        self.succGroupFull.getStats(statsFut)
+        stats = statsFut.get()
+        print('Total LPs used: ' + str(stats))
 
         print('Checker returned value: ' + str(checkVal))
         
@@ -305,6 +307,7 @@ class successorWorker(Chare):
         self.tailBits = self.N - 8*(self.N // 8)
         self.clockTimeout = (timeout + time.time()) if timeout is not None else None
         self.timedOut = False
+        self.stats = {'LPSolverCount':0, 'xferTime':0}
     @coro
     def getTimeout(self):
         return self.timedOut
@@ -331,9 +334,11 @@ class successorWorker(Chare):
         setattr(self,prop,val)
 
     @coro
-    def getLPCount(self, lpCountFut):
-        retVal = 0 if not charm.myPe() in self.posetPElist else self.lp.lpCount
-        self.reduce(lpCountFut,retVal,Reducer.sum)
+    def getStats(self, statsFut):
+        if charm.myPe() in self.posetPElist:
+            self.stats['LPSolverCount'] += self.lp.lpCount
+        retVal = defaultdict(int) if not charm.myPe() in self.posetPElist else self.stats
+        self.reduce(statsFut,retVal,DictAccum)
     
     @coro
     def getProxies(self):
@@ -722,8 +727,10 @@ class successorWorker(Chare):
                     )
                 boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] ^ 1<<(intIdx[i] % 8)
                 # self.conversionTime += time.time() - t
+                t = time.time()
                 cont = self.thisProxy[self.thisIndex].hashAndSend(successors[-1],ret=True).get()
-                
+                self.stats['xferTime'] += time.time() - t
+
                 if not cont:
                     return [successors, -1]
         
@@ -745,6 +752,15 @@ def Union(contribs):
     return set().union(*contribs)
 
 Reducer.addReducer(Union)
+
+def DictAccum(contribs):
+    result = defaultdict(int)
+    for trib in contribs:
+        for ky in trib.keys():
+            result[ky] += trib[ky]
+    return result
+
+Reducer.addReducer(DictAccum)
 
 
 # Helper functions:
