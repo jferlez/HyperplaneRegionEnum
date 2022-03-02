@@ -6,7 +6,7 @@ import itertools
 import random
 from copy import copy
 
-
+XFER_CHUNK_SIZE = 1000
 
 class Node():
 
@@ -37,8 +37,9 @@ Reducer.addReducer(Join)
 
 class HashWorker(Chare):
 
-    def __init__(self,nodeConstructor,localVarGroup,parentProxy,pes,overlapPEs):
+    def __init__(self,nodeConstructor,localVarGroup,parentProxy,pes,feederPEs,overlapPEs):
         self.hashPElist = pes
+        self.feederPElist = feederPEs
         self.overlapPElist = overlapPEs
         self.inChannels = []
         self.level = -1
@@ -438,7 +439,8 @@ class HashWorker(Chare):
                             newNode.init()
                         if not newNode in self.table:
                             self.table[newNode] = {'nodeBytes': val[2], 'checked':False}
-                            self.levelList.append((val[2],*newNode.payload))
+                            # self.levelList.append((val[2],*newNode.payload))
+                            self.levelList.append(newNode)
                             # Check node here:
                             if self.nodeCalls & 4 and not newNode.check(): # If result of node check is False return False on all the workerDone Futures
                                 if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
@@ -509,12 +511,16 @@ class HashWorker(Chare):
     @coro
     def getLevelList(self, levelListFut):
         if self.levelDone:
-            self.reduce(levelListFut, self.levelList, Reducer.Join)
+            self.reduce(levelListFut, [(nd.nodeBytes, *nd.payload) for nd in self.levelList], Reducer.Join)
             # self.levelList = []
             # self.table = {}
         else:
             print('Warning: tried to retrieve level list before level was done!')
             self.reduce(levelListFut, [], Reducer.Join)
+    @coro
+    def getLevelSizes(self):
+        return len(self.levelList)
+    
     @coro
     def clearHashTable(self):
         self.levelList = []
@@ -530,6 +536,22 @@ class HashWorker(Chare):
     #     for i in charm.iwait([self.inChannels[ch].recv() for ch in self.inChannels]):
     #         count += 1
     #     return count
+    @coro
+    def distributeTableChunk(self,feederPEoffset,retFut,clearTable=True):
+        while len(self.levelList) > 0:
+            chunkSize = min(XFER_CHUNK_SIZE * len(self.feederPElist), len(self.levelList))
+            xferDone = [Future() for _ in range(len(self.feederPElist))]
+            for feederPEidx in range(len(self.feederPElist)):
+                idx = (feederPEidx + feederPEoffset) % len(self.feederPElist)
+                self.feederProxies[idx].appendToWorkList([(nd.nodeBytes, *nd.payload) for nd in self.levelList[feederPEidx:chunkSize:len(self.feederPElist)]],xferDone[feederPEidx])
+            cnt = 0
+            for fut in charm.iwait(xferDone):
+                cnt += fut.get()
+            if clearTable:
+                for idx in range(chunkSize):
+                    self.table.pop(self.levelList[idx])
+            self.levelList = self.levelList[chunkSize:]
+        retFut.send(1)
     
 
 class DistHash(Chare):
@@ -570,7 +592,7 @@ class DistHash(Chare):
         self.overlapPElist = copy(overlapPElist)
 
 
-        self.hWorkersFull = Group(HashWorker,args=[self.nodeConstructor, self.localVarGroup, self.thisProxy, self.hashPElist, overlapPElist])
+        self.hWorkersFull = Group(HashWorker,args=[self.nodeConstructor, self.localVarGroup, self.thisProxy, self.hashPElist, self.posetPElist, overlapPElist])
         charm.awaitCreation(self.hWorkersFull)
         secs = [self.hWorkersFull[r[0]:r[1]:r[2]] for r in self.hashPEs]
         self.hWorkers = charm.combine(*secs)
@@ -699,6 +721,36 @@ class DistHash(Chare):
         nextlevel = Future()
         self.hWorkersFull.getLevelList(nextlevel)
         return nextlevel.get()
+    
+    @coro
+    def scheduleNextLevel(self,clearTable=True):
+        doneFuts = [Future() for k in range(len(self.feederProxies))]
+        for k in range(len(doneFuts)):
+            self.feederProxies[k].initList(doneFuts[k])
+        
+        cnt = 0
+        for fut in charm.iwait(doneFuts):
+            cnt += fut.get()
+        
+        nextLevel = self.hWorkersFull.getLevelSizes(ret=True).get()
+        nextLevelSize = sum(nextLevel)
+        
+        hashPEidx = 0
+        doneFuts = []
+        feederPEOffset = 0
+        for hashPEidx in range(len(self.hashPElist)):
+            if nextLevel[self.hashPElist[hashPEidx]] > 0:
+                doneFuts.append(Future())
+                self.hashWorkerProxies[hashPEidx].distributeTableChunk(feederPEOffset,doneFuts[-1],clearTable=clearTable)
+                feederPEOffset = nextLevel[self.hashPElist[hashPEidx]] % len(self.posetPElist)
+        cnt = 0
+        for fut in charm.iwait(doneFuts):
+            cnt += fut.get()
+
+        return nextLevelSize
+
+
+
 
     @coro
     def awaitPending(self):

@@ -168,7 +168,7 @@ class Poset(Chare):
         return self.succGroupFull
 
     @coro
-    def populatePoset(self, method='fastLP', solver='clp', findAll=False, useQuery=False, useBounding=False, clearTable=True ):
+    def populatePoset(self, method='fastLP', solver='clp', findAll=False, useQuery=False, useBounding=False, clearTable='speed', retrieveFaces=False ):
         if self.populated:
             return
         
@@ -209,18 +209,30 @@ class Poset(Chare):
         if clearTable:
             self.distHashTable.clearHashTable(awaitable=True).get()
 
+        doneFuts = [Future() for k in range(len(self.successorProxies))]
+        for k in range(len(self.successorProxies)):
+            self.successorProxies[k].initList( doneFuts[k] )
+        cnt = 0
+        for fut in charm.iwait(doneFuts):
+            cnt += fut.get()
+        
+        iFut = Future()
+        self.successorProxies[0].initListNew(thisLevel,iFut)
+        iFut.get()
+        nextLevelSize = 1
+
         # print('Waiting for level done')
-        while level < self.N+1 and len(thisLevel) > 0:
+        while level < self.N+1 and nextLevelSize > 0:
             # successorProxies = self.succGroup.getProxies(ret=True).get()
-            doneFuts = [Future() for k in range(len(self.successorProxies))]
-            for k in range(len(self.successorProxies)):
-                self.successorProxies[k].initListNew( \
-                            [ i for i in thisLevel[k:len(thisLevel):len(self.posetPElist)] ], \
-                            doneFuts[k]
-                        )
-            cnt = 0
-            for fut in charm.iwait(doneFuts):
-                cnt += fut.get()
+            # doneFuts = [Future() for k in range(len(self.successorProxies))]
+            # for k in range(len(self.successorProxies)):
+            #     self.successorProxies[k].initListNew( \
+            #                 [ i for i in thisLevel[k:len(thisLevel):len(self.posetPElist)] ], \
+            #                 doneFuts[k]
+            #             )
+            # cnt = 0
+            # for fut in charm.iwait(doneFuts):
+            #     cnt += fut.get()
 
             initFut = Future()
             self.distHashTable.initListening(initFut,awaitable=True).get()
@@ -244,27 +256,34 @@ class Poset(Chare):
                 if timedOut: checkVal = None
                 break
             # print('Done with level ' + str(level))
-            nextLevel = self.distHashTable.getLevelList(ret=True).get()
-            # print('Got level list')
-            # print(nextLevel)
+
+            # Retrieve faces for all the nodes in the current level
+            # print(nextLevelSize)
+            if retrieveFaces:
+                facesFuts = [Future() for _ in range(len(self.posetPElist))]
+                for k in range(len(facesFuts)):
+                    self.succGroupFull[self.posetPElist[k]].retrieveFaces(facesFuts[k])
+                faces = {}
+                for fut in charm.iwait(facesFuts):
+                    retPe, facesList = fut.get()
+                    faces[retPe] = facesList
+
+            # nextLevel = self.distHashTable.getLevelList(ret=True).get()
+
+            nextLevelSize = self.distHashTable.scheduleNextLevel(clearTable=(clearTable == 'memory'),ret=True).get()
+
             listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
-            if clearTable:
+            if clearTable == 'speed':
                 self.distHashTable.clearHashTable(awaitable=True).get()
 
 
-            posetLen += len(nextLevel)
+            posetLen += nextLevelSize
             # print(posetLen)
-            # Retrieve faces for all the nodes in the current level
-            facesList = [0 for i in range(len(thisLevel))]
-            for k in range(len(self.posetPElist)):
-                facesListFut = self.succGroupFull[self.posetPElist[k]].retrieveFaces(awaitable=True)
-                facesListWork = facesListFut.get()
-                for i in range(k,len(thisLevel),len(self.posetPElist)):
-                    facesList[i] = facesListWork[int((i-k)/len(self.posetPElist))]
+            
 
 
-            thisLevel = nextLevel
+            # thisLevel = nextLevel
             level += 1
 
         # Note, this print has to go here because this coroutine is only suspending until checkNodes is set
@@ -470,16 +489,26 @@ class successorWorker(Chare):
     def tester(self):
         print('Entered tester on PE ' + str(charm.myPe()))
         return charm.myPe()
-    @coro
-    def initList(self,workInts):
-        self.status = Future()
-        self.workInts = workInts
-        self.status.send(1)
+    # @coro
+    # def initList(self,workInts):
+    #     self.status = Future()
+    #     self.workInts = workInts
+    #     self.status.send(1)
 
     @coro
     def initListNew(self,workInts, fut):
         self.workInts = workInts
         # print(self.workInts)
+        fut.send(1)
+    
+    @coro
+    def initList(self,fut):
+        self.workInts = []
+        fut.send(1)
+    
+    @coro
+    def appendToWorkList(self,li,fut):
+        self.workInts.extend(li)
         fut.send(1)
 
     #@coro
@@ -525,8 +554,8 @@ class successorWorker(Chare):
 
 
     @coro
-    def retrieveFaces(self):
-        return self.workInts
+    def retrieveFaces(self,fut):
+        fut.send( (charm.myPe(), self.workInts) )
 
     @coro
     def processNodeSuccessorsCDD(self,INTrep,N,H2,solver='glpk'):
