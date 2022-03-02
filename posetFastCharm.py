@@ -206,7 +206,8 @@ class Poset(Chare):
             level = self.N+2
         listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
-        self.distHashTable.clearHashTable(awaitable=True).get()
+        if clearTable:
+            self.distHashTable.clearHashTable(awaitable=True).get()
 
         # print('Waiting for level done')
         while level < self.N+1 and len(thisLevel) > 0:
