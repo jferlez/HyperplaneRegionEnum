@@ -168,7 +168,7 @@ class Poset(Chare):
         return self.succGroupFull
 
     @coro
-    def populatePoset(self, method='fastLP', solver='clp', findAll=False, useQuery=False, useBounding=False ):
+    def populatePoset(self, method='fastLP', solver='clp', findAll=False, useQuery=False, useBounding=False, clearLevel=True ):
         if self.populated:
             return
         
@@ -248,7 +248,8 @@ class Poset(Chare):
             # print(nextLevel)
             listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
-            self.distHashTable.clearHashTable(awaitable=True).get()
+            if clearLevel:
+                self.distHashTable.clearHashTable(awaitable=True).get()
 
 
             posetLen += len(nextLevel)
