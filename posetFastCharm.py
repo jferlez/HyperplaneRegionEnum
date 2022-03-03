@@ -106,7 +106,7 @@ class Poset(Chare):
         self.successorProxies = list(itertools.chain.from_iterable( \
                 [successorProxies[r[0]:r[1]:r[2]] for r in self.posetPEs] \
             ))
-        
+        self.useGPU = False
         # Initialize a new distributed hash table:
         self.distHashTable = Chare(DistributedHash.DistHash,args=[
             self.succGroupFull, \
@@ -240,8 +240,10 @@ class Poset(Chare):
             initFut.get()
             self.succGroupFull.startListening(awaitable=True).get()
 
-
-            self.succGroup.computeSuccessorsNew(ret=True).get()
+            if not self.useGPU:
+                self.succGroup.computeSuccessorsNew(ret=True).get()
+            else:
+                self.succGroup.computeSuccessorsNewGPU(ret=True).get()
             timedOut = any(self.succGroupFull.getTimeout(ret=True).get())
             if timedOut:
                 print('Received timeout on level ' + str(level))
