@@ -169,12 +169,12 @@ class Poset(Chare):
         return self.succGroupFull
 
     @coro
-    def populatePoset(self, method='fastLP', solver='clp', findAll=False, useQuery=False, useBounding=False, clearTable='speed', retrieveFaces=False ):
+    def populatePoset(self, method='fastLP', solver='clp', findAll=False, useQuery=False, useBounding=False, clearTable='speed', retrieveFaces=False, **kwargs ):
         if self.populated:
             return
         
 
-        self.succGroup.setMethod(method=method,solver=solver,findAll=findAll, useQuery=useQuery, useBounding=useBounding)
+        self.succGroup.setMethod(method=method,solver=solver,findAll=findAll, useQuery=useQuery, useBounding=useBounding, **kwargs)
 
         self.distHashTable.resetLevelCount(awaitable=True).get()
         #self.succGroup.testSend()
