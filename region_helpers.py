@@ -148,7 +148,7 @@ def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None):
 
 # H2 is a CDD-style matrix specifying inequality constraints
 # Function returns an interior point to the associated region, if one exists, and None otherwise
-def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7):
+def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-8,rTol=1e-5):
     if lpObj is None:
        lpObj = encapsulateLP.encapsulateLP()
        lpObj.initSolver(solver=solver)
@@ -166,7 +166,7 @@ def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7):
                 )
     if status == 'optimal':
         
-        actHypers = np.nonzero(np.abs( H[:,1:] @ sol + H[:,0]) <= tol)[0]
+        actHypers = np.nonzero(np.isclose( H[:,1:] @ sol , H[:,0], atol=tol, rtol=rTol))[0]
         if len(actHypers) == 0:
             return None
 
@@ -180,7 +180,7 @@ def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7):
                         H[:,0], \
                         lpopts = {'solver':'glpk'}
                     )
-            if np.abs(H[k,1:]@newSol - H[k,1:]@origSol) < tol:
+            if np.isclose(H[k,1:]@newSol, H[k,1:]@origSol, atol=tol, rtol=rTol):
                 # We were unable to get off hyperplane k, so there is no interior point
                 return None
             else:
