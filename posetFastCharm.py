@@ -185,6 +185,7 @@ class Poset(Chare):
         for ky in defaultSettings:
             if ky in opts:
                 setattr(self,ky,opts[ky])
+                opts.pop(ky)
 
         self.succGroup.setMethod(**opts)
 
