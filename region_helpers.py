@@ -166,7 +166,7 @@ def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
                 )
     if status == 'optimal':
         
-        actHypers = np.nonzero(np.isclose( H[:,1:] @ sol , H[:,0], atol=tol, rtol=rTol))[0]
+        actHypers = np.nonzero(np.isclose( -H[:,1:] @ sol , H[:,0], atol=tol, rtol=rTol))[0]
         if len(actHypers) == 0:
             return None
 
