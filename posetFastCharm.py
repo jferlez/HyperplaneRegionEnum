@@ -168,13 +168,25 @@ class Poset(Chare):
     def getSuccGroupProxy(self):
         return self.succGroupFull
 
+    # Because charm4py seems to filter **kwargs, pass all arguments to populatePoset in a single dictionary.
+    # This avoids having to distinguish between those arguments that are for populatePoset itself and those
+    # that are merely passed on to setMethod. This is an implementation distinction not a semantic one: all
+    # of these arguments affect the behavior/output of "populatePoset"
+
+    # opts dictionary keys 'clearTable' and 'retrieveFaces' set parameters in populatePoset itself; any
+    # other keys are passed as keyword arguments to setMethod
     @coro
-    def populatePoset(self, method='fastLP', solver='clp', findAll=False, useQuery=False, useBounding=False, clearTable='speed', retrieveFaces=False, **kwargs ):
+    def populatePoset(self, opts={} ):
         if self.populated:
             return
-        
+        self.clearTable = 'speed'
+        self.retrieveFaces = False
+        defaultSettings = ['clearTable','retrieveFaces']
+        for ky in defaultSettings:
+            if ky in opts:
+                setattr(self,ky,opts[ky])
 
-        self.succGroup.setMethod(method=method,solver=solver,findAll=findAll, useQuery=useQuery, useBounding=useBounding, **kwargs)
+        self.succGroup.setMethod(**opts)
 
         self.distHashTable.resetLevelCount(awaitable=True).get()
         #self.succGroup.testSend()
@@ -207,7 +219,7 @@ class Poset(Chare):
             level = self.N+2
         listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
-        if clearTable:
+        if self.clearTable:
             self.distHashTable.clearHashTable(awaitable=True).get()
 
         doneFuts = [Future() for k in range(len(self.successorProxies))]
@@ -262,7 +274,7 @@ class Poset(Chare):
 
             # Retrieve faces for all the nodes in the current level
             # print(nextLevelSize)
-            if retrieveFaces:
+            if self.retrieveFaces:
                 facesFuts = [Future() for _ in range(len(self.posetPElist))]
                 for k in range(len(facesFuts)):
                     self.succGroupFull[self.posetPElist[k]].retrieveFaces(facesFuts[k])
@@ -273,11 +285,11 @@ class Poset(Chare):
 
             # nextLevel = self.distHashTable.getLevelList(ret=True).get()
 
-            nextLevelSize = self.distHashTable.scheduleNextLevel(clearTable=(clearTable == 'memory'),ret=True).get()
+            nextLevelSize = self.distHashTable.scheduleNextLevel(clearTable=(self.clearTable == 'memory'),ret=True).get()
 
             listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
-            if clearTable == 'speed':
+            if self.clearTable == 'speed':
                 self.distHashTable.clearHashTable(awaitable=True).get()
 
 
@@ -336,7 +348,7 @@ class successorWorker(Chare):
     def getTimeout(self):
         return self.timedOut
     
-    def setMethod(self,method='fastLP',solver='clp',findAll=True,useQuery=False,useBounding=False,lpopts={}):
+    def setMethod(self,method='fastLP',solver='glpk',findAll=True,useQuery=False,useBounding=False,lpopts={}):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.useQuery = useQuery
         self.useBounding = useBounding
