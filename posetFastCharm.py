@@ -546,7 +546,7 @@ class successorWorker(Chare):
     def computeSuccessorsNew(self):
         term = False
         if len(self.workInts) > 0:
-            successorList = [[None,None]] * len(self.workInts)
+            successorList = [[None,None] for k in range(len(self.workInts))]
             for ii in range(len(successorList)):
                 successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.N,self.constraints,**self.processNodesArgs,payload=self.workInts[ii][1:]).get()
                 self.timedOut = (time.time() > self.clockTimeout) if self.clockTimeout is not None else False
