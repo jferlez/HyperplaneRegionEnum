@@ -121,11 +121,22 @@ class Poset(Chare):
         initFut.get()
 
     
-    def initialize(self, AbPairs, pt, fixedA, fixedb):
+    def initialize(self, AbPairs, pt, fixedA, fixedb, normalize=1.0):
         self.AbPairs = AbPairs
         self.pt = pt
         self.fixedA = fixedA
         self.fixedb = fixedb
+        self.normalize = normalize
+
+        if normalize > 0:
+            for out in range(len(AbPairs)):
+                nrms = np.linalg.norm(self.AbPairs[out][0],axis=1).reshape(-1,1)
+                self.AbPairs[out][0] = (self.normalize/nrms) * self.AbPairs[out][0]
+                self.AbPairs[out][1] = (self.normalize/nrms) * self.AbPairs[out][1]
+            nrms = np.linalg.norm(self.fixedA,axis=1).reshape(-1,1) * self.normalize
+            self.fixedA = (self.normalize/nrms) * self.fixedA
+            self.fixedb = (self.normalize/nrms) * self.fixedb
+
 
         # self.N = len(self.AbPairs[0][0])
         # self.wholeBytes = (self.N + 7) // 8
