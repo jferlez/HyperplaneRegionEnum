@@ -474,7 +474,7 @@ class successorWorker(Chare):
         val = self.hashNode(toHash,payload=payload)
         self.outChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(nodeInt))
-        retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
+        # retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
         retVal = self.thisProxy[self.thisIndex].deferControl(ret=True).get()
         # print('Saw defercontrol return the following within HashAndSend ' + str(retVal))
         return retVal
