@@ -4,7 +4,7 @@ import charm4py
 from charm4py import charm, Chare, coro, Reducer, Group, Future, Array, Channel
 import cdd
 import numpy as np
-from copy import copy
+from copy import copy, deepcopy
 import time
 import itertools
 from functools import partial
@@ -122,10 +122,10 @@ class Poset(Chare):
 
     
     def initialize(self, AbPairs, pt, fixedA, fixedb, normalize=1.0):
-        self.AbPairs = AbPairs
+        self.AbPairs = deepcopy(AbPairs)
         self.pt = pt
-        self.fixedA = fixedA
-        self.fixedb = fixedb
+        self.fixedA = fixedA.copy()
+        self.fixedb = fixedb.copy()
         self.normalize = normalize
 
         if normalize > 0:
