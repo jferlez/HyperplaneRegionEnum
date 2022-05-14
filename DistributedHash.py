@@ -438,7 +438,7 @@ class HashWorker(Chare):
                         if self.nodeCalls & 1:
                             newNode.init()
                         if not newNode in self.table:
-                            self.table[newNode] = {'nodeBytes': val[2], 'checked':False}
+                            self.table[newNode] = {'checked':False}
                             # self.levelList.append((val[2],*newNode.payload))
                             self.levelList.append(newNode)
                             # Check node here:
