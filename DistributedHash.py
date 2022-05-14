@@ -24,7 +24,7 @@ class Node():
         return self.msbHash
     
     def __eq__(self,other):
-        if type(other) == tuple:
+        if type(other) == type(self.nodeBytes):
             return self.nodeBytes == other
         elif isinstance(other,Node):
             return self.nodeBytes == other.nodeBytes

@@ -362,10 +362,11 @@ class successorWorker(Chare):
     def getTimeout(self):
         return self.timedOut
     
-    def setMethod(self,method='fastLP',solver='glpk',findAll=True,useQuery=False,useBounding=False,lpopts={}):
+    def setMethod(self,method='fastLP',solver='glpk',findAll=True,useQuery=False,useBounding=False,lpopts={},hashStoreUseBits=False):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.useQuery = useQuery
         self.useBounding = useBounding
+        self.hashStoreUseBits = hashStoreUseBits
         if method=='cdd':
             self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsCDD
             self.processNodesArgs = {'solver':solver}
@@ -467,9 +468,9 @@ class successorWorker(Chare):
         # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         hashInt = hashNodeBytes(toHash[0])
         if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, tuple(toHash[1]), charm.myPe(), payload)
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, toHash[0] if self.hashStoreUseBits else tuple(toHash[1]), charm.myPe(), payload)
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, tuple(toHash[1]), charm.myPe(), )
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, toHash[0] if self.hashStoreUseBits else tuple(toHash[1]), charm.myPe(), )
     
     @coro
     def hashAndSend(self,toHash,payload=None):
@@ -481,6 +482,35 @@ class successorWorker(Chare):
         # print('Saw defercontrol return the following within HashAndSend ' + str(retVal))
         return retVal
     
+    def decodeRegionStore(self,INTrep):
+        if type(INTrep) == tuple:
+            intIdxNoFlip = list(INTrep)
+            boolIdxNoFlip = bytearray(b'\x00') *  (self.wholeBytes + (1 if self.tailBits != 0 else 0))
+            intIdx = list(range(self.N))
+            # boolIdx[-1] = boolIdx[-1] & ((1<<(self.tailBits+1))-1)
+            for unflipIdx in range(len(INTrep)-1,-1,-1):
+                boolIdxNoFlip[INTrep[unflipIdx]//8] = boolIdxNoFlip[INTrep[unflipIdx]//8] | (1<<(INTrep[unflipIdx] % 8))
+                intIdx.pop(INTrep[unflipIdx])
+            # boolIdxNoFlip = np.full(self.N,False,dtype=bool)
+            # boolIdxNoFlip[INTrep,] = np.full(len(INTrep),True,dtype=bool)
+            # intIdx = np.where(boolIdxNoFlip==0)[0]
+            # boolIdxNoFlip = np.packbits(boolIdxNoFlip,bitorder='little')
+        elif type(INTrep) == bytearray:
+            boolIdxNoFlip = INTrep
+            INTrep = []
+            for bIdx in range(self.wholeBytes + (1 if self.tailBits != 0 else 0)):
+                for bitIdx in range(8 if bIdx < self.wholeBytes else self.tailBits):
+                    if boolIdxNoFlip[bIdx] & ( 1 << bitIdx):
+                        INTrep.append(8*bIdx + bitIdx)
+            intIdxNoFlip = INTrep
+            INTrep = tuple(intIdxNoFlip)
+            intIdx = list(range(self.N))
+            # boolIdx[-1] = boolIdx[-1] & ((1<<(self.tailBits+1))-1)
+            for unflipIdx in range(len(INTrep)-1,-1,-1):
+                intIdx.pop(INTrep[unflipIdx])
+        
+        return INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip
+
     @coro
     def deferControl(self, code=1):
         if not self.rateChannel is None:
@@ -705,17 +735,8 @@ class successorWorker(Chare):
         # INTrep = INTrep[0]
         # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
         # t = time.time()
-        intIdxNoFlip = list(INTrep)
-        boolIdxNoFlip = bytearray(b'\x00') *  (self.wholeBytes + (1 if self.tailBits != 0 else 0))
-        intIdx = list(range(self.N))
-        # boolIdx[-1] = boolIdx[-1] & ((1<<(self.tailBits+1))-1)
-        for unflipIdx in range(len(INTrep)-1,-1,-1):
-            boolIdxNoFlip[INTrep[unflipIdx]//8] = boolIdxNoFlip[INTrep[unflipIdx]//8] | (1<<(INTrep[unflipIdx] % 8))
-            intIdx.pop(INTrep[unflipIdx])
-        # boolIdxNoFlip = np.full(self.N,False,dtype=bool)
-        # boolIdxNoFlip[INTrep,] = np.full(len(INTrep),True,dtype=bool)
-        # intIdx = np.where(boolIdxNoFlip==0)[0]
-        # boolIdxNoFlip = np.packbits(boolIdxNoFlip,bitorder='little')
+        INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
+
 
         # Flip the un-flippable hyperplanes; this must be undone later
         H[INTrep,:] = -H[INTrep,:]
