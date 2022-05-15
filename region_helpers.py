@@ -37,6 +37,8 @@ class flipConstraints:
         self.allN = self.N
         self.redundantFlips = np.full(self.N,1,dtype=np.int64)
         self.nonRedundantHyperplanes = np.arange(self.N)
+        self.wholeBytes = (self.N + 7) // 8
+        self.tailBits = self.N - 8*(self.N // 8)
 
 
 class flipConstraintsReduced(flipConstraints):

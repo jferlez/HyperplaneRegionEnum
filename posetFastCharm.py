@@ -162,8 +162,7 @@ class Poset(Chare):
                 self.fixedb \
             )
         self.N = self.flippedConstraints.N
-        self.wholeBytes = (self.N + 7) // 8
-        self.tailBits = self.N - 8*(self.N // 8)
+        
         
         stat = self.succGroup.initialize(self.N,self.flippedConstraints,timeout,awaitable=True)
         stat.get()
@@ -221,7 +220,7 @@ class Poset(Chare):
         initFut.get()
         self.succGroupFull.startListening(awaitable=True).get()
 
-        boolIdxNoFlip = bytearray(b'\x00') * (self.wholeBytes + (1 if self.tailBits != 0 else 0))
+        boolIdxNoFlip = bytearray(b'\x00') * (self.flippedConstraints.wholeBytes + (1 if self.flippedConstraints.tailBits != 0 else 0))
         for unflipIdx in range(len(thisLevel[0][0])-1,-1,-1):
             boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
         self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0]],ret=True).get()
@@ -356,9 +355,6 @@ class successorWorker(Chare):
         # Defaults to glpk, so this empty call is ok:
         self.lp = encapsulateLP.encapsulateLP()
         # self.outChannels = []
-        self.endian = sys.byteorder
-        self.wholeBytes = (self.N + 7) // 8
-        self.tailBits = self.N - 8*(self.N // 8)
         self.clockTimeout = (timeout + time.time()) if timeout is not None else None
         self.timedOut = False
         self.stats = {'LPSolverCount':0, 'xferTime':0}
