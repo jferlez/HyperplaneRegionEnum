@@ -489,11 +489,10 @@ class successorWorker(Chare):
     def decodeRegionStore(self,INTrep):
         if type(INTrep) == tuple:
             intIdxNoFlip = list(INTrep)
-            boolIdxNoFlip = bytearray(b'\x00') *  (self.wholeBytes + (1 if self.tailBits != 0 else 0))
+            boolIdxNoFlip = tupToBytes(INTrep, self.flippedConstraints.wholeBytes, self.flippedConstraints.tailBits)
             intIdx = list(range(self.N))
             # boolIdx[-1] = boolIdx[-1] & ((1<<(self.tailBits+1))-1)
             for unflipIdx in range(len(INTrep)-1,-1,-1):
-                boolIdxNoFlip[INTrep[unflipIdx]//8] = boolIdxNoFlip[INTrep[unflipIdx]//8] | (1<<(INTrep[unflipIdx] % 8))
                 intIdx.pop(INTrep[unflipIdx])
             # boolIdxNoFlip = np.full(self.N,False,dtype=bool)
             # boolIdxNoFlip[INTrep,] = np.full(len(INTrep),True,dtype=bool)
@@ -501,11 +500,7 @@ class successorWorker(Chare):
             # boolIdxNoFlip = np.packbits(boolIdxNoFlip,bitorder='little')
         elif type(INTrep) == bytearray:
             boolIdxNoFlip = INTrep
-            INTrep = []
-            for bIdx in range(self.wholeBytes + (1 if self.tailBits != 0 else 0)):
-                for bitIdx in range(8 if bIdx < self.wholeBytes else self.tailBits):
-                    if boolIdxNoFlip[bIdx] & ( 1 << bitIdx):
-                        INTrep.append(8*bIdx + bitIdx)
+            INTrep = bytesToList(boolIdxNoFlip, self.flippedConstraints.wholeBytes, self.flippedConstraints.tailBits)
             intIdxNoFlip = INTrep
             INTrep = tuple(intIdxNoFlip)
             intIdx = list(range(self.N))
@@ -859,3 +854,19 @@ def hashNodeBytes(nodeBytes):
     p = 6148914691236517205 * np.bitwise_xor(chunks, np.right_shift(chunks,32))
     hashInt = 17316035218449499591 * np.bitwise_xor(p, np.right_shift(p,32))
     return int(np.bitwise_xor.reduce(hashInt))
+
+def tupToBytes(INTrep, wholeBytes, tailBits):
+    boolIdxNoFlip = bytearray(b'\x00') *  (wholeBytes + (1 if tailBits != 0 else 0))
+
+    for unflipIdx in range(len(INTrep)-1,-1,-1):
+        boolIdxNoFlip[INTrep[unflipIdx]//8] = boolIdxNoFlip[INTrep[unflipIdx]//8] | (1<<(INTrep[unflipIdx] % 8))
+    
+    return boolIdxNoFlip
+
+def bytesToList(boolIdxNoFlip,wholeBytes,tailBits):
+    INTrep = []
+    for bIdx in range(wholeBytes + (1 if tailBits != 0 else 0)):
+        for bitIdx in range(8 if bIdx < wholeBytes else tailBits):
+            if boolIdxNoFlip[bIdx] & ( 1 << bitIdx):
+                INTrep.append(8*bIdx + bitIdx)
+    return INTrep
