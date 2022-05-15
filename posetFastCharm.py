@@ -146,11 +146,15 @@ class Poset(Chare):
 
 
     @coro
-    def setConstraint(self,lb=0,out=0,timeout=None):
+    def setConstraint(self,lb=0,out=0,timeout=None,prefilter=True):
         self.populated = False
         self.incomplete = True
         self.N = len(self.AbPairs[0][0])
-        self.flippedConstraints = region_helpers.flipConstraints( \
+        if prefilter:
+            createConstraints = region_helpers.flipConstraintsReducedMin
+        else:
+            createConstraints = region_helpers.flipConstraints
+        self.flippedConstraints = createConstraints( \
                 -1*self.AbPairs[out][0], \
                 self.AbPairs[out][1] - lb*self.nrms, \
                 self.pt, \
