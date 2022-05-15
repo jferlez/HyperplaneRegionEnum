@@ -67,6 +67,8 @@ class flipConstraintsReduced(flipConstraints):
         self.allConstraints = self.constraints
         self.allN = self.N
         self.nonRedundantHyperplanes = np.arange(self.N)
+        self.wholeBytes = (self.N + 7) // 8
+        self.tailBits = self.N - 8*(self.N // 8)
 
 
 class flipConstraintsReducedMin(flipConstraints):
@@ -88,7 +90,8 @@ class flipConstraintsReducedMin(flipConstraints):
         self.allN = self.N
         self.constraints = np.vstack( ( np.hstack((-1*self.nb[self.nonRedundantHyperplanes,],self.nA[self.nonRedundantHyperplanes,:])), np.hstack((-1*self.fb,self.fA)) ) )
         self.N = len(self.nonRedundantHyperplanes)
-        
+        self.wholeBytes = (self.N + 7) // 8
+        self.tailBits = self.N - 8*(self.N // 8)
 
         self.root = tuple()
 
