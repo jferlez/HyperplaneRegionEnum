@@ -212,6 +212,7 @@ class Poset(Chare):
         level = 0
         thisLevel = [(self.flippedConstraints.root,)]
         posetLen = 1
+        levelSizes = [1]
         timedOut = False
 
         # Send this node into the distributed hash table and check it
@@ -303,6 +304,7 @@ class Poset(Chare):
             # nextLevel = self.distHashTable.getLevelList(ret=True).get()
 
             nextLevelSize = self.distHashTable.scheduleNextLevel(clearTable=(self.clearTable == 'memory'),ret=True).get()
+            levelSizes.append(nextLevelSize)
 
             listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
@@ -322,6 +324,7 @@ class Poset(Chare):
         statsFut = Future()
         self.succGroupFull.getStats(statsFut)
         stats = statsFut.get()
+        stats['levelSizes'] = levelSizes
         print('Total LPs used: ' + str(stats))
 
         print('Checker returned value: ' + str(checkVal))
