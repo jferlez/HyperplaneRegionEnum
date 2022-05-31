@@ -360,7 +360,7 @@ class successorWorker(Chare):
         # self.outChannels = []
         self.clockTimeout = (timeout + time.time()) if timeout is not None else None
         self.timedOut = False
-        self.stats = {'LPSolverCount':0, 'xferTime':0}
+        self.stats = {'LPSolverCount':0, 'xferTime':0, 'numQueries':0, 'successfulQueries':0}
     @coro
     def getTimeout(self):
         return self.timedOut
@@ -523,6 +523,7 @@ class successorWorker(Chare):
     @coro
     def query(self, q):
         # print('PE' + str(charm.myPe()) + ' Query to send is ' + str(q))
+        self.stats['numQueries'] += 1
         val = self.hashNode(q)
         self.queryChannels[val[0]].send(val)
         # print('PE' + str(charm.myPe()) + ' sending query ' + str(val))
@@ -540,6 +541,8 @@ class successorWorker(Chare):
             self.queryMutexChannel.send(1)
         retVal = self.queryChannels[val[0]].recv()        
         # print('^^^^^^ Recieved answer to query ' + str(q) + ' of ' + str(retVal))
+        if retVal > 0:
+            self.stats['successfulQueries'] += 1
         return retVal
 
     @coro
