@@ -15,6 +15,7 @@ class flipConstraints:
         self.nb = np.diag(self.flipMapN) @ nb
         self.N = len(nA)
         self.d = len(nA[0])
+        self.pt = pt
 
         if (fA is not None) and (fb is not None):
             v = fA @ pt
