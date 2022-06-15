@@ -205,6 +205,15 @@ class Poset(Chare):
 
         self.succGroup.setMethod(**opts)
 
+        if 'hashStore' in opts and opts['hashStore'] == 'vertex':
+            self.hashStoreMode = 2
+            tol = opts['tol'] if 'tol' in opts else 1e-9
+            rTol = opts['rTol'] if 'rTol' in opts else 1e-9
+            self.distHashTable.updateNodeEqualityFn(nodeType='vertex', tol=tol, rTol=rTol, H=self.flippedConstraints.constraints, awaitable=True).get()
+        else:
+            self.distHashTable.updateNodeEqualityFn(nodeType='standard', awaitable=True).get()
+            self.hashStoreMode = 0
+
         self.distHashTable.resetLevelCount(awaitable=True).get()
         #self.succGroup.testSend()
 
@@ -224,7 +233,7 @@ class Poset(Chare):
         boolIdxNoFlip = bytearray(b'\x00') * (self.flippedConstraints.wholeBytes + (1 if self.flippedConstraints.tailBits != 0 else 0))
         for unflipIdx in range(len(thisLevel[0][0])-1,-1,-1):
             boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
-        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0]],ret=True).get()
+        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0]],vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())),ret=True).get()
         
         self.distHashTable.awaitPending(awaitable=True).get()
         # Send a final termination signal:
@@ -365,11 +374,20 @@ class successorWorker(Chare):
     def getTimeout(self):
         return self.timedOut
     
-    def setMethod(self,method='fastLP',solver='glpk',findAll=True,useQuery=False,useBounding=False,lpopts={},hashStoreUseBits=False):
+    def setMethod(self,method='fastLP',solver='glpk',findAll=True,useQuery=False,useBounding=False,lpopts={},hashStore='bits',tol=1e-9,rTol=1e-9):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.useQuery = useQuery
         self.useBounding = useBounding
-        self.hashStoreUseBits = hashStoreUseBits
+        self.tol = tol
+        self.rTol = rTol
+        if hashStore == 'bits':
+            self.hashStoreMode = 0
+        elif hashStore == 'list':
+            self.hashStoreMode = 1
+        elif hashStore == 'vertex':
+            self.hashStoreMode = 2
+        else:
+            self.hashStoreMode = 0
         if method=='cdd':
             self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsCDD
             self.processNodesArgs = {'solver':solver}
@@ -382,6 +400,8 @@ class successorWorker(Chare):
         self.method = method
         self.solver = solver
         self.findAll = findAll
+        self.Hcol0Close = self.tol + self.rTol * np.abs(self.constraints[:,0])
+        self.Hcol0CloseVertex = self.constraints[:,0] - self.Hcol0Close
     
     @coro
     def setProperty(self,prop,val):
@@ -466,18 +486,27 @@ class successorWorker(Chare):
         for ch in self.outChannels:
             ch.send(-100)
 
-    def hashNode(self,toHash,payload=None):
+    def hashNode(self,toHash,payload=None,vertex=None):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
         # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         hashInt = hashNodeBytes(toHash[0])
-        if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, toHash[0] if self.hashStoreUseBits else tuple(toHash[1]), charm.myPe(), payload)
+        if self.hashStoreMode == 0:
+            regEncode = toHash[0]
+        elif self.hashStoreMode == 1:
+            regEncode = tuple(toHash[1])
+        elif self.hashStoreMode == 2 and vertex is not None:
+            regEncode = vertex
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, toHash[0] if self.hashStoreUseBits else tuple(toHash[1]), charm.myPe(), )
+            # default to tuple mode
+            regEncode = tuple(toHash[1])
+        if payload is not None:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), payload)
+        else:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), )
     
     @coro
-    def hashAndSend(self,toHash,payload=None):
-        val = self.hashNode(toHash,payload=payload)
+    def hashAndSend(self,toHash,payload=None,vertex=None):
+        val = self.hashNode(toHash,payload=payload,vertex=vertex)
         self.outChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(nodeInt))
         # retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
@@ -486,6 +515,17 @@ class successorWorker(Chare):
         return retVal
     
     def decodeRegionStore(self,INTrep):
+        if type(INTrep) == tuple and len(INTrep) == 2 and type(INTrep[0]) is np.ndarray:
+            incommingINTrep = INTrep
+            Hsol = (-self.constraints[:,1:] @ INTrep[0]).flatten()
+            flipIdxs = (Hsol  > self.Hcol0CloseVertex).flatten().astype(np.bool8)
+            # print(flipIdxs)
+            intersectionIdxs = np.nonzero((np.abs(Hsol - self.constraints[:,0]) <= self.Hcol0Close).flatten())[0]
+            # print(intersectionIdxs)
+            flipIdxs[intersectionIdxs] = np.zeros(intersectionIdxs.shape,dtype=np.bool8)
+            flipIdxs[list(INTrep[1])] = np.ones(len(INTrep[1]),dtype=np.bool8)
+            INTrep = tuple(np.nonzero(flipIdxs)[0])
+            # print(f'{INTrep}==>{(incommingINTrep[0].flatten().tolist(),incommingINTrep[1])}')
         if type(INTrep) == tuple:
             intIdxNoFlip = list(INTrep)
             boolIdxNoFlip = tupToBytes(INTrep, self.flippedConstraints.wholeBytes, self.flippedConstraints.tailBits)

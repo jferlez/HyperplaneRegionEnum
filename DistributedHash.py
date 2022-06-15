@@ -5,12 +5,20 @@ import time
 import itertools
 import random
 from copy import copy
+import numpy as np
+import numba as nb
+from numba import njit
+from numba.core import types
+from numba.typed import Dict
+from numba.np.unsafe.ndarray import to_fixed_tuple
+from numba.pycc import CC
+from functools import partial
 
 XFER_CHUNK_SIZE = 1000
 
 class Node():
 
-    def __init__(self,localProxy, storePe, parentChare, lsb,msb,nodeBytes, originPe, *args):
+    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes, originPe, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
@@ -18,6 +26,7 @@ class Node():
         self.storePe = storePe
         self.parentChare = parentChare
         self.originPe = originPe
+        self.nodeEqualityFn = nodeEqualityFn
         self.payload = args
     
     def __hash__(self):
@@ -25,11 +34,38 @@ class Node():
     
     def __eq__(self,other):
         if type(other) == type(self.nodeBytes):
-            return self.nodeBytes == other
+            return self.nodeEqualityFn(self.nodeBytes, other)
         elif isinstance(other,Node):
-            return self.nodeBytes == other.nodeBytes
+            return self.nodeEqualityFn(self.nodeBytes, other.nodeBytes)
 
+# Vertex Node equality check
+@njit( \
+    types.boolean \
+    ( \
+        types.float64[:,::1], \
+        types.float64[::1], \
+        types.float64[:,::1], \
+        types.int64[::1], \
+        types.float64[:,::1], \
+        types.int64[::1] \
+    ), \
+    cache=True \
+)
+def vertexNodeEqualityCore(H,H0close,aSol,aList,bSol,bList):
+    diff = (-H[:,1:] @ aSol).flatten() - H[:,0]
+    flipIdxsA = ( diff > -H0close).flatten().astype(np.bool8)
+    activeFlips = np.nonzero((np.abs(diff) <= H0close).flatten())[0]
+    flipIdxsA[activeFlips] = np.zeros(activeFlips.shape,dtype=np.bool8)
+    flipIdxsA[aList] = np.ones(aList.shape,dtype=np.bool8)
+    diff = (-H[:,1:] @ bSol).flatten() - H[:,0]
+    flipIdxsB = ( diff > -H0close).flatten().astype(np.bool8)
+    activeFlips = np.nonzero((np.abs(diff) <= H0close).flatten())[0]
+    flipIdxsB[activeFlips] = np.zeros(activeFlips.shape,dtype=np.bool8)
+    flipIdxsB[bList] = np.ones(bList.shape,dtype=np.bool8)
+    return np.array_equal(flipIdxsA, flipIdxsB)
 
+def vertexNodeEquality(H,H0close,a,b):
+    return vertexNodeEqualityCore(H,H0close,a[0],np.array(a[1],dtype=np.int64),b[0],np.array(b[1],dtype=np.int64))
 
 def Join(contribs):
     return list(itertools.chain.from_iterable(contribs))
@@ -61,8 +97,21 @@ class HashWorker(Chare):
         self.loopback = Channel(self,remote=self.thisProxy[self.thisIndex])
         self.queryLoopback = Channel(self,remote=self.thisProxy[self.thisIndex])
         self.controlLoopback = Channel(self,remote=self.thisProxy[self.thisIndex])
+        self.nodeEqualityFn = lambda x,y: (x == y)
         #print(self.thisIndex)
     
+    @coro
+    def updateNodeEqualityFn(self,fn=None,nodeType='standard',tol=1e-9,rTol=1e-9,H=None):
+        if fn is not None:
+            self.nodeEqualityFn = fn
+        else:
+            if nodeType == 'standard':
+                self.nodeEqualityFn = lambda x,y: (x == y)
+            elif nodeType == 'vertex':
+                self.H0close = tol + rTol * np.abs(H[:,0])
+                self.H = H
+                self.nodeEqualityFn = partial(vertexNodeEquality,self.H,self.H0close)
+                # self.nodeEqualityFn = lambda x,y: ( np.all(np.isclose(x[0],y[0],rtol=rTol,atol=tol)) and (x[1] == y[1]) )
     @coro
     def getProxies(self):
         return self.thisProxy[self.thisIndex]
@@ -434,7 +483,7 @@ class HashWorker(Chare):
                         if all([self.status[chIt] <= -2 for chIt in self.inChannels]):
                             self.levelDone = True
                     elif type(val) == tuple and len(val) >= 3:
-                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, *val)
+                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
                         if self.nodeCalls & 1:
                             newNode.init()
                         if not newNode in self.table:
@@ -652,6 +701,10 @@ class DistHash(Chare):
 
         myFut = self.hWorkersFull.addQueryOriginChannel(self.feederProxies,awaitable=True)
         myFut.get()
+
+    @coro
+    def updateNodeEqualityFn(self,fn=None, nodeType='standard', tol=1e-9, rTol=1e-9, H=None):
+        self.hWorkersFull.updateNodeEqualityFn(fn=fn,nodeType=nodeType,tol=tol,rTol=rTol, H=H, awaitable=True).get()
 
     @coro
     def queryMutexLocalListener(self,ch,chIdx):
