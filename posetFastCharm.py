@@ -127,17 +127,19 @@ class Poset(Chare):
         self.fixedA = fixedA.copy()
         self.fixedb = fixedb.copy()
         self.normalize = normalize
-
+        self.N = len(self.AbPairs[0][0])
+        self.nrms = []
         if normalize > 0:
             for out in range(len(AbPairs)):
-                self.nrms = self.normalize / np.linalg.norm(self.AbPairs[out][0],axis=1).reshape(-1,1)
+                self.nrms.append(self.normalize / np.linalg.norm(self.AbPairs[out][0],axis=1).reshape(-1,1))
                 self.AbPairs[out][0] = self.nrms * self.AbPairs[out][0]
                 self.AbPairs[out][1] = self.nrms * self.AbPairs[out][1]
             nrms = np.linalg.norm(self.fixedA,axis=1).reshape(-1,1) * self.normalize
             self.fixedA = (self.normalize/nrms) * self.fixedA
             self.fixedb = (self.normalize/nrms) * self.fixedb
         else:
-            self.nrms = np.ones((self.N,1))
+            for out in range(len(AbPairs)):
+                self.nrms.append(np.ones((self.N,1)))
 
 
         # self.N = len(self.AbPairs[0][0])
@@ -156,7 +158,7 @@ class Poset(Chare):
             createConstraints = region_helpers.flipConstraints
         self.flippedConstraints = createConstraints( \
                 -1*self.AbPairs[out][0], \
-                self.AbPairs[out][1] - lb*self.nrms, \
+                self.AbPairs[out][1] - lb*self.nrms[out], \
                 self.pt, \
                 self.fixedA, \
                 self.fixedb \
