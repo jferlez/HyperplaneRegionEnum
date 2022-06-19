@@ -517,7 +517,7 @@ class successorWorker(Chare):
         return retVal
     
     def decodeRegionStore(self,INTrep):
-        if type(INTrep) == tuple and len(INTrep) == 2 and type(INTrep[0]) is np.ndarray:
+        if type(INTrep) == tuple and len(INTrep) == 2 and type(INTrep[1]) is tuple:
             incommingINTrep = INTrep
             Hsol = (-self.constraints[:,1:] @ INTrep[0]).flatten()
             flipIdxs = (Hsol  > self.Hcol0CloseVertex).flatten().astype(np.bool8)
