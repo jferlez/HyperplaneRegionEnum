@@ -393,9 +393,13 @@ class successorWorker(Chare):
         if method=='cdd':
             self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsCDD
             self.processNodesArgs = {'solver':solver}
+            if self.hashStoreMode == 2:
+                print(f'WARNING: vertex region encodings are not supported for method {method}. Defaulting to bit region encodings...')
         elif method=='fastLP':
             self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP
             self.processNodesArgs = {'solver':solver,'findAll':findAll}
+            if self.hashStoreMode == 2:
+                print(f'WARNING: vertex region encodings are not supported for method {method}. Defaulting to bit region encodings...')
         if len(lpopts) == 0:
             self.processNodesArgs['lpopts'] = lpopts
         self.processNodesArgs['ret'] = True
