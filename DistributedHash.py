@@ -408,7 +408,7 @@ class HashWorker(Chare):
                     if type(val) is tuple and len(val) >= 3:
                         if (not charm.myPe() in self.overlapPElist) or (not selfQuery or charm.myPe() == chIdx):
                             answeredSelf = True
-                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, *val)
+                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
                         if newNode in self.table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             self.queryChannels[chIdx].send(1)
