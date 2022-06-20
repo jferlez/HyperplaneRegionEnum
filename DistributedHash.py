@@ -40,32 +40,41 @@ class Node():
 
 # Vertex Node equality check
 @njit( \
-    types.boolean \
+    types.int64[::1] \
     ( \
         types.float64[:,::1], \
         types.float64[::1], \
-        types.float64[:,::1], \
-        types.int64[::1], \
         types.float64[:,::1], \
         types.int64[::1] \
     ), \
     cache=True \
 )
-def vertexNodeEqualityCore(H,H0close,aSol,aList,bSol,bList):
+def vertexNodeDecode(H,H0close,aSol,aList):
     diff = (-H[:,1:] @ aSol).flatten() - H[:,0]
     flipIdxsA = ( diff > -H0close).flatten().astype(np.bool8)
     activeFlips = np.nonzero((np.abs(diff) <= H0close).flatten())[0]
     flipIdxsA[activeFlips] = np.zeros(activeFlips.shape,dtype=np.bool8)
     flipIdxsA[aList] = np.ones(aList.shape,dtype=np.bool8)
-    diff = (-H[:,1:] @ bSol).flatten() - H[:,0]
-    flipIdxsB = ( diff > -H0close).flatten().astype(np.bool8)
-    activeFlips = np.nonzero((np.abs(diff) <= H0close).flatten())[0]
-    flipIdxsB[activeFlips] = np.zeros(activeFlips.shape,dtype=np.bool8)
-    flipIdxsB[bList] = np.ones(bList.shape,dtype=np.bool8)
-    return np.array_equal(flipIdxsA, flipIdxsB)
+    return np.nonzero(flipIdxsA)[0]
 
-def vertexNodeEquality(H,H0close,a,b):
-    return vertexNodeEqualityCore(H,H0close,a[0],np.array(a[1],dtype=np.int64),b[0],np.array(b[1],dtype=np.int64))
+def vertexNodeEquality(H,H0close,wholeBytes,tailBits,a,b):
+    result = None
+    for reg in [a,b]:
+        if type(reg) == tuple and len(reg) == 2 and type(reg[1]) == tuple:
+            INTrep = tuple(vertexNodeDecode(H,H0close,reg[0],np.array(reg[1],dtype=np.int64)).tolist())
+        elif type(reg) == bytearray:
+            INTrep = []
+            for bIdx in range(wholeBytes + (1 if tailBits != 0 else 0)):
+                for bitIdx in range(8 if bIdx < wholeBytes else tailBits):
+                    if boolIdxNoFlip[bIdx] & ( 1 << bitIdx):
+                        INTrep.append(8*bIdx + bitIdx)
+            INTrep = tuple(INTrep)
+        else:
+            INTrep = reg
+        
+        result = INTrep if result is None else (result == INTrep)
+    
+    return result
 
 def Join(contribs):
     return list(itertools.chain.from_iterable(contribs))
@@ -110,7 +119,9 @@ class HashWorker(Chare):
             elif nodeType == 'vertex':
                 self.H0close = tol + rTol * np.abs(H[:,0])
                 self.H = H
-                self.nodeEqualityFn = partial(vertexNodeEquality,self.H,self.H0close)
+                self.wholeBytes = (len(self.H0close) + 7) // 8
+                self.tailBits = len(self.H0close) - 8*(len(self.H0close) // 8)
+                self.nodeEqualityFn = partial(vertexNodeEquality,self.H,self.H0close,self.wholeBytes,self.tailBits)
                 # self.nodeEqualityFn = lambda x,y: ( np.all(np.isclose(x[0],y[0],rtol=rTol,atol=tol)) and (x[1] == y[1]) )
     @coro
     def getProxies(self):
