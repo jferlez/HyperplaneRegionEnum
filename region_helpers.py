@@ -1,6 +1,7 @@
 import numpy as np
 import encapsulateLP
 from copy import copy
+import posetFastCharm_numba
 
 
 class flipConstraints:
@@ -40,6 +41,23 @@ class flipConstraints:
         self.nonRedundantHyperplanes = np.arange(self.N)
         self.wholeBytes = (self.N + 7) // 8
         self.tailBits = self.N - 8*(self.N // 8)
+
+    def translateRegion(self,nodeBytes):
+        regSet = np.full(self.allN, True, dtype=bool)
+        regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
+        regSet[nodeBytes,] = np.full(len(nodeBytes),False,dtype=bool)
+        unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,list(nodeBytes))
+        regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
+        regSet = tuple(np.nonzero(regSet)[0])
+        return regSet
+
+    def regionInteriorPoint(self,nodeBytes):
+        H = self.allConstraints.copy()
+        regSet = self.translateRegion(nodeBytes)
+        H[regSet,] = -H[regSet,]
+        iPoint = findInteriorPoint(H)
+        # print(iPoint)
+        return iPoint
 
 
 class flipConstraintsReduced(flipConstraints):
@@ -95,6 +113,16 @@ class flipConstraintsReducedMin(flipConstraints):
         self.tailBits = self.N - 8*(self.N // 8)
 
         self.root = tuple()
+
+    def translateRegion(self,nodeBytes):
+        regSet = np.full(self.allN, True, dtype=bool)
+        regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
+        sel = nodeBytes
+        regSet[sel,] = np.full(len(sel),False,dtype=bool)
+        unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,sel.tolist())
+        regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
+        regSet = tuple(np.nonzero(regSet)[0])
+        return regSet
 
 
 # H2 is a CDD-style matrix specifying inequality constraints, and intIdx is a list of indices of inequalities to check for redundancy
