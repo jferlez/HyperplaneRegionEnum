@@ -1,5 +1,3 @@
-from platform import node
-from typing import Dict
 import charm4py
 from charm4py import charm, Chare, coro, Reducer, Group, Future, Array, Channel
 import cdd
@@ -62,10 +60,10 @@ class localVar(Chare):
         self.schedCount = 0
 
 class Poset(Chare):
-    
+
     @coro
     def init(self, peSpec, nodeConstructor, localVarGroup, successorChare):
-        
+
         # self.stackNum = batchSize
         # To do: check to make sure we're passed a valid Group in localVarGroup
         self.localVarGroup = localVarGroup
@@ -90,7 +88,7 @@ class Poset(Chare):
         else:
             self.posetPEs = peSpec['poset']
             self.hashPEs = peSpec['hash']
-        
+
         self.posetPElist = list(itertools.chain.from_iterable( \
                [list(range(r[0],r[1],r[2])) for r in self.posetPEs] \
             ))
@@ -120,7 +118,7 @@ class Poset(Chare):
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
 
-    
+
     def initialize(self, AbPairs, pt, fixedA, fixedb, normalize=1.0):
         self.AbPairs = deepcopy(AbPairs)
         self.pt = pt
@@ -164,8 +162,8 @@ class Poset(Chare):
                 self.fixedb \
             )
         self.N = self.flippedConstraints.N
-        
-        
+
+
         stat = self.succGroup.initialize(self.N,self.flippedConstraints,timeout,awaitable=True)
         stat.get()
         if self.useDefaultLocalVarGroup:
@@ -178,7 +176,7 @@ class Poset(Chare):
     @coro
     def getConstraintsObject(self):
         return self.flippedConstraints
-    
+
     @coro
     def setSuccessorCommonProperty(self,prop,val):
         self.succGroupFull.setProperty(prop,val,awaitable=True).get()
@@ -236,13 +234,13 @@ class Poset(Chare):
         for unflipIdx in range(len(thisLevel[0][0])-1,-1,-1):
             boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
         self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0]],vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())),ret=True).get()
-        
+
         self.distHashTable.awaitPending(awaitable=True).get()
         # Send a final termination signal:
         self.succGroup.sendAll(-2,awaitable=True).get()
         self.succGroup.closeQueryChannels(awaitable=True).get()
         self.succGroup.flushMessages(ret=True).get()
-        
+
         checkVal = self.distHashTable.levelDone(ret=True).get()
         if not checkVal:
             level = self.N+2
@@ -257,7 +255,7 @@ class Poset(Chare):
         cnt = 0
         for fut in charm.iwait(doneFuts):
             cnt += fut.get()
-        
+
         iFut = Future()
         self.successorProxies[0].initListNew(thisLevel,iFut)
         iFut.get()
@@ -325,7 +323,7 @@ class Poset(Chare):
 
             posetLen += nextLevelSize
             # print(posetLen)
-            
+
 
 
             # thisLevel = nextLevel
@@ -339,7 +337,7 @@ class Poset(Chare):
         print('Total LPs used: ' + str(stats))
 
         print('Checker returned value: ' + str(checkVal))
-        
+
         # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
         print('Computed a (partial) poset of size: ' + str(posetLen))
 
@@ -353,7 +351,7 @@ class Poset(Chare):
 
 
 class successorWorker(Chare):
-    
+
     def initPEs(self,pes):
         self.posetPElist = pes
         self.timedOut = False
@@ -375,7 +373,7 @@ class successorWorker(Chare):
     @coro
     def getTimeout(self):
         return self.timedOut
-    
+
     def setMethod(self,method='fastLP',solver='glpk',findAll=True,useQuery=False,useBounding=False,lpopts={},hashStore='bits',tol=1e-9,rTol=1e-9):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.useQuery = useQuery
@@ -408,7 +406,7 @@ class successorWorker(Chare):
         self.findAll = findAll
         self.Hcol0Close = self.tol + self.rTol * np.abs(self.constraints[:,0])
         self.Hcol0CloseVertex = self.constraints[:,0] - self.Hcol0Close
-    
+
     @coro
     def setProperty(self,prop,val):
         setattr(self,prop,val)
@@ -419,7 +417,7 @@ class successorWorker(Chare):
             self.stats['LPSolverCount'] += self.lp.lpCount
         retVal = defaultdict(int) if not charm.myPe() in self.posetPElist else self.stats
         self.reduce(statsFut,retVal,DictAccum)
-    
+
     @coro
     def getProxies(self):
         return self.thisProxy[self.thisIndex]
@@ -459,7 +457,7 @@ class successorWorker(Chare):
         # else:
         #     self.numBytes = int(self.N/4)+1
         # print(self.outChannels)
-    
+
     @coro
     def closeQueryChannels(self):
         if not charm.myPe() in self.posetPElist:
@@ -485,7 +483,7 @@ class successorWorker(Chare):
             #print(self.outChannels[k])
             self.outChannels[k].send((self.thisIndex,k))
             #print('Message sent!')
-    
+
     def startListening(self):
         if not charm.myPe() in self.posetPElist:
             return
@@ -509,7 +507,7 @@ class successorWorker(Chare):
             return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), payload)
         else:
             return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), )
-    
+
     @coro
     def hashAndSend(self,toHash,payload=None,vertex=None):
         val = self.hashNode(toHash,payload=payload,vertex=vertex)
@@ -519,7 +517,7 @@ class successorWorker(Chare):
         retVal = self.thisProxy[self.thisIndex].deferControl(ret=True).get()
         # print('Saw defercontrol return the following within HashAndSend ' + str(retVal))
         return retVal
-    
+
     def decodeRegionStore(self,INTrep):
         if type(INTrep) == tuple and len(INTrep) == 2 and type(INTrep[1]) is tuple:
             incommingINTrep = INTrep
@@ -552,20 +550,20 @@ class successorWorker(Chare):
             # boolIdx[-1] = boolIdx[-1] & ((1<<(self.tailBits+1))-1)
             for unflipIdx in range(len(INTrep)-1,-1,-1):
                 intIdx.pop(INTrep[unflipIdx])
-        
+
         return INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip
 
     @coro
     def deferControl(self, code=1):
         if not self.rateChannel is None:
             self.rateChannel.send(code)
-            control = self.rateChannel.recv() 
+            control = self.rateChannel.recv()
             while control > 0:
                 control = self.rateChannel.recv()
             if control == -3:
                 return False
         return True
-    
+
     @coro
     def query(self, q):
         # print('PE' + str(charm.myPe()) + ' Query to send is ' + str(q))
@@ -585,7 +583,7 @@ class successorWorker(Chare):
                 self.thisProxy[self.thisIndex].deferControl(code=4,ret=True).get()
             # print('Got Control Back.')
             self.queryMutexChannel.send(1)
-        retVal = self.queryChannels[val[0]].recv()        
+        retVal = self.queryChannels[val[0]].recv()
         # print('^^^^^^ Recieved answer to query ' + str(q) + ' of ' + str(retVal))
         if retVal > 0:
             self.stats['successfulQueries'] += 1
@@ -606,12 +604,12 @@ class successorWorker(Chare):
         self.workInts = workInts
         # print(self.workInts)
         fut.send(1)
-    
+
     @coro
     def initList(self,fut):
         self.workInts = []
         fut.send(1)
-    
+
     @coro
     def appendToWorkList(self,li,fut):
         self.workInts.extend(li)
@@ -629,9 +627,9 @@ class successorWorker(Chare):
         if not charm.myPe() in self.overlapPElist:
             return
         self.rateChannel.send(2)
-       
 
-    
+
+
     @coro
     def computeSuccessorsNew(self):
         term = False
@@ -648,13 +646,13 @@ class successorWorker(Chare):
                     break
         else:
             successorList = [[set([]),-1]]
-        
+
         # self.thisProxy[self.thisIndex].sendAll(-2 if not term else -3, awaitable=True).get()
         if term:
             self.thisProxy[self.thisIndex].sendAll(-3, awaitable=True).get()
         self.thisProxy[self.thisIndex].flushMessages(awaitable=True).get()
 
-        
+
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
         # successorList = [successorList[ii][0] for ii in range(len(successorList))]
 
@@ -674,7 +672,7 @@ class successorWorker(Chare):
             if INTrep & idx > 0:
                 H[i] = -1*H[i]
             idx = idx << 1
-        
+
         mat = cdd.Matrix(H,number_type='float')
         mat.rep_type = cdd.RepType.INEQUALITY
         ret = mat.canonicalize()
@@ -694,7 +692,7 @@ class successorWorker(Chare):
         facesInt = 0
         for k in to_keep:
             facesInt = facesInt + (1 << k)
-        
+
         successors = []
         for i in range(len(to_keep)):
             if to_keep[i] >= N:
@@ -707,13 +705,13 @@ class successorWorker(Chare):
                 cont = self.thisProxy[self.thisIndex].hashAndSend(INTrep + idx,ret=True).get()
                 if not cont:
                     return [set(successors), -1]
-        
-        return [set(successors), facesInt]     
+
+        return [set(successors), facesInt]
 
 
     @coro
     def concreteMinHRep(self,H2,constraint_list_in,boolIdxNoFlip,intIdxNoFlip,intIdx,solver='glpk',safe=False):
-        
+
         if len(intIdx) == 0:
             return np.full(0,0,dtype=bool)
 
@@ -788,14 +786,14 @@ class successorWorker(Chare):
         # Flip the un-flippable hyperplanes; this must be undone later
         H[INTrep,:] = -H[INTrep,:]
 
-        
+
         if findAll:
             intIdx = list(range(self.N))
 
-        
+
         d = H.shape[1]-1
 
-        
+
         doBounding = False
         # Don't compute the bounding box if the number of flippable hyperplanes is almost 2*d,
         # since we have to do 2*d LPs just to get the bounding box
@@ -836,7 +834,7 @@ class successorWorker(Chare):
         else:
             constraint_list = None
 
-        
+
         faces = self.thisProxy[self.thisIndex].concreteMinHRep(H,constraint_list,boolIdxNoFlip,intIdxNoFlip,intIdx,solver=solver,safe=False,ret=True).get()
 
         successors = []
@@ -861,7 +859,7 @@ class successorWorker(Chare):
 
                 if not cont:
                     return [successors, -1]
-        
+
         # facesInt = np.full(self.N,0,dtype=bool)
         sel = tuple(np.array(intIdx,dtype=np.uint64)[faces].tolist())
         # facesInt[sel] = np.full(len(sel),1,dtype=bool)
@@ -869,10 +867,10 @@ class successorWorker(Chare):
         # Undo the flip we did before, since it affects a referenced (as opposed to copied) array:
         H[INTrep,:] = -H[INTrep,:]
 
-        # return [successors, bytes(np.packbits(facesInt,bitorder='little'))]            
-        return [[], sel]            
+        # return [successors, bytes(np.packbits(facesInt,bitorder='little'))]
+        return [[], sel]
 
-      
+
 
 
 
@@ -918,3 +916,4 @@ def bytesToList(boolIdxNoFlip,wholeBytes,tailBits):
             if boolIdxNoFlip[bIdx] & ( 1 << bitIdx):
                 INTrep.append(8*bIdx + bitIdx)
     return INTrep
+
