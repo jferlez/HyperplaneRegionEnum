@@ -906,7 +906,7 @@ def tupToBytes(INTrep, wholeBytes, tailBits):
 
     for unflipIdx in range(len(INTrep)-1,-1,-1):
         boolIdxNoFlip[INTrep[unflipIdx]//8] = boolIdxNoFlip[INTrep[unflipIdx]//8] | (1<<(INTrep[unflipIdx] % 8))
-    
+
     return boolIdxNoFlip
 
 def bytesToList(boolIdxNoFlip,wholeBytes,tailBits):
