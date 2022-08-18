@@ -28,10 +28,10 @@ class Node():
         self.originPe = originPe
         self.nodeEqualityFn = nodeEqualityFn
         self.payload = args
-    
+
     def __hash__(self):
         return self.msbHash
-    
+
     def __eq__(self,other):
         if type(other) == type(self.nodeBytes):
             return self.nodeEqualityFn(self.nodeBytes, other)
@@ -71,9 +71,9 @@ def vertexNodeEquality(H,H0close,wholeBytes,tailBits,a,b):
             INTrep = tuple(INTrep)
         else:
             INTrep = reg
-        
+
         result = INTrep if result is None else (result == INTrep)
-    
+
     return result
 
 def Join(contribs):
@@ -108,7 +108,7 @@ class HashWorker(Chare):
         self.controlLoopback = Channel(self,remote=self.thisProxy[self.thisIndex])
         self.nodeEqualityFn = lambda x,y: (x == y)
         #print(self.thisIndex)
-    
+
     @coro
     def updateNodeEqualityFn(self,fn=None,nodeType='standard',tol=1e-9,rTol=1e-9,H=None):
         if fn is not None:
@@ -145,7 +145,7 @@ class HashWorker(Chare):
             self.messages[ch] = {'msg':None, 'fut':None}
             self.workerDone[ch] = None
             self.localListenerOnline[ch] = False
-    
+
 
     @coro
     def addQueryOriginChannel(self,feederProxies):
@@ -164,7 +164,7 @@ class HashWorker(Chare):
             self.queryMessages[ch] = {'msg':None, 'fut':None}
             self.queryDone[ch] = None
             self.queryListenerOnline[ch] = False
-    
+
     # The following two methods allow a DistributedHash to function as a "feeder" to **another** DistributedHash!
     # To do: implement the feedback channel from the other DistributedHash...
     @coro
@@ -183,7 +183,7 @@ class HashWorker(Chare):
         else:
             self.numBytes = int(self.N/4)+1
         # print(self.outChannels)
-    
+
 
     @coro
     def addFeedbackChannel(self,proxy):
@@ -222,7 +222,7 @@ class HashWorker(Chare):
             # print(val)
             self.messages[ch]['msg'] = val
             ackFut = Future()
-            self.messages[ch]['fut'] = ackFut    
+            self.messages[ch]['fut'] = ackFut
             self.loopback.send(chIdx)
             # if not self.initiatedNodeProc:
             #     print('----'*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'LocalListener ' + sig + ' -- Signaling to listen()' )
@@ -289,7 +289,7 @@ class HashWorker(Chare):
         for k in range(len(self.inChannels)):
             self.listenerStatus.append( self.thisProxy[self.thisIndex].localListener(self.inChannels[k],k, ret=True) )
             self.workerDone[self.inChannels[k]] = Future()
-        
+
         for ch in self.queryChannels:
             self.queryStatus[ch] = 0
             self.queryMessages[ch] = {'msg':None, 'fut':None}
@@ -297,7 +297,7 @@ class HashWorker(Chare):
         for k in range(len(self.queryChannels)):
             self.listenerStatus.append( self.thisProxy[self.thisIndex].localQueryListener(self.queryChannels[k],k,ret=True) )
             self.queryDone[self.queryChannels[k]] = Future()
-        
+
         # print('Done initListen on PE ' + str(charm.myPe()))
         self.level += 1
         self.levelList = []
@@ -340,7 +340,7 @@ class HashWorker(Chare):
                     free = True
                     queryOnly = False
                     selfQuery = False
-                    processOnly = True 
+                    processOnly = True
                 if control <= 0:
                     self.rateChannel.send(control)
                     continue
@@ -372,10 +372,10 @@ class HashWorker(Chare):
                 if queryOnly and not selfQuery and all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannels]):
                     self.rateChannel.send(-1)
                     continue
-            
+
             # print(prefix + ' Starting trace on PE ' + str(charm.myPe()) + ' -------------------------')
             pendingWork = [3,3]
-            if not processOnly:    
+            if not processOnly:
                 pendingWork[0] = self.controlLoopback.recv()
                 if ((not pendingChecks and pendingWork[0] > 1) and any([not self.messages[ch]['fut'] is None for ch in self.inChannels])) or \
                         pendingWork[0] == 1 and any([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannels]):
@@ -393,12 +393,12 @@ class HashWorker(Chare):
             #     'Node Listener status: ' + str([self.status[chIt] for chIt in self.inChannels]) + ' Query Listener status: ' + str([self.queryStatus[chIt] for chIt in self.queryChannels]) + ' ' \
             #         + 'Node messages buffered: ' + str([self.messages[ch]['msg'] for ch in self.inChannels]) + ' Query messages buffered: ' + str([self.queryMessages[ch]['msg'] for ch in self.queryChannels])  + ' ' \
             #             + 'Message buffers: ' + str([self.messages[ch]['fut'] for ch in self.inChannels]) + str([self.queryMessages[ch]['fut'] for ch in self.queryChannels]))
-                
-            
+
+
             # Count the number of times we execute when there are queries pending:
             if pendingChecks or not pendingQueries or all([self.queryStatus[chIt] == -2 for chIt in self.queryChannels]):
                 yieldCount += 1
-            
+
             # print(prefix + ' Hash worker on PE ' + str(charm.myPe()) + ' pendingWork=' + str(pendingWork) + ' ' + \
             #    str([self.messages[ch]['msg'] for ch in self.inChannels]) + ' ' + \
             #        str([self.queryMessages[ch]['msg'] for ch in self.queryChannels])  + ' ' + str(self.status))
@@ -446,8 +446,8 @@ class HashWorker(Chare):
                     self.queryMessages[ch]['fut'] = None
                     if not localFut is None:
                         localFut.send(1)
-                
-                
+
+
                 pendingQueries = False
 
             # Now take care of any hashing/checking any pending nodes supplied by (any) feeder worker
@@ -514,7 +514,7 @@ class HashWorker(Chare):
                         print(msg)
                         print(val)
                         print('Received unexpected message ' + str(val) + ' on hash worker ' + str(self.thisIndex))
-                    
+
                     # if len(chList) == numPending:
                     #     # Done processing the number of buffered nodes we saw at first, so break out of the while
                     #     # loop to reset those buffers
@@ -524,16 +524,16 @@ class HashWorker(Chare):
                     numPending = sum([not self.messages[ch]['fut'] is None for ch in self.inChannels])
                     yieldCount = 0
                     pendingChecks = False
-            
+
                 for ch in chList:
                     # We're all done with this message, so report back
                     localFut = self.messages[ch]['fut']
                     self.messages[ch]['fut'] = None
                     if not localFut is None:
                         localFut.send(1)
-                
-                
-            
+
+
+
             # Release the feeder to get back to work:
             processOnly = False
             retControl = -3 if any([self.status[ch] == -3 for ch in self.inChannels]) else -1
@@ -558,7 +558,7 @@ class HashWorker(Chare):
     @coro
     def awaitQueries(self):
         return all([self.queryDone[ch].get() for ch in self.queryChannels])
-        
+
     @coro
     def awaitListenerShutdown(self, shutdownFut):
         cnt = 0
@@ -580,7 +580,7 @@ class HashWorker(Chare):
     @coro
     def getLevelSizes(self):
         return len(self.levelList)
-    
+
     @coro
     def clearHashTable(self):
         self.levelList = []
@@ -612,7 +612,7 @@ class HashWorker(Chare):
                     self.table.pop(self.levelList[idx])
             self.levelList = self.levelList[chunkSize:]
         retFut.send(1)
-    
+
 
 class DistHash(Chare):
     @coro
@@ -670,7 +670,7 @@ class DistHash(Chare):
         feeders = sorted(zip(self.posetPElist,self.feederProxies))
         hashes = sorted(zip(self.hashPElist,self.hashWorkerProxies))
         # TO DO
-        # The presence of the following two lines seem to be a bug, since they ensure that no "overlap" PEs are detected. 
+        # The presence of the following two lines seem to be a bug, since they ensure that no "overlap" PEs are detected.
         # As a result, no query mutex listener is started, so there is effectively no deadlock prevention when two successor worker
         # PEs suspend to query each other. These deadlocks were definitely occurring in pre-HSCC testing, but they don't seem to be
         # occurring now. I don't know it this is because I fixed a bug in hashNode (before many, many nodes were hashed to the same
@@ -679,16 +679,16 @@ class DistHash(Chare):
         self.overlapPElist = {}
         self.mappedPElist = {}
         for idx in self.overlapPElist:
-            self.overlapPElist[idx] = (feeders[self.overlapPElist[idx][0]][1], hashes[self.overlapPElist[idx][1]][1]) 
+            self.overlapPElist[idx] = (feeders[self.overlapPElist[idx][0]][1], hashes[self.overlapPElist[idx][1]][1])
 
 
         myFut = self.feederGroup.addFeedbackRateChannelOrigin(self.overlapPElist, awaitable=True)
-        myFut.get()        
+        myFut.get()
         #self.feedbackChannels = [Channel(self, remote=proxy) for proxy in feederProxies]
 
         myFut = self.hWorkersFull.addFeedbackRateChannelDest(self.overlapPElist,awaitable=True)
         myFut.get()
-        
+
         # Establish channels from each feeder worker to each hash worker
         myFut = self.feederGroup.addDestChannel(self.hashWorkerProxies , awaitable=True)
         myFut.get()
@@ -775,30 +775,30 @@ class DistHash(Chare):
     #         if all([hashWorkerStatus[ch] < 0 for ch in self.hashWorkerChannels]):
     #             doneFut.send(1)
     #             break
-    
+
     @coro
     def levelDone(self):
         return all(self.hWorkers.awaitLevel(ret=True).get())
-    
+
     @coro
     def getLevelList(self):
         nextlevel = Future()
         self.hWorkersFull.getLevelList(nextlevel)
         return nextlevel.get()
-    
+
     @coro
     def scheduleNextLevel(self,clearTable=True):
         doneFuts = [Future() for k in range(len(self.feederProxies))]
         for k in range(len(doneFuts)):
             self.feederProxies[k].initList(doneFuts[k])
-        
+
         cnt = 0
         for fut in charm.iwait(doneFuts):
             cnt += fut.get()
-        
+
         nextLevel = self.hWorkersFull.getLevelSizes(ret=True).get()
         nextLevelSize = sum(nextLevel)
-        
+
         hashPEidx = 0
         doneFuts = []
         feederPEOffset = 0
@@ -822,7 +822,7 @@ class DistHash(Chare):
             pendingCnt = sum(self.localVarGroup.getSchedCount(ret=True).get())
             if pendingCnt == 0:
                 break
-    
+
     @coro
     def awaitShutdown(self):
         if not self.queryMutexDone is None:
@@ -855,17 +855,17 @@ class DistHash(Chare):
         for fut in charm.iwait(doneFuts):
             cnt += fut.get()
         # print('**** Count is ' + str(cnt) + ' ****')
-        
-        
+
+
         allDone.send(cnt)
         self.hWorkers.listen()
         # print('All workers done!')
         # self.hWorkers.listen()
-    
+
     @coro
     def clearHashTable(self):
         self.hWorkersFull.clearHashTable(awaitable=True).get()
-    
+
     @coro
     def resetLevelCount(self):
         self.hWorkersFull.resetLevelCount(awaitable=True).get()
