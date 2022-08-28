@@ -770,7 +770,11 @@ class successorWorker(Chare):
         self.rsDepth += 1
         # Compute all of the adjacent nodes (from among the unflipped hyperplanes)
         H2 = self.constraints.copy()
-        successorList = self.processNodeSuccessors(INTrep,self.N,H2,**self.processNodesArgs,payload=payload).get()[0]
+        successorList, _, witnessList = self.processNodeSuccessors(INTrep,self.N,H2,**self.processNodesArgs,payload=payload).get()
+        if type(witnessList) is list and len(witnessList) == len(successorList):
+            findWitnessLocally = False
+        else:
+            findWitnessLocally = True
         #print(f'PE {charm.myPe()}: successors of {INTrep} are {successorList}')
         self.rsRegionCount += 1
         #print(f'PE {charm.myPe()} working on region {INTrep}; found successors {successorList}')
@@ -779,21 +783,26 @@ class successorWorker(Chare):
             # Put check for path to root here...
             H = self.constraints.copy()
             H[successorList[ii][1],:] = -H[successorList[ii][1],:]
-            interiorPoint = region_helpers.findInteriorPoint(H,lpObj=self.rsLP)
+            if findWitnessLocally:
+                interiorPoint = region_helpers.findInteriorPoint(H,lpObj=self.rsLP)
+            else:
+                interiorPoint = witnessList[ii]
             # If the ray connecting interiorPoint to the origin point doesn't pass through the current
             # face, then we shouldn't explore this region from *the current* region (another will count it)
             # This face is stored in the third position of an element of successorList
             if interiorPoint is None:
                 print(f'PE {charm.myPe()}: Something went wrong for region {INTrep}')
-            if interiorPoint is not None: # and np.sign(H[successorList[ii][2],1:] @ interiorPoint) + np.sign(H[successorList[ii][2],1:] @ self.flippedConstraints.pt) != 0:
+            else:
                 rayEval = (H[:,0] + (H[:,1:] @ interiorPoint).flatten()).flatten() / (-H[:,1:] @ (-interiorPoint + self.flippedConstraints.pt)).flatten()
                 #print(rayEval)
                 rayScalar = np.min( np.where( rayEval < 0, np.inf, rayEval ) )
                 rayHit = interiorPoint + rayScalar * (self.flippedConstraints.pt - interiorPoint)
-                H2 = self.constraints.copy()
+
                 H2[INTrep,:] = -H2[INTrep,:]
-                if np.all(-H2[:,1:] @ rayHit - H2[:,0].reshape(-1,1) <= self.tol + self.rTol * np.abs(H2[:,0].reshape(-1,1))):
-                    print(f'PE {charm.myPe()}: Visiting {successorList[ii][1]}')
+                currentRegionIsParent = np.all(-H2[:,1:] @ rayHit - H2[:,0].reshape(-1,1) <= self.tol + self.rTol * np.abs(H2[:,0].reshape(-1,1)))
+                H2[INTrep,:] = -H2[INTrep,:]
+                if currentRegionIsParent:
+                    #print(f'PE {charm.myPe()}: Visiting {successorList[ii][1]}')
                     peToUse = -1
                     if self.rsPeFree:
                         peToUse = self.rsScheduler.schedNextFreePE(ret=True).get()
@@ -1013,7 +1022,7 @@ class successorWorker(Chare):
 
                 if not cont:
                     H[INTrep,:] = -H[INTrep,:]
-                    return [successors, -1]
+                    return successors, -1, []
 
         # facesInt = np.full(self.N,0,dtype=bool)
         sel = tuple(np.array(intIdx,dtype=np.uint64)[faces].tolist())
@@ -1024,9 +1033,9 @@ class successorWorker(Chare):
 
         # return [successors, bytes(np.packbits(facesInt,bitorder='little'))]
         if not self.doRS:
-            return [[], sel]
+            return [], sel, []
         else:
-            return [successors,sel]
+            return successors, sel, []
 
 
 
