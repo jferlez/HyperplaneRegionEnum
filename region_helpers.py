@@ -191,6 +191,32 @@ def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
     N = H2.shape[0]
 
     H = copy(H2)
+    obj = np.zeros(n+1,dtype=np.float64)
+    obj[n] = -1
+    status, sol = lpObj.runLP( \
+                    obj, \
+                    np.vstack([ \
+                               np.hstack([-H[:,1:], np.ones((N,1),dtype=np.float64)]), \
+                               -obj \
+                            ]), \
+                    np.hstack([H[:,0], 1.0]), \
+                    lpopts = {'solver':solver}
+                )
+    if status == 'optimal':
+        sol = np.array(sol)[:n,:].reshape(-1,1)
+        return sol
+    else:
+        return None
+
+def findInteriorPointOld(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
+    if lpObj is None:
+       lpObj = encapsulateLP.encapsulateLP()
+       lpObj.initSolver(solver=solver)
+
+    n = H2.shape[1]-1
+    N = H2.shape[0]
+
+    H = copy(H2)
 
     status, sol = lpObj.runLP( \
                     np.ones(n,dtype=np.float64), \
@@ -199,7 +225,7 @@ def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
                     lpopts = {'solver':solver}
                 )
     if status == 'optimal':
-        
+
         actHypers = np.nonzero(np.isclose( -H[:,1:] @ sol , H[:,0], atol=tol, rtol=rTol))[0]
         if len(actHypers) == 0:
             return None
@@ -225,7 +251,7 @@ def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
         # newSol can be connected to origSol with a segment whose midpoint is in the interior
         # of the region.
         return 0.5*(newSol + origSol)
-    
+
     else:
         return None
 

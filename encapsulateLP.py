@@ -36,7 +36,7 @@ class encapsulateLP():
                 # Something went wrong with the CLP solver, so force use of GLPK
                 print(' ')
                 print('********************  PE' + msgID + ' WARNING!!  ********************')
-                print('PE' + msgID + ': Needed to fallback to GLPK for unknown reasons!!' ) 
+                print('PE' + msgID + ': Needed to fallback to GLPK for unknown reasons!!' )
                 print(' ')
                 status = 'unk'
 
