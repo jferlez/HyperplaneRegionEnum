@@ -15,7 +15,7 @@ from cylp.py.modeling.CyLPModel import CyLPArray
 import sys
 import warnings
 import numba as nb
-# import TLLHypercubeReach 
+# import TLLHypercubeReach
 import posetFastCharm_numba
 import region_helpers
 
@@ -97,7 +97,12 @@ class Poset(Chare):
             ))
         self.succGroupFull = Group(self.successorChare,args=[])
         charm.awaitCreation(self.succGroupFull)
-        self.succGroupFull.initPEs(self.posetPElist)
+
+        # Create a PE scheduler Chare for use in Reverse Search implementations
+        self.rsPeScheduler = Chare(peSchedulerRS,args=[self.succGroupFull,self.posetPElist])
+        charm.awaitCreation(self.rsPeScheduler)
+
+        self.succGroupFull.initPEs(self.posetPElist,rsScheduler=self.rsPeScheduler)
         secs = [self.succGroupFull[r[0]:r[1]:r[2]] for r in self.posetPEs]
         self.succGroup = charm.combine(*secs)
         successorProxies = self.succGroupFull.getProxies(ret=True).get()
@@ -105,6 +110,7 @@ class Poset(Chare):
                 [successorProxies[r[0]:r[1]:r[2]] for r in self.posetPEs] \
             ))
         self.useGPU = False
+
         # Initialize a new distributed hash table:
         self.distHashTable = Chare(DistributedHash.DistHash,args=[
             self.succGroupFull, \
@@ -347,14 +353,103 @@ class Poset(Chare):
         self.populated = True
         return checkVal
 
+    @coro
+    def populatePosetRS(self, opts={}):
+        if self.populated:
+            return
+
+        opts['reverseSearch'] = True
+        self.succGroup.setMethod(**opts)
+        self.rsPeScheduler.resetScheduler(awaitable=True).get()
+
+        checkVal = True
+        level = 0
+        thisLevel = [(self.flippedConstraints.root,)]
+        posetLen = 1
+        timedOut = False
+
+        # Start reverse search on the root on the first PE
+        peToUse = self.rsPeScheduler.schedNextFreePE(ret=True).get()
+        if peToUse >= 0:
+            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root)
+        else:
+            print('Error: RS Pe scheduler not configured properly')
+
+        self.rsPeScheduler.awaitResult(awaitable=True).get()
+
+        statsFut = Future()
+        self.succGroupFull.getStats(statsFut)
+        stats = statsFut.get()
+        print('Total LPs used: ' + str(stats))
+
+        print('Checker returned value: ' + str(checkVal))
+
+        # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
+        print('Computed a (partial) poset of size: ' + str(stats['RSRegionCount']))
+
+        if timedOut:
+            print('Poset computation timed out...')
+        # return [i.iINT for i in self.hashTable.keys()]
+        self.populated = True
+        return checkVal
+
+
+class peSchedulerRS(Chare):
+
+    def __init__(self, successorGroup, posetPElist):
+        self.succGroup = successorGroup
+        self.posetPElist = posetPElist
+        self.peFree = copy(self.posetPElist)
+        self.resultFut = None
+
+    @coro
+    def resetScheduler(self):
+        self.peFree = copy(self.posetPElist)
+        self.succGroup.setPeAvailableRS(True,awaitable=True).get()
+        self.resultFut = None
+
+    @coro
+    def awaitResult(self):
+        self.resultFut = Future()
+        self.resultFut.get()
+
+    # If there is a PE available, schedule it. If there isn't, return -1 so the successorWorker
+    # knows that the scheduling was unsuccessful (as my be the case due to concurrency issues)
+    @coro
+    def schedNextFreePE(self):
+        if len(self.peFree) > 1:
+            return self.peFree.pop()
+        elif len(self.peFree) == 1:
+            lastFreePe = self.peFree.pop()
+            self.succGroup.setPeAvailableRS(False,awaitable=True).get()
+            return lastFreePe
+        else:
+            return -1
+
+    @coro
+    def freePe(self,pe):
+        self.peFree.append(pe)
+        if len(self.peFree) == len(self.posetPElist):
+            print(f'*** All done! {self.peFree} ***')
+            self.resultFut.send(1)
+        self.succGroup.setPeAvailableRS(True,awaitable=True).get()
+
+    @coro
+    def setrsDone(self):
+        self.succGroup.setrsDone(awaitable=True).get()
 
 
 
 class successorWorker(Chare):
 
-    def initPEs(self,pes):
+    def initPEs(self,pes,rsScheduler=None):
         self.posetPElist = pes
         self.timedOut = False
+        self.rsScheduler = rsScheduler
+        self.rsPeFree = True
+        self.rsDone = False
+        self.rsDepth = 0
+        self.rsRegionCount = 0
 
     def initialize(self,N,constraints,timeout):
         self.workInts = []
@@ -366,18 +461,25 @@ class successorWorker(Chare):
         self.processNodesArgs = {'solver':'glpk','ret':True}
         # Defaults to glpk, so this empty call is ok:
         self.lp = encapsulateLP.encapsulateLP()
+        self.rsLP = encapsulateLP.encapsulateLP()
         # self.outChannels = []
         self.clockTimeout = (timeout + time.time()) if timeout is not None else None
         self.timedOut = False
-        self.stats = {'LPSolverCount':0, 'xferTime':0, 'numQueries':0, 'successfulQueries':0}
+        self.stats = {'LPSolverCount':0, 'xferTime':0, 'numQueries':0, 'successfulQueries':0, 'RSRegionCount':0}
+        self.rsPeFree = True
+        self.rsDone = False
+        self.rsDepth = 0
+        self.rsRegionCount = 0
     @coro
     def getTimeout(self):
         return self.timedOut
 
-    def setMethod(self,method='fastLP',solver='glpk',findAll=True,useQuery=False,useBounding=False,lpopts={},hashStore='bits',tol=1e-9,rTol=1e-9):
+    def setMethod(self,method='fastLP',solver='glpk',findAll=True,useQuery=False,useBounding=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
+        self.rsLP.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.useQuery = useQuery
         self.useBounding = useBounding
+        self.doRS = reverseSearch
         self.tol = tol
         self.rTol = rTol
         if hashStore == 'bits':
@@ -412,9 +514,14 @@ class successorWorker(Chare):
         setattr(self,prop,val)
 
     @coro
+    def setPeAvailableRS(self,status):
+        self.rsPeFree = status
+
+    @coro
     def getStats(self, statsFut):
         if charm.myPe() in self.posetPElist:
             self.stats['LPSolverCount'] += self.lp.lpCount
+            self.stats['RSRegionCount'] += self.rsRegionCount
         retVal = defaultdict(int) if not charm.myPe() in self.posetPElist else self.stats
         self.reduce(statsFut,retVal,DictAccum)
 
@@ -446,7 +553,7 @@ class successorWorker(Chare):
         self.queryChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
         self.queryMutexChannel = None
         if not self.rateChannel is None:
-            self.queryMutexChannel = Channel(self, remote=distHashProxy) 
+            self.queryMutexChannel = Channel(self, remote=distHashProxy)
         # self.numHashBits = 1
         # while self.numHashBits < self.numHashWorkers:
         #     self.numHashBits = self.numHashBits << 1
@@ -656,6 +763,50 @@ class successorWorker(Chare):
         self.workInts = [successorList[ii][1] for ii in range(len(successorList))]
         # successorList = [successorList[ii][0] for ii in range(len(successorList))]
 
+    @coro
+    def reverseSearch(self,INTrep,payload=None):
+        #print(f'PE {charm.myPe()}: working on {INTrep}')
+        #print(f'PE {charm.myPe()} working on region {INTrep}')
+        self.rsDepth += 1
+        # Compute all of the adjacent nodes (from among the unflipped hyperplanes)
+        H2 = self.constraints.copy()
+        successorList = self.processNodeSuccessors(INTrep,self.N,H2,**self.processNodesArgs,payload=payload).get()[0]
+        #print(f'PE {charm.myPe()}: successors of {INTrep} are {successorList}')
+        self.rsRegionCount += 1
+        #print(f'PE {charm.myPe()} working on region {INTrep}; found successors {successorList}')
+
+        for ii in range(len(successorList)):
+            # Put check for path to root here...
+            H = self.constraints.copy()
+            H[successorList[ii][1],:] = -H[successorList[ii][1],:]
+            interiorPoint = region_helpers.findInteriorPoint(H,lpObj=self.rsLP)
+            # If the ray connecting interiorPoint to the origin point doesn't pass through the current
+            # face, then we shouldn't explore this region from *the current* region (another will count it)
+            # This face is stored in the third position of an element of successorList
+            if interiorPoint is None:
+                print(f'PE {charm.myPe()}: Something went wrong for region {INTrep}')
+            if interiorPoint is not None: # and np.sign(H[successorList[ii][2],1:] @ interiorPoint) + np.sign(H[successorList[ii][2],1:] @ self.flippedConstraints.pt) != 0:
+                rayEval = (H[:,0] + (H[:,1:] @ interiorPoint).flatten()).flatten() / (-H[:,1:] @ (-interiorPoint + self.flippedConstraints.pt)).flatten()
+                #print(rayEval)
+                rayScalar = np.min( np.where( rayEval < 0, np.inf, rayEval ) )
+                rayHit = interiorPoint + rayScalar * (self.flippedConstraints.pt - interiorPoint)
+                H2 = self.constraints.copy()
+                H2[INTrep,:] = -H2[INTrep,:]
+                if np.all(-H2[:,1:] @ rayHit - H2[:,0].reshape(-1,1) <= self.tol + self.rTol * np.abs(H2[:,0].reshape(-1,1))):
+                    print(f'PE {charm.myPe()}: Visiting {successorList[ii][1]}')
+                    peToUse = -1
+                    if self.rsPeFree:
+                        peToUse = self.rsScheduler.schedNextFreePE(ret=True).get()
+                    if peToUse >= 0:
+                        self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][3])
+                    else:
+                        self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][3],awaitable=True).get()
+        self.rsDepth -= 1
+        if self.rsDepth == 0:
+            self.rsScheduler.freePe(charm.myPe(),awaitable=True).get()
+        return
+
+
 
     @coro
     def retrieveFaces(self,fut):
@@ -849,15 +1000,19 @@ class successorWorker(Chare):
                 temp = copy(intIdxNoFlip)
                 temp.insert(insertIdx,intIdx[i])
                 successors.append( \
-                        [ copy(boolIdxNoFlip), tuple(temp) ]
+                        [ copy(boolIdxNoFlip), tuple(temp), intIdx[i], None ]
                     )
                 boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] ^ 1<<(intIdx[i] % 8)
                 # self.conversionTime += time.time() - t
                 t = time.time()
-                cont = self.thisProxy[self.thisIndex].hashAndSend(successors[-1],ret=True).get()
+                if not self.doRS:
+                    cont = self.thisProxy[self.thisIndex].hashAndSend(successors[-1],ret=True).get()
+                else:
+                    cont = True
                 self.stats['xferTime'] += time.time() - t
 
                 if not cont:
+                    H[INTrep,:] = -H[INTrep,:]
                     return [successors, -1]
 
         # facesInt = np.full(self.N,0,dtype=bool)
@@ -868,7 +1023,10 @@ class successorWorker(Chare):
         H[INTrep,:] = -H[INTrep,:]
 
         # return [successors, bytes(np.packbits(facesInt,bitorder='little'))]
-        return [[], sel]
+        if not self.doRS:
+            return [[], sel]
+        else:
+            return [successors,sel]
 
 
 
