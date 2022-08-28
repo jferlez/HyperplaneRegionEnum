@@ -6,9 +6,9 @@ import numpy as np
 class encapsulateLP():
 
     def __init__(self):
-        self.initializedSolvers = {}    
+        self.initializedSolvers = {}
         self.lpCount = 0
-    
+
     def initSolver(self, solver='glpk', opts={}):
         if solver == 'clp' and not 'clp' in self.initializedSolvers:
             self.d = opts['dim']
@@ -39,7 +39,7 @@ class encapsulateLP():
                 print('PE' + msgID + ': Needed to fallback to GLPK for unknown reasons!!' ) 
                 print(' ')
                 status = 'unk'
-        
+
         if status != 'optimal' and status != 'primal infeasible' and status != 'dual infeasible':
             if 'fallback' in lpopts:
                 lpopts['solver'] = lpopts['fallback']
