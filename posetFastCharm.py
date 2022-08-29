@@ -477,11 +477,10 @@ class successorWorker(Chare):
     def getTimeout(self):
         return self.timedOut
 
-    def setMethod(self,method='fastLP',solver='glpk',findAll=True,useQuery=False,useBounding=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9):
+    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.rsLP.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.useQuery = useQuery
-        self.useBounding = useBounding
         self.doRS = reverseSearch
         self.tol = tol
         self.rTol = rTol
@@ -500,7 +499,7 @@ class successorWorker(Chare):
                 print(f'WARNING: vertex region encodings are not supported for method {method}. Defaulting to bit region encodings...')
         elif method=='fastLP':
             self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP
-            self.processNodesArgs = {'solver':solver,'findAll':findAll}
+            self.processNodesArgs = {'solver':solver}
             if self.hashStoreMode == 2:
                 print(f'WARNING: vertex region encodings are not supported for method {method}. Defaulting to bit region encodings...')
         if len(lpopts) == 0:
@@ -508,7 +507,6 @@ class successorWorker(Chare):
         self.processNodesArgs['ret'] = True
         self.method = method
         self.solver = solver
-        self.findAll = findAll
         self.Hcol0Close = self.tol + self.rTol * np.abs(self.constraints[:,0])
         self.Hcol0CloseVertex = self.constraints[:,0] - self.Hcol0Close
 
@@ -964,7 +962,7 @@ class successorWorker(Chare):
             return to_keep, witnessList
 
     @coro
-    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',findAll=False,lpopts={},witness=None):
+    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None):
         # INTrep = INTrep[0]
         # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
         # t = time.time()
@@ -976,65 +974,11 @@ class successorWorker(Chare):
         H[INTrep,:] = -H[INTrep,:]
 
 
-        if findAll:
-            intIdx = list(range(self.N))
-
-
         d = H.shape[1]-1
 
 
-        doBounding = False
-        # Don't compute the bounding box if the number of flippable hyperplanes is almost 2*d,
-        # since we have to do 2*d LPs just to get the bounding box
-        if not findAll and len(intIdx) > 3*d:
-            doBounding = True
-        # If we want all the faces, we should decide whether to compute the bounding box based on
-        # the number N instead:
-        if findAll and N > 3*d:
-            doBounding = True
-        doBounding = doBounding and self.useBounding
-        if doBounding:
-            #lp = encapsulateLP(solver, opts={'dim':d})
-            # Find a bounding box
-            bbox = [[] for ii in range(d)]
-            ed = np.zeros((d,1))
-            for ii in range(d):
-                for direc in [1,-1]:
-                    ed[ii,0] = direc
-                    status, x = self.lp.runLP( \
-                        ed.flatten(), \
-                        -H[:,1:], H[:,0], \
-                        lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
-                        msgID = str(charm.myPe()) \
-                    )
-                    ed[ii,0] = 0
 
-                    if status == 'optimal':
-                        bbox[ii].append(np.array(x[ii,0]))
-                    elif status == 'dual infeasible':
-                        bbox[ii].append(-1*direc*np.inf)
-                    else:
-                        print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-                        print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected while computing bounding box!')
-                        return [set([]), 0]
-
-            #boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
-            #constraint_list_old = np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((-1,1))) >= -1e-07,axis=1)
-            constraint_list = np.zeros(len(H),dtype=bool)
-            bbox = np.array(bbox,dtype=np.float64)
-            finite = np.nonzero(~np.isinf(bbox))
-            idMat = np.eye(d)
-            constMat = [ np.hstack([np.array([ ((-1)**(finite[1][k]+1)) * bbox[finite[0][k],finite[1][k]]]) , ((-1)**(finite[1][k])) * idMat[finite[0][k],:]]) for k in range(len(finite[0]))]
-            constMat = np.vstack([constMat, H[0,:]])
-            for ii in range(len(H)):
-                constMat[-1,:] = H[ii,:]
-                testPt1 = region_helpers.findInteriorPoint( constMat ,solver=solver,lpObj=self.lp,rTol=self.rTol,tol=self.tol)
-                constMat[-1,:] = -H[ii,:]
-                testPt2 = region_helpers.findInteriorPoint( constMat ,solver=solver,lpObj=self.lp,rTol=self.rTol,tol=self.tol)
-                if testPt1 is not None and testPt2 is not None:
-                    constraint_list[ii] = True
-        else:
-            constraint_list = None
+        constraint_list = None
 
 
         faces, witnessList = self.thisProxy[self.thisIndex].concreteMinHRep(H,constraint_list,boolIdxNoFlip,intIdxNoFlip,intIdx,solver=solver,interiorPoint=witness,ret=True).get()
