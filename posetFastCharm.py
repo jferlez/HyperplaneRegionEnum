@@ -889,7 +889,7 @@ class successorWorker(Chare):
 
         # H2 should be a view into the CDD-formatted H matrix selected by taking boolIdx or intIdx rows thereof
         if interiorPoint is not None:
-            H = H2.copy() if not restricted else H2[constraint_list_in[0:len(H2)],:]
+            H = H2 if not restricted else H2[constraint_list_in[0:len(H2)],:]
         else:
             # This version of H has an extra row, that we can use for the another constraint
             H = np.vstack([H2, [H2[0,:]] ]) if not restricted else np.vstack([H2[constraint_list_in,:], [H2[0,:]] ])
@@ -957,8 +957,11 @@ class successorWorker(Chare):
                         witnessList.append(x)
                 else:
                     constraint_list[offsetIdx] = False
-
-        return to_keep, witnessList
+        if restricted:
+            # We are not solving full LPs, so the witness points aren't meaningful...
+            return to_keep, []
+        else:
+            return to_keep, witnessList
 
     @coro
     def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',findAll=False,lpopts={},witness=None):
