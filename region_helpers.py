@@ -185,7 +185,7 @@ def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None):
 def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
     if lpObj is None:
        lpObj = encapsulateLP.encapsulateLP()
-       lpObj.initSolver(solver=solver)
+       lpObj.initSolver(solver=solver,opts={'dim':(H2.shape[1])}),
 
     n = H2.shape[1]-1
     N = H2.shape[0]
@@ -197,9 +197,10 @@ def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
                     obj, \
                     np.vstack([ \
                                np.hstack([-H[:,1:], np.ones((N,1),dtype=np.float64)]), \
-                               -obj \
+                               -obj, \
+                               obj \
                             ]), \
-                    np.hstack([H[:,0], 1.0]), \
+                    np.hstack([H[:,0], 1.0, 0.0]), \
                     lpopts = {'solver':solver}
                 )
     if status == 'optimal':
