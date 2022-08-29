@@ -387,6 +387,9 @@ class Poset(Chare):
         # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
         print('Computed a (partial) poset of size: ' + str(stats['RSRegionCount']))
 
+        regionDist = self.succGroup.getProperty('rsRegionCount',ret=True).get()
+        print(f'Regions discovered by PE: {regionDist}')
+
         if timedOut:
             print('Poset computation timed out...')
         # return [i.iINT for i in self.hashTable.keys()]
@@ -512,6 +515,10 @@ class successorWorker(Chare):
     @coro
     def setProperty(self,prop,val):
         setattr(self,prop,val)
+
+    @coro
+    def getProperty(self,prop):
+        return getattr(self,prop)
 
     @coro
     def setPeAvailableRS(self,status):
