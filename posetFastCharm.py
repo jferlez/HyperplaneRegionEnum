@@ -1018,8 +1018,21 @@ class successorWorker(Chare):
                         print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected while computing bounding box!')
                         return [set([]), 0]
 
-            boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
-            constraint_list = np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((-1,1))) >= -1e-07,axis=1)
+            #boxCorners = np.array(np.meshgrid(*bbox)).T.reshape(-1,d).T
+            #constraint_list_old = np.any(((-H[:,1:] @ boxCorners) - H[:,0].reshape((-1,1))) >= -1e-07,axis=1)
+            constraint_list = np.zeros(len(H),dtype=bool)
+            bbox = np.array(bbox,dtype=np.float64)
+            finite = np.nonzero(~np.isinf(bbox))
+            idMat = np.eye(d)
+            constMat = [ np.hstack([np.array([ ((-1)**(finite[1][k]+1)) * bbox[finite[0][k],finite[1][k]]]) , ((-1)**(finite[1][k])) * idMat[finite[0][k],:]]) for k in range(len(finite[0]))]
+            constMat = np.vstack([constMat, H[0,:]])
+            for ii in range(len(H)):
+                constMat[-1,:] = H[ii,:]
+                testPt1 = region_helpers.findInteriorPoint( constMat ,solver=solver,lpObj=self.lp,rTol=self.rTol,tol=self.tol)
+                constMat[-1,:] = -H[ii,:]
+                testPt2 = region_helpers.findInteriorPoint( constMat ,solver=solver,lpObj=self.lp,rTol=self.rTol,tol=self.tol)
+                if testPt1 is not None and testPt2 is not None:
+                    constraint_list[ii] = True
         else:
             constraint_list = None
 
