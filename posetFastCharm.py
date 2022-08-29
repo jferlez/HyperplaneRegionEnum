@@ -371,7 +371,7 @@ class Poset(Chare):
         # Start reverse search on the root on the first PE
         peToUse = self.rsPeScheduler.schedNextFreePE(ret=True).get()
         if peToUse >= 0:
-            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root)
+            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root,witness=self.flippedConstraints.pt)
         else:
             print('Error: RS Pe scheduler not configured properly')
 
@@ -465,7 +465,7 @@ class successorWorker(Chare):
         # self.outChannels = []
         self.clockTimeout = (timeout + time.time()) if timeout is not None else None
         self.timedOut = False
-        self.stats = {'LPSolverCount':0, 'xferTime':0, 'numQueries':0, 'successfulQueries':0, 'RSRegionCount':0}
+        self.stats = {'LPSolverCount':0, 'xferTime':0, 'numQueries':0, 'successfulQueries':0, 'RSRegionCount':0, 'RSLPCount':0}
         self.rsPeFree = True
         self.rsDone = False
         self.rsDepth = 0
@@ -522,6 +522,7 @@ class successorWorker(Chare):
         if charm.myPe() in self.posetPElist:
             self.stats['LPSolverCount'] += self.lp.lpCount
             self.stats['RSRegionCount'] += self.rsRegionCount
+            self.stats['RSLPCount'] += self.rsLP.lpCount
         retVal = defaultdict(int) if not charm.myPe() in self.posetPElist else self.stats
         self.reduce(statsFut,retVal,DictAccum)
 
@@ -764,16 +765,17 @@ class successorWorker(Chare):
         # successorList = [successorList[ii][0] for ii in range(len(successorList))]
 
     @coro
-    def reverseSearch(self,INTrep,payload=None):
+    def reverseSearch(self,INTrep,payload=None,witness=None):
         #print(f'PE {charm.myPe()}: working on {INTrep}')
         #print(f'PE {charm.myPe()} working on region {INTrep}')
         self.rsDepth += 1
         # Compute all of the adjacent nodes (from among the unflipped hyperplanes)
         H2 = self.constraints.copy()
-        successorList, _, witnessList = self.processNodeSuccessors(INTrep,self.N,H2,**self.processNodesArgs,payload=payload).get()
+        successorList, _, witnessList = self.processNodeSuccessors(INTrep,self.N,H2,**self.processNodesArgs,payload=payload,witness=witness).get()
         if type(witnessList) is list and len(witnessList) == len(successorList):
             findWitnessLocally = False
         else:
+            #print(f'PE {charm.myPe()}: successorList = {successorList}; witnessList = {witnessList}')
             findWitnessLocally = True
         #print(f'PE {charm.myPe()}: successors of {INTrep} are {successorList}')
         self.rsRegionCount += 1
@@ -807,9 +809,9 @@ class successorWorker(Chare):
                     if self.rsPeFree:
                         peToUse = self.rsScheduler.schedNextFreePE(ret=True).get()
                     if peToUse >= 0:
-                        self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][3])
+                        self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][3],witness=interiorPoint)
                     else:
-                        self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][3],awaitable=True).get()
+                        self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][3],witness=interiorPoint,awaitable=True).get()
         self.rsDepth -= 1
         if self.rsDepth == 0:
             self.rsScheduler.freePe(charm.myPe(),awaitable=True).get()
@@ -870,16 +872,17 @@ class successorWorker(Chare):
 
 
     @coro
-    def concreteMinHRep(self,H2,constraint_list_in,boolIdxNoFlip,intIdxNoFlip,intIdx,solver='glpk',safe=False):
-
+    def concreteMinHRep(self,H2,constraint_list_in,boolIdxNoFlip,intIdxNoFlip,intIdx,solver='glpk',interiorPoint=None):
+        witnessList = []
+        safe = False
         if len(intIdx) == 0:
             return np.full(0,0,dtype=bool)
 
         restricted = False if constraint_list_in is None else True
 
         # H2 should be a view into the CDD-formatted H matrix selected by taking boolIdx or intIdx rows thereof
-        if safe:
-            H = H2 if not restricted else H2[constraint_list_in[0:len(H2)],:]
+        if interiorPoint is not None:
+            H = H2.copy() if not restricted else H2[constraint_list_in[0:len(H2)],:]
         else:
             # This version of H has an extra row, that we can use for the another constraint
             H = np.vstack([H2, [H2[0,:]] ]) if not restricted else np.vstack([H2[constraint_list_in,:], [H2[0,:]] ])
@@ -908,38 +911,54 @@ class successorWorker(Chare):
                 # then treat it as redundant and skip it (saving the LP)
                 if q > 0:
                     continue
-            if not safe:
+            if interiorPoint is None:
                 # Set the extra row to the negation of the pre-relaxed current constraint
                 H[-1,:] = -H2[intIdx[idx],:]
-            H[offsetIdx,0] += 1
-            status, x = self.lp.runLP( \
-                    H2[intIdx[idx],1:], \
-                    -H[constraint_list,1:], \
-                    H[constraint_list,0], \
-                    lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
-                    msgID = str(charm.myPe()) \
-                )
-            H[offsetIdx,0] -= 1
+                H[offsetIdx,0] += 1
+                status, x = self.lp.runLP( \
+                        H2[intIdx[idx],1:], \
+                        -H[constraint_list,1:], \
+                        H[constraint_list,0], \
+                        lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
+                        msgID = str(charm.myPe()) \
+                    )
+                H[offsetIdx,0] -= 1
 
-            if status != 'optimal' and (safe or status != 'primal infeasible') and status != 'dual infeasible':
-                print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
-                print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
-                print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
-                return [set([]), 0]
-            if (safe and -H2[intIdx[idx],1:]@x < H2[intIdx[idx],0]) \
-                or (not safe and (status == 'primal infeasible' or np.all(-H2[intIdx[idx],1:]@x - H2[intIdx[idx],0] <= 1e-10))):
-                # inequality is redundant, so skip it
-                constraint_list[offsetIdx] = False
+                if status != 'optimal' and (safe or status != 'primal infeasible') and status != 'dual infeasible':
+                    print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
+                    print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
+                    print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
+                    return [set([]), 0]
+                if (safe and -H2[intIdx[idx],1:]@x < H2[intIdx[idx],0]) \
+                    or (not safe and (status == 'primal infeasible' or np.all(-H2[intIdx[idx],1:]@x - H2[intIdx[idx],0] <= 1e-10))):
+                    # inequality is redundant, so skip it
+                    constraint_list[offsetIdx] = False
+                else:
+                    to_keep.append(idx)
             else:
-                to_keep.append(idx)
+                H[offsetIdx,:] = -H[offsetIdx,:]
+                x = region_helpers.findInteriorPoint(H,solver=solver,lpObj=self.lp,tol=self.tol,rTol=self.rTol)
+                H[offsetIdx,:] = -H[offsetIdx,:]
+                if x is not None:
+                    # If x satisfies all of the original constraints then it is a redundant hyperplane
+                    # intersecting with at least d other hyperplanes
+                    notAdjacent = np.all(-H[:,1:] @ x - H[:,0].reshape(-1,1) <= self.tol + self.rTol * np.abs(H[:,0].reshape(-1,1)))
+                    if notAdjacent:
+                        constraint_list[offsetIdx] = False
+                    else:
+                        to_keep.append(idx)
+                        witnessList.append(x)
+                else:
+                    constraint_list[offsetIdx] = False
 
-        return to_keep
+        return to_keep, witnessList
 
     @coro
-    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',findAll=False,lpopts={}):
+    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',findAll=False,lpopts={},witness=None):
         # INTrep = INTrep[0]
         # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
         # t = time.time()
+        witnessList = []
         INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
 
 
@@ -995,7 +1014,7 @@ class successorWorker(Chare):
             constraint_list = None
 
 
-        faces = self.thisProxy[self.thisIndex].concreteMinHRep(H,constraint_list,boolIdxNoFlip,intIdxNoFlip,intIdx,solver=solver,safe=False,ret=True).get()
+        faces, witnessList = self.thisProxy[self.thisIndex].concreteMinHRep(H,constraint_list,boolIdxNoFlip,intIdxNoFlip,intIdx,solver=solver,interiorPoint=witness,ret=True).get()
 
         successors = []
         for i in faces:
@@ -1022,7 +1041,7 @@ class successorWorker(Chare):
 
                 if not cont:
                     H[INTrep,:] = -H[INTrep,:]
-                    return successors, -1, []
+                    return successors, -1, witnessList
 
         # facesInt = np.full(self.N,0,dtype=bool)
         sel = tuple(np.array(intIdx,dtype=np.uint64)[faces].tolist())
@@ -1033,9 +1052,9 @@ class successorWorker(Chare):
 
         # return [successors, bytes(np.packbits(facesInt,bitorder='little'))]
         if not self.doRS:
-            return [], sel, []
+            return [], sel, witnessList
         else:
-            return successors, sel, []
+            return successors, sel, witnessList
 
 
 
