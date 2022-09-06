@@ -203,12 +203,15 @@ class Poset(Chare):
             return
         self.clearTable = 'speed'
         self.retrieveFaces = False
-        defaultSettings = ['clearTable','retrieveFaces']
+        self.verbose = True
+        defaultSettings = ['clearTable','retrieveFaces','verbose']
         for ky in defaultSettings:
             if ky in opts:
                 setattr(self,ky,opts[ky])
-                opts.pop(ky)
+                #opts.pop(ky)
 
+
+        #print(f'verbose is {self.verbose}')
         self.succGroup.setMethod(**opts)
 
         if 'hashStore' in opts and opts['hashStore'] == 'vertex':
@@ -339,13 +342,14 @@ class Poset(Chare):
         statsFut = Future()
         self.succGroupFull.getStats(statsFut)
         stats = statsFut.get()
-        stats['levelSizes'] = levelSizes
-        print('Total LPs used: ' + str(stats))
+        if self.verbose:
+            stats['levelSizes'] = levelSizes
+            print('Total LPs used: ' + str(stats))
 
-        print('Checker returned value: ' + str(checkVal))
+            print('Checker returned value: ' + str(checkVal))
 
-        # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
-        print('Computed a (partial) poset of size: ' + str(posetLen))
+            # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
+            print('Computed a (partial) poset of size: ' + str(posetLen))
 
         if timedOut:
             print('Poset computation timed out...')
@@ -477,13 +481,14 @@ class successorWorker(Chare):
     def getTimeout(self):
         return self.timedOut
 
-    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9):
+    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,verbose=True):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.rsLP.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.useQuery = useQuery
         self.doRS = reverseSearch
         self.tol = tol
         self.rTol = rTol
+        self.verbose = verbose
         if hashStore == 'bits':
             self.hashStoreMode = 0
         elif hashStore == 'list':
