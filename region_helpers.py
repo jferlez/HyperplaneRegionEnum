@@ -6,7 +6,7 @@ import posetFastCharm_numba
 
 class flipConstraints:
 
-    def __init__(self, nA, nb, pt, fA=None, fb=None):
+    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9):
         v = nA @ pt
         v = v.flatten() - nb.flatten()
         self.flipMapN = np.where(v<0,-1,1)
@@ -21,7 +21,7 @@ class flipConstraints:
         if (fA is not None) and (fb is not None):
             v = fA @ pt
             v = v.flatten() - fb.flatten()
-            if len(np.flatnonzero(v<0)) > 0:
+            if len(np.flatnonzero(v<-tol)) > 0:
                 raise ValueError('Supplied point must satisfy all specified \'fixed\' constraints -- i.e. fA @ pt >= fb !')
             self.fA = fA
             self.fb = fb
@@ -62,7 +62,7 @@ class flipConstraints:
 
 class flipConstraintsReduced(flipConstraints):
 
-    def __init__(self, nA, nb, pt, fA=None, fb=None):
+    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9):
         super().__init__(nA, nb, pt, fA=fA, fb=fb)
         if self.fA is None:
             return
@@ -92,7 +92,7 @@ class flipConstraintsReduced(flipConstraints):
 
 class flipConstraintsReducedMin(flipConstraints):
 
-    def __init__(self, nA, nb, pt, fA=None, fb=None):
+    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9):
         super().__init__(nA, nb, pt, fA=fA, fb=fb)
         if self.fA is None:
             return
