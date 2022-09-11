@@ -66,18 +66,18 @@ class flipConstraintsReduced(flipConstraints):
         super().__init__(nA, nb, pt, fA=fA, fb=fb)
         if self.fA is None:
             return
-        
+
         mat = copy(self.constraints[(self.N-1):,:])
         self.redundantFlips = np.full(self.N,1,dtype=np.float64)
         for k in range(self.N):
             mat[0,:] = self.constraints[k,:]
             if len(lpMinHRep(mat,None,[0])) == 0:
                 self.redundantFlips[k] = -1
-        
+
         self.nA = np.diag(self.redundantFlips) @ self.nA
         self.nb = np.diag(self.redundantFlips) @ self.nb
         self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
-        
+
         self.flipMapN = self.redundantFlips * self.flipMapN
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
         self.flipMapSet = frozenset(self.flipMapSetNP)
@@ -96,7 +96,7 @@ class flipConstraintsReducedMin(flipConstraints):
         super().__init__(nA, nb, pt, fA=fA, fb=fb)
         if self.fA is None:
             return
-        
+
         mat = copy(self.constraints[(self.N-1):,:])
         self.redundantFlips = np.full(self.N,1,dtype=np.float64)
         for k in range(self.N):
@@ -182,7 +182,7 @@ def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None):
 
 # H2 is a CDD-style matrix specifying inequality constraints
 # Function returns an interior point to the associated region, if one exists, and None otherwise
-def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
+def findInteriorPointFull(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
     if lpObj is None:
        lpObj = encapsulateLP.encapsulateLP()
        lpObj.initSolver(solver=solver,opts={'dim':(H2.shape[1])}),
@@ -203,8 +203,13 @@ def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
                     np.hstack([H[:,0], 1.0, 0.0]), \
                     lpopts = {'solver':solver}
                 )
+    return status, (np.frombuffer(sol) if status=='optimal' else None)
+
+def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
+    status, sol = findInteriorPointFull(H2,solver=solver,lpObj=lpObj,tol=tol,rTol=rTol)
+    n = H2.shape[1]-1
     if status == 'optimal' and sol[-1] > 1e-10:
-        sol = np.array(sol)[:n,:].reshape(-1,1)
+        sol = np.array(sol)[:n].reshape(-1,1)
         return sol
     else:
         return None
