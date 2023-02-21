@@ -194,7 +194,7 @@ class HashWorker(Chare):
             self.queryMutexChannel = Channel(self, remote=distHashProxy)
     @coro
     def closeQueryChannels(self):
-        if not charm.myPe() in self.posetPElist:
+        if not charm.myPe() in self.hashPElist:
             return
         for ch in self.queryChannels:
             ch.send(-2)
@@ -204,15 +204,15 @@ class HashWorker(Chare):
     @coro
     def initRateChannel(self,overlapPElist ):
         self.rateChannel = None
-        self.overlapPElist = overlapPElist
-        if not charm.myPe() in self.posetPElist:
+        self.overlapPElistAsFeeder = overlapPElist
+        if not charm.myPe() in self.hashPElist:
             return
         if charm.myPe() in overlapPElist:
             self.rateChannel = Channel(self,remote=overlapPElist[charm.myPe()][1])
         # self.feedbackChannel = Channel(self,remote=proxy)
 
     def startListening(self):
-        if not charm.myPe() in self.posetPElist:
+        if not charm.myPe() in self.hashPElist:
             return
         for ch in self.hashChannels:
             ch.send(-100)
