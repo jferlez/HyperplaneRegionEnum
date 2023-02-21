@@ -182,7 +182,40 @@ class HashWorker(Chare):
             self.numBytes = self.N/4
         else:
             self.numBytes = int(self.N/4)+1
-        # print(self.outChannels)
+        # print(self.hashChannels)
+    @coro
+    def initQueryChannel(self, procGroupProxies, distHashProxy):
+        if not charm.myPe() in self.posetPElist:
+            return
+        # self.numHashWorkers = len(procGroupProxies)
+        self.queryChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
+        self.queryMutexChannel = None
+        if not self.rateChannel is None:
+            self.queryMutexChannel = Channel(self, remote=distHashProxy)
+    @coro
+    def closeQueryChannels(self):
+        if not charm.myPe() in self.posetPElist:
+            return
+        for ch in self.queryChannels:
+            ch.send(-2)
+        if not self.queryMutexChannel is None:
+            self.queryMutexChannel.send(-2)
+
+    @coro
+    def initRateChannel(self,overlapPElist ):
+        self.rateChannel = None
+        self.overlapPElist = overlapPElist
+        if not charm.myPe() in self.posetPElist:
+            return
+        if charm.myPe() in overlapPElist:
+            self.rateChannel = Channel(self,remote=overlapPElist[charm.myPe()][1])
+        # self.feedbackChannel = Channel(self,remote=proxy)
+
+    def startListening(self):
+        if not charm.myPe() in self.posetPElist:
+            return
+        for ch in self.hashChannels:
+            ch.send(-100)
 
 
     @coro
