@@ -86,7 +86,7 @@ class HashWorker(Chare):
         self.hashPElist = pes
         self.feederPElist = feederPEs
         self.overlapPElist = overlapPEs
-        self.inChannels = []
+        self.hashChannelsHashEnd = []
         self.level = -1
         self.levelList = []
         self.levelDone = True
@@ -130,17 +130,17 @@ class HashWorker(Chare):
         self.pos = pos
 
     @coro
-    def addOriginChannel(self,feederProxies):
+    def initHashChannelHashEnd(self,feederProxies):
         if not charm.myPe() in self.hashPElist:
             return
         self.feederProxies = feederProxies
         self.numFeederWorkers = len(feederProxies)
-        self.inChannels = [Channel(self, remote=proxy) for proxy in feederProxies]
+        self.hashChannelsHashEnd = [Channel(self, remote=proxy) for proxy in feederProxies]
         self.status = {}
         self.messages = {}
         self.workerDone = {}
         self.localListenerOnline = {}
-        for ch in self.inChannels:
+        for ch in self.hashChannelsHashEnd:
             self.status[ch] = 0
             self.messages[ch] = {'msg':None, 'fut':None}
             self.workerDone[ch] = None
@@ -148,18 +148,18 @@ class HashWorker(Chare):
 
 
     @coro
-    def addQueryOriginChannel(self,feederProxies):
+    def initQueryChannelHashEnd(self,feederProxies):
         if not charm.myPe() in self.hashPElist:
             return
         # Call this **after** establishing the hashing channels
         # self.feederProxies = feederProxies
         # self.numFeederWorkers = len(feederProxies)
-        self.queryChannels = [Channel(self, remote=proxy) for proxy in feederProxies]
+        self.queryChannelsHashEnd = [Channel(self, remote=proxy) for proxy in feederProxies]
         self.queryStatus = {}
         self.queryMessages = {}
         self.queryDone = {}
         self.queryListenerOnline = {}
-        for ch in self.queryChannels:
+        for ch in self.queryChannelsHashEnd:
             self.queryStatus[ch] = 0
             self.queryMessages[ch] = {'msg':None, 'fut':None}
             self.queryDone[ch] = None
@@ -168,11 +168,11 @@ class HashWorker(Chare):
     # The following two methods allow a DistributedHash to function as a "feeder" to **another** DistributedHash!
     # To do: implement the feedback channel from the other DistributedHash...
     @coro
-    def addDestChannel(self, procGroupProxies):
+    def initHashChannel(self, procGroupProxies):
         if not charm.myPe() in self.hashPElist:
             return
         self.numHashWorkers = len(procGroupProxies)
-        self.outChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
+        self.hashChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
         self.numHashBits = 1
         while self.numHashBits < self.numHashWorkers:
             self.numHashBits = self.numHashBits << 1
@@ -191,14 +191,14 @@ class HashWorker(Chare):
             return
         self.feedbackChannel = Channel(self,remote=proxy)
     @coro
-    def addFeedbackRateChannelDest(self,overlapPElist):
-        self.rateChannel = None
+    def initRateChannelHashEnd(self,overlapPElist):
+        self.rateChannelHashEnd = None
         self.termProxy = None
         self.overlapPElist = overlapPElist
         if not charm.myPe() in self.hashPElist:
             return
         if charm.myPe() in overlapPElist:
-            self.rateChannel = Channel(self,remote=overlapPElist[charm.myPe()][0])
+            self.rateChannelHashEnd = Channel(self,remote=overlapPElist[charm.myPe()][0])
         elif len(overlapPElist) > 0:
             self.termProxy = self.overlapPElist[ list(self.overlapPElist.keys())[0] ][0]
 
@@ -211,7 +211,7 @@ class HashWorker(Chare):
             # print('Listener started')
             # charm.wait([ch])
             # sig = str(random.random())
-            # before = [self.messages[chIt]['msg'] for chIt in self.inChannels]
+            # before = [self.messages[chIt]['msg'] for chIt in self.hashChannelsHashEnd]
             val = ch.recv()
             # print('Recieved val ' + str(val) + 'on PE ' + str(charm.myPe()))
             # Make sure we don't start reading until the previous level/poset was done
@@ -230,7 +230,7 @@ class HashWorker(Chare):
                 self.initiatedNodeProc = True
                 self.controlLoopback.send(1)
             # self.parentProxy.sendFeedbackMessage(-1*charm.myPe())
-            # print('----'*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'LocalListener ' + sig + ' -- initiatedNodeProc = ' + str(self.initiatedNodeProc) + ' Before: ' + str(before) + ' After: ' + str([self.messages[chIt]['msg'] for chIt in self.inChannels]))
+            # print('----'*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'LocalListener ' + sig + ' -- initiatedNodeProc = ' + str(self.initiatedNodeProc) + ' Before: ' + str(before) + ' After: ' + str([self.messages[chIt]['msg'] for chIt in self.hashChannelsHashEnd]))
             ackFut.get()
             # self.parentProxy.sendFeedbackMessage(charm.myPe())
             self.messages[ch]['msg'] = None
@@ -247,7 +247,7 @@ class HashWorker(Chare):
             # print('Listener started')
             # charm.wait([ch])
             # sig = str(random.random())
-            # before = [self.queryMessages[chIt]['msg'] for chIt in self.queryChannels]
+            # before = [self.queryMessages[chIt]['msg'] for chIt in self.queryChannelsHashEnd]
             val = ch.recv()
             # print(val)
             self.queryMessages[ch]['msg'] = val
@@ -260,7 +260,7 @@ class HashWorker(Chare):
                 self.initiatedQueryProc = True
                 self.controlLoopback.send(2)
             # self.parentProxy.sendFeedbackMessage(-1*charm.myPe())
-            # print('===='*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'QUERYLocalListener ' + sig + ' -- initiatedQueryProc = ' + str(self.initiatedNodeProc) + ' Before: ' + str(before) + ' After: ' + str([self.queryMessages[chIt]['msg'] for chIt in self.queryChannels]))
+            # print('===='*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'QUERYLocalListener ' + sig + ' -- initiatedQueryProc = ' + str(self.initiatedNodeProc) + ' Before: ' + str(before) + ' After: ' + str([self.queryMessages[chIt]['msg'] for chIt in self.queryChannelsHashEnd]))
             ackFut.get()
             # self.parentProxy.sendFeedbackMessage(charm.myPe())
             self.queryMessages[ch]['msg'] = None
@@ -281,22 +281,22 @@ class HashWorker(Chare):
                 m = loopbackIt.recv()
                 if m == -100:
                     break
-        for ch in self.inChannels:
+        for ch in self.hashChannelsHashEnd:
             self.status[ch] = 0
             self.messages[ch] = {'msg':None, 'fut':None}
             self.workerDone[ch] = None
         self.listenerStatus = []
-        for k in range(len(self.inChannels)):
-            self.listenerStatus.append( self.thisProxy[self.thisIndex].localListener(self.inChannels[k],k, ret=True) )
-            self.workerDone[self.inChannels[k]] = Future()
+        for k in range(len(self.hashChannelsHashEnd)):
+            self.listenerStatus.append( self.thisProxy[self.thisIndex].localListener(self.hashChannelsHashEnd[k],k, ret=True) )
+            self.workerDone[self.hashChannelsHashEnd[k]] = Future()
 
-        for ch in self.queryChannels:
+        for ch in self.queryChannelsHashEnd:
             self.queryStatus[ch] = 0
             self.queryMessages[ch] = {'msg':None, 'fut':None}
             self.queryDone[ch] = None
-        for k in range(len(self.queryChannels)):
-            self.listenerStatus.append( self.thisProxy[self.thisIndex].localQueryListener(self.queryChannels[k],k,ret=True) )
-            self.queryDone[self.queryChannels[k]] = Future()
+        for k in range(len(self.queryChannelsHashEnd)):
+            self.listenerStatus.append( self.thisProxy[self.thisIndex].localQueryListener(self.queryChannelsHashEnd[k],k,ret=True) )
+            self.queryDone[self.queryChannelsHashEnd[k]] = Future()
 
         # print('Done initListen on PE ' + str(charm.myPe()))
         self.level += 1
@@ -319,22 +319,22 @@ class HashWorker(Chare):
         yieldCount = 0
         cnt = 1
         msgCount = {}
-        for ch in self.inChannels:
+        for ch in self.hashChannelsHashEnd:
             msgCount[ch] = 0
-        while any([self.queryStatus[ch] > -2 for ch in self.queryChannels]) or \
-            any([self.status[ch] > -2 for ch in self.inChannels]): # or not free:
+        while any([self.queryStatus[ch] > -2 for ch in self.queryChannelsHashEnd]) or \
+            any([self.status[ch] > -2 for ch in self.hashChannelsHashEnd]): # or not free:
             # traceSig = random.random()
             # peSig = 2*charm.myPe()*'    ' + 'PE_' + str(charm.myPe()) + 2*(charm.numPes()+4 - charm.myPe())*' ' + '  '
             # indent = cnt*8*' '
             # prefix = peSig + indent + str(traceSig)
             # print(prefix + ' Hash worker on PE ' + str(charm.myPe()) + ' START STATE ---> [pendingChecks, pendingQueries] = ' + str([pendingChecks, pendingQueries]) +  \
-            #     'Node Listener status: ' + str([self.status[chIt] for chIt in self.inChannels]) + ' Query Listener status: ' + str([self.queryStatus[chIt] for chIt in self.queryChannels]) + ' ' \
-            #         + 'Node messages buffered: ' + str([self.messages[ch]['msg'] for ch in self.inChannels]) + ' Query messages buffered: ' + str([self.queryMessages[ch]['msg'] for ch in self.queryChannels])  + ' ' \
-            #             + 'Message buffers: ' + str([self.messages[ch]['fut'] for ch in self.inChannels]) + str([self.queryMessages[ch]['fut'] for ch in self.queryChannels]))
+            #     'Node Listener status: ' + str([self.status[chIt] for chIt in self.hashChannelsHashEnd]) + ' Query Listener status: ' + str([self.queryStatus[chIt] for chIt in self.queryChannelsHashEnd]) + ' ' \
+            #         + 'Node messages buffered: ' + str([self.messages[ch]['msg'] for ch in self.hashChannelsHashEnd]) + ' Query messages buffered: ' + str([self.queryMessages[ch]['msg'] for ch in self.queryChannelsHashEnd])  + ' ' \
+            #             + 'Message buffers: ' + str([self.messages[ch]['fut'] for ch in self.hashChannelsHashEnd]) + str([self.queryMessages[ch]['fut'] for ch in self.queryChannelsHashEnd]))
             # If we're running on the same PE as a feeder worker, and he hasn't signaled "free run mode" (i.e. he has no more work to do)
             # then wait for the feeder to transfer control
-            if not self.rateChannel is None and not free:
-                control = self.rateChannel.recv()
+            if not self.rateChannelHashEnd is None and not free:
+                control = self.rateChannelHashEnd.recv()
                 # print(prefix + ' RECEIVED RELEASE CONTROL SIGNAL ' + str(control) + ' on PE ' + str(charm.myPe()) + ' ')
                 if control == 2:
                     free = True
@@ -342,7 +342,7 @@ class HashWorker(Chare):
                     selfQuery = False
                     processOnly = True
                 if control <= 0:
-                    self.rateChannel.send(control)
+                    self.rateChannelHashEnd.send(control)
                     continue
                 if control == 5:
                     queryOnly = False
@@ -360,25 +360,25 @@ class HashWorker(Chare):
                     queryOnly = True
                     selfQuery = True
                     processOnly = False
-                if all([self.status[ch] <= -2 for ch in self.inChannels]) and \
-                        all([self.queryStatus[ch] <= -2 for ch in self.queryChannels]):
-                    self.rateChannel.send(min([self.status[ch] for ch in self.inChannels]))
+                if all([self.status[ch] <= -2 for ch in self.hashChannelsHashEnd]) and \
+                        all([self.queryStatus[ch] <= -2 for ch in self.queryChannelsHashEnd]):
+                    self.rateChannelHashEnd.send(min([self.status[ch] for ch in self.hashChannelsHashEnd]))
                     break
                 # print('Received control of ' + str(control) + ' on PE ' + str(charm.myPe()))
-                if all([self.messages[ch]['fut'] is None for ch in self.inChannels]) and \
-                    all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannels]):
-                    self.rateChannel.send(-1)
+                if all([self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd]) and \
+                    all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd]):
+                    self.rateChannelHashEnd.send(-1)
                     continue
-                if queryOnly and not selfQuery and all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannels]):
-                    self.rateChannel.send(-1)
+                if queryOnly and not selfQuery and all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd]):
+                    self.rateChannelHashEnd.send(-1)
                     continue
 
             # print(prefix + ' Starting trace on PE ' + str(charm.myPe()) + ' -------------------------')
             pendingWork = [3,3]
             if not processOnly:
                 pendingWork[0] = self.controlLoopback.recv()
-                if ((not pendingChecks and pendingWork[0] > 1) and any([not self.messages[ch]['fut'] is None for ch in self.inChannels])) or \
-                        pendingWork[0] == 1 and any([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannels]):
+                if ((not pendingChecks and pendingWork[0] > 1) and any([not self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd])) or \
+                        pendingWork[0] == 1 and any([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd]):
                     pendingWork[1] = self.controlLoopback.recv()
                 if 1 in pendingWork:
                     pendingChecks = True
@@ -390,28 +390,28 @@ class HashWorker(Chare):
             # print(prefix + ' Received control signal ' + str(pendingWork[0]) + ' on PE ' + str(charm.myPe()))
             # print(prefix + ' [pendingChecks, pendingQueries] = ' + str([pendingChecks, pendingQueries]) + ' on PE ' + str(charm.myPe()))
             # print(prefix + ' Hash worker on PE ' + str(charm.myPe()) + ' CONTROL STATE ---> pendingWork=' + str(pendingWork) + ' ' +  \
-            #     'Node Listener status: ' + str([self.status[chIt] for chIt in self.inChannels]) + ' Query Listener status: ' + str([self.queryStatus[chIt] for chIt in self.queryChannels]) + ' ' \
-            #         + 'Node messages buffered: ' + str([self.messages[ch]['msg'] for ch in self.inChannels]) + ' Query messages buffered: ' + str([self.queryMessages[ch]['msg'] for ch in self.queryChannels])  + ' ' \
-            #             + 'Message buffers: ' + str([self.messages[ch]['fut'] for ch in self.inChannels]) + str([self.queryMessages[ch]['fut'] for ch in self.queryChannels]))
+            #     'Node Listener status: ' + str([self.status[chIt] for chIt in self.hashChannelsHashEnd]) + ' Query Listener status: ' + str([self.queryStatus[chIt] for chIt in self.queryChannelsHashEnd]) + ' ' \
+            #         + 'Node messages buffered: ' + str([self.messages[ch]['msg'] for ch in self.hashChannelsHashEnd]) + ' Query messages buffered: ' + str([self.queryMessages[ch]['msg'] for ch in self.queryChannelsHashEnd])  + ' ' \
+            #             + 'Message buffers: ' + str([self.messages[ch]['fut'] for ch in self.hashChannelsHashEnd]) + str([self.queryMessages[ch]['fut'] for ch in self.queryChannelsHashEnd]))
 
 
             # Count the number of times we execute when there are queries pending:
-            if pendingChecks or not pendingQueries or all([self.queryStatus[chIt] == -2 for chIt in self.queryChannels]):
+            if pendingChecks or not pendingQueries or all([self.queryStatus[chIt] == -2 for chIt in self.queryChannelsHashEnd]):
                 yieldCount += 1
 
             # print(prefix + ' Hash worker on PE ' + str(charm.myPe()) + ' pendingWork=' + str(pendingWork) + ' ' + \
-            #    str([self.messages[ch]['msg'] for ch in self.inChannels]) + ' ' + \
-            #        str([self.queryMessages[ch]['msg'] for ch in self.queryChannels])  + ' ' + str(self.status))
+            #    str([self.messages[ch]['msg'] for ch in self.hashChannelsHashEnd]) + ' ' + \
+            #        str([self.queryMessages[ch]['msg'] for ch in self.queryChannelsHashEnd])  + ' ' + str(self.status))
             # Respond to hash table queries
             chList = []
             answeredSelf = False
             if pendingQueries:
-                numPending = sum([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannels])
+                numPending = sum([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd])
                 # print('numPending on PE ' + str(charm.myPe()) + ' is ' + str(numPending))
                 i = 0
                 while i < numPending:
                     chIdx = self.queryLoopback.recv()
-                    ch = self.queryChannels[chIdx]
+                    ch = self.queryChannelsHashEnd[chIdx]
                     msg = self.queryMessages[ch]
                     chList.append(ch)
                     val = msg['msg']
@@ -422,20 +422,20 @@ class HashWorker(Chare):
                         newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
                         if newNode in self.table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
-                            self.queryChannels[chIdx].send(1)
+                            self.queryChannelsHashEnd[chIdx].send(1)
                         else:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
-                            self.queryChannels[chIdx].send(-1)
+                            self.queryChannelsHashEnd[chIdx].send(-1)
                     elif val < 0:
                         answeredSelf = True
-                        # for chIt in self.queryChannels:
+                        # for chIt in self.queryChannelsHashEnd:
                         self.queryStatus[ch] = -2
                         self.queryDone[ch].send(True)
                     else:
                         print('PE' + str(charm.myPe()) + ' : Unexpected query received. Query was ' + str(val))
                     i += 1
                     # Ensure we catch any messages arriving at the local listener while we were receiving on the queryLoopback channel
-                    numPending = sum([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannels])
+                    numPending = sum([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd])
                     # If this is a self query and it hasn't been answered yet, repeat the loop until it is
                     if selfQuery and not answeredSelf and i == numPending:
                         numPending += 1
@@ -458,27 +458,27 @@ class HashWorker(Chare):
             # print(prefix + ' PendingChecks is ' + str(pendingChecks) + ' and pendingQueries is ' + str(pendingQueries))
             if pendingChecks and (not queryOnly or free) and yieldCount >= self.maxNodeYields:
                 # print(prefix + ' Pending messages on PE ' + str(charm.myPe()) + ' are ' + str(self.messages))
-                numPending = sum([not self.messages[ch]['fut'] is None for ch in self.inChannels])
+                numPending = sum([not self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd])
                 # print(prefix + 'numPending nodes is ' + str(numPending) + 'on PE ' + str(charm.myPe()))
                 i = 0
                 while i < numPending:
                     chIdx = self.loopback.recv()
                     # print(prefix + ' Recieved a chIdx of ' + str(chIdx) + ' on PE ' + str(charm.myPe()))
-                    ch = self.inChannels[chIdx]
+                    ch = self.hashChannelsHashEnd[chIdx]
                     msg = self.messages[ch]
                     # print(prefix + ' Processing node ' + str(msg) + ' on PE ' + str(charm.myPe()))
                     chList.append(ch)
                     val = msg['msg']
                     msgCount[ch] += 1
                     if val == -3:
-                        # for ch in self.inChannels:
+                        # for ch in self.hashChannelsHashEnd:
                         if self.status[ch] != -2 and self.status[ch] != -3:
                             self.workerDone[ch].send(True)
                         self.status[ch] = -3
                         self.localVarGroup.setSkip(True)
                     elif val == -4:
                         # msgFalseSet = False
-                        # for ch in self.inChannels:
+                        # for ch in self.hashChannelsHashEnd:
                         if self.status[ch] != -2 and self.status[ch] != -3:
                             self.workerDone[ch].send(False)
                             msgFalseSet = True
@@ -491,7 +491,7 @@ class HashWorker(Chare):
                             self.workerDone[ch].send(True)
                             self.status[ch] = -2
                         # self.workerDone[ch].send(True)
-                        if all([self.status[chIt] <= -2 for chIt in self.inChannels]):
+                        if all([self.status[chIt] <= -2 for chIt in self.hashChannelsHashEnd]):
                             self.levelDone = True
                     elif type(val) == tuple and len(val) >= 3:
                         newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
@@ -521,7 +521,7 @@ class HashWorker(Chare):
                     #     break
                     # print('Hash table on PE ' + str(charm.myPe()) + str(self.table))
                     i += 1
-                    numPending = sum([not self.messages[ch]['fut'] is None for ch in self.inChannels])
+                    numPending = sum([not self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd])
                     yieldCount = 0
                     pendingChecks = False
 
@@ -536,15 +536,15 @@ class HashWorker(Chare):
 
             # Release the feeder to get back to work:
             processOnly = False
-            retControl = -3 if any([self.status[ch] == -3 for ch in self.inChannels]) else -1
-            if not self.rateChannel is None and not free:
-                self.rateChannel.send(retControl)
+            retControl = -3 if any([self.status[ch] == -3 for ch in self.hashChannelsHashEnd]) else -1
+            if not self.rateChannelHashEnd is None and not free:
+                self.rateChannelHashEnd.send(retControl)
             elif not self.termProxy is None and retControl == -3:
                 self.termProxy.sendAll(-3, awaitable=True).get()
             # print(prefix + ' Hash worker on PE ' + str(charm.myPe()) + ' FINAL STATE ---> pendingWork=' + str(pendingWork) + ' ' +  \
-            #     'Node Listener status: ' + str([self.status[chIt] for chIt in self.inChannels]) + ' Query Listener status: ' + str([self.queryStatus[chIt] for chIt in self.queryChannels]) + ' ' \
-            #         + 'Node messages buffered: ' + str([self.messages[ch]['msg'] for ch in self.inChannels]) + ' Query messages buffered: ' + str([self.queryMessages[ch]['msg'] for ch in self.queryChannels])  + ' ' \
-            #             + 'Message buffers: ' + str([self.messages[ch]['fut'] for ch in self.inChannels]) + str([self.queryMessages[ch]['fut'] for ch in self.queryChannels]))
+            #     'Node Listener status: ' + str([self.status[chIt] for chIt in self.hashChannelsHashEnd]) + ' Query Listener status: ' + str([self.queryStatus[chIt] for chIt in self.queryChannelsHashEnd]) + ' ' \
+            #         + 'Node messages buffered: ' + str([self.messages[ch]['msg'] for ch in self.hashChannelsHashEnd]) + ' Query messages buffered: ' + str([self.queryMessages[ch]['msg'] for ch in self.queryChannelsHashEnd])  + ' ' \
+            #             + 'Message buffers: ' + str([self.messages[ch]['fut'] for ch in self.hashChannelsHashEnd]) + str([self.queryMessages[ch]['fut'] for ch in self.queryChannelsHashEnd]))
             # print(prefix + ' Finished trace on PE ' + str(charm.myPe()) + ' ----------------------')
             cnt += 1
         # print('Shutting down main listener on PE ' + str(charm.myPe()))
@@ -552,12 +552,12 @@ class HashWorker(Chare):
 
     @coro
     def awaitLevel(self):
-        retVal = all([self.workerDone[ch].get() for ch in self.inChannels])
+        retVal = all([self.workerDone[ch].get() for ch in self.hashChannelsHashEnd])
         self.levelDone = True
         return retVal
     @coro
     def awaitQueries(self):
-        return all([self.queryDone[ch].get() for ch in self.queryChannels])
+        return all([self.queryDone[ch].get() for ch in self.queryChannelsHashEnd])
 
     @coro
     def awaitListenerShutdown(self, shutdownFut):
@@ -593,7 +593,7 @@ class HashWorker(Chare):
     #     if not charm.myPe() in self.hashPElist:
     #         return
     #     count = 0
-    #     for i in charm.iwait([self.inChannels[ch].recv() for ch in self.inChannels]):
+    #     for i in charm.iwait([self.hashChannelsHashEnd[ch].recv() for ch in self.hashChannelsHashEnd]):
     #         count += 1
     #     return count
     @coro
@@ -682,35 +682,35 @@ class DistHash(Chare):
             self.overlapPElist[idx] = (feeders[self.overlapPElist[idx][0]][1], hashes[self.overlapPElist[idx][1]][1])
 
 
-        myFut = self.feederGroup.addFeedbackRateChannelOrigin(self.overlapPElist, awaitable=True)
+        myFut = self.feederGroup.initRateChannel(self.overlapPElist, awaitable=True)
         myFut.get()
         #self.feedbackChannels = [Channel(self, remote=proxy) for proxy in feederProxies]
 
-        myFut = self.hWorkersFull.addFeedbackRateChannelDest(self.overlapPElist,awaitable=True)
+        myFut = self.hWorkersFull.initRateChannelHashEnd(self.overlapPElist,awaitable=True)
         myFut.get()
 
         # Establish channels from each feeder worker to each hash worker
-        myFut = self.feederGroup.addDestChannel(self.hashWorkerProxies , awaitable=True)
+        myFut = self.feederGroup.initHashChannel(self.hashWorkerProxies , awaitable=True)
         myFut.get()
 
-        myFut = self.hWorkersFull.addOriginChannel(self.feederProxies,awaitable=True)
+        myFut = self.hWorkersFull.initHashChannelHashEnd(self.feederProxies,awaitable=True)
         myFut.get()
 
         # Establish Query channels from each feeder worker to each hash worker
-        myFut = self.feederGroup.addQueryDestChannel(self.hashWorkerProxies , self.thisProxy, awaitable=True)
+        myFut = self.feederGroup.initQueryChannel(self.hashWorkerProxies , self.thisProxy, awaitable=True)
         myFut.get()
 
-        self.queryMutexChannels = []
-        self.queryMutexChannels =  [ Channel(self, remote=self.overlapPElist[pxyIdx][0]) for pxyIdx in self.overlapPElist ]
+        self.queryMutexChannelsHashEnd = []
+        self.queryMutexChannelsHashEnd =  [ Channel(self, remote=self.overlapPElist[pxyIdx][0]) for pxyIdx in self.overlapPElist ]
         self.queryMutexLoopback = Channel(self, remote=self.thisProxy)
         self.queryMutexStatus = {}
         self.queryMutexFuts = {}
-        for ch in self.queryMutexChannels:
+        for ch in self.queryMutexChannelsHashEnd:
             self.queryMutexStatus[ch] = 0
             self.queryMutexFuts[ch] = None
         self.queryMutexDone = None
 
-        myFut = self.hWorkersFull.addQueryOriginChannel(self.feederProxies,awaitable=True)
+        myFut = self.hWorkersFull.initQueryChannelHashEnd(self.feederProxies,awaitable=True)
         myFut.get()
 
     @coro
@@ -725,7 +725,7 @@ class DistHash(Chare):
             if val == -2:
                 self.queryMutexStatus[ch] = -2
                 val = -chIdx
-                if any([self.queryMutexStatus[chIt] != -2 for chIt in self.queryMutexChannels]):
+                if any([self.queryMutexStatus[chIt] != -2 for chIt in self.queryMutexChannelsHashEnd]):
                     break
             else:
                 val = chIdx
@@ -745,10 +745,10 @@ class DistHash(Chare):
             chIdx = self.queryMutexLoopback.recv()
             # print('reqPE = ' + str(chIdx))
             if chIdx < 0:
-                self.queryMutexFuts[self.queryMutexChannels[-chIdx]].send(1)
+                self.queryMutexFuts[self.queryMutexChannelsHashEnd[-chIdx]].send(1)
                 self.queryMutexDone.send(1)
                 break
-            ch = self.queryMutexChannels[chIdx]
+            ch = self.queryMutexChannelsHashEnd[chIdx]
             ch.send(1)
             ch.recv()
             localFut = self.queryMutexFuts[ch]
@@ -841,11 +841,11 @@ class DistHash(Chare):
         return self.hWorkers
     @coro
     def initListening(self,allDone):
-        for ch in self.queryMutexChannels:
+        for ch in self.queryMutexChannelsHashEnd:
             self.queryMutexStatus[ch] = 0
-        if len(self.queryMutexChannels) > 0:
-            for k in range(len(self.queryMutexChannels)):
-                self.thisProxy.queryMutexLocalListener(self.queryMutexChannels[k],k)
+        if len(self.queryMutexChannelsHashEnd) > 0:
+            for k in range(len(self.queryMutexChannelsHashEnd)):
+                self.thisProxy.queryMutexLocalListener(self.queryMutexChannelsHashEnd[k],k)
             self.queryMutexDone = Future()
             self.thisProxy.queryMutexListen()
         doneFuts = [Future() for k in range(len(self.hashWorkerProxies))]

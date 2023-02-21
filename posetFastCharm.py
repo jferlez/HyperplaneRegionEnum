@@ -469,7 +469,7 @@ class successorWorker(Chare):
         # Defaults to glpk, so this empty call is ok:
         self.lp = encapsulateLP.encapsulateLP()
         self.rsLP = encapsulateLP.encapsulateLP()
-        # self.outChannels = []
+        # self.hashChannels = []
         self.clockTimeout = (timeout + time.time()) if timeout is not None else None
         self.timedOut = False
         self.stats = {'LPSolverCount':0, 'xferTime':0, 'numQueries':0, 'successfulQueries':0, 'RSRegionCount':0, 'RSLPCount':0}
@@ -540,11 +540,11 @@ class successorWorker(Chare):
     def getProxies(self):
         return self.thisProxy[self.thisIndex]
     @coro
-    def addDestChannel(self, procGroupProxies):
+    def initHashChannel(self, procGroupProxies):
         if not charm.myPe() in self.posetPElist:
             return
         self.numHashWorkers = len(procGroupProxies)
-        self.outChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
+        self.hashChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
         self.numHashBits = 1
         while self.numHashBits < self.numHashWorkers:
             self.numHashBits = self.numHashBits << 1
@@ -554,10 +554,10 @@ class successorWorker(Chare):
         #     self.numBytes = self.N/4
         # else:
         #     self.numBytes = int(self.N/4)+1
-        # print(self.outChannels)
+        # print(self.hashChannels)
 
     @coro
-    def addQueryDestChannel(self, procGroupProxies, distHashProxy):
+    def initQueryChannel(self, procGroupProxies, distHashProxy):
         if not charm.myPe() in self.posetPElist:
             return
         # self.numHashWorkers = len(procGroupProxies)
@@ -574,7 +574,7 @@ class successorWorker(Chare):
         #     self.numBytes = self.N/4
         # else:
         #     self.numBytes = int(self.N/4)+1
-        # print(self.outChannels)
+        # print(self.hashChannels)
 
     @coro
     def closeQueryChannels(self):
@@ -586,7 +586,7 @@ class successorWorker(Chare):
             self.queryMutexChannel.send(-2)
 
     @coro
-    def addFeedbackRateChannelOrigin(self,overlapPElist ):
+    def initRateChannel(self,overlapPElist ):
         self.rateChannel = None
         self.overlapPElist = overlapPElist
         if not charm.myPe() in self.posetPElist:
@@ -598,14 +598,14 @@ class successorWorker(Chare):
     def testSend(self):
         for k in range(self.numHashWorkers):
             #print('Sending on to ' + str(k))
-            #print(self.outChannels[k])
-            self.outChannels[k].send((self.thisIndex,k))
+            #print(self.hashChannels[k])
+            self.hashChannels[k].send((self.thisIndex,k))
             #print('Message sent!')
 
     def startListening(self):
         if not charm.myPe() in self.posetPElist:
             return
-        for ch in self.outChannels:
+        for ch in self.hashChannels:
             ch.send(-100)
 
     def hashNode(self,toHash,payload=None,vertex=None):
@@ -629,7 +629,7 @@ class successorWorker(Chare):
     @coro
     def hashAndSend(self,toHash,payload=None,vertex=None):
         val = self.hashNode(toHash,payload=payload,vertex=vertex)
-        self.outChannels[val[0]].send(val)
+        self.hashChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(nodeInt))
         # retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
         retVal = self.thisProxy[self.thisIndex].deferControl(ret=True).get()
@@ -737,7 +737,7 @@ class successorWorker(Chare):
     def sendAll(self,val):
         if not charm.myPe() in self.posetPElist:
             return
-        for ch in self.outChannels:
+        for ch in self.hashChannels:
             ch.send(val)
 
     @coro
