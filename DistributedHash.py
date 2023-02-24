@@ -902,7 +902,7 @@ class DistHash(Chare):
         checkVal = None
         if self.amFeeder:
             self.targetDistHashTable.awaitPending(awaitable=True).get()
-            print(f'Secondary Hash table shut down listener')
+            # print(f'Secondary Hash table shut down listener')
             self.hWorkers.sendAll(-2,awaitable=True).get()
             self.hWorkers.closeQueryChannels(awaitable=True).get()
             self.hWorkers.flushMessages(ret=True).get()
@@ -958,7 +958,6 @@ class DistHash(Chare):
     def awaitPending(self):
         while True:
             pendingCnt = sum(self.localVarGroup.getSchedCount(ret=True).get())
-            print(f'pendingCnt = {pendingCnt}')
             if pendingCnt == 0:
                 break
 
