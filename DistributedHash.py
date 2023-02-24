@@ -180,7 +180,7 @@ class HashWorker(Chare):
             self.numHashBits = self.numHashBits << 1
         self.hashMask = self.numHashBits - 1
         self.numHashBits -= 1
-        print(f'Finished Executing initHashChannels on first distributed hash')
+        # print(f'Finished Executing initHashChannels on first distributed hash')
         # if self.N % 4 == 0:
         #     self.numBytes = self.N/4
         # else:
