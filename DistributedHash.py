@@ -251,10 +251,10 @@ class HashWorker(Chare):
     def hashAndSend(self,toHash,payload=None):
         val = self.hashNode(toHash,payload=payload)
         self.hashChannels[val[0]].send(val)
-        print('Trying to hash integer ' + str(val))
+        # print('Trying to hash integer ' + str(val))
         # retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
         retVal = self.thisProxy[self.thisIndex].deferControl(ret=True).get()
-        print('Saw defercontrol return the following within HashAndSend ' + str(retVal))
+        # print('Saw defercontrol return the following within HashAndSend ' + str(retVal))
         return retVal
     def sendAll(self,val):
         if not charm.myPe() in self.hashPElist:
@@ -1000,6 +1000,10 @@ class DistHash(Chare):
         self.hWorkers.listen()
         # print('All workers done!')
         # self.hWorkers.listen()
+
+    @coro
+    def initListeningSecondary(self,allDone):
+        self.targetDistHashTable.initListening(allDone,awaitable=True).get()
 
     @coro
     def startListeningSecondary(self):
