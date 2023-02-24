@@ -265,4 +265,31 @@ def findInteriorPointOld(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
 
 
 
+# Helper functions:
+
+# https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
+def hashNodeBytes(nodeBytes):
+    chunks = np.array( \
+        [int.from_bytes(nodeBytes[idx:min(idx+8,len(nodeBytes))],'little') for idx in range(0,len(nodeBytes),8)], \
+        dtype=np.uint64 \
+        )
+    p = 6148914691236517205 * np.bitwise_xor(chunks, np.right_shift(chunks,32))
+    hashInt = 17316035218449499591 * np.bitwise_xor(p, np.right_shift(p,32))
+    return int(np.bitwise_xor.reduce(hashInt))
+
+def tupToBytes(INTrep, wholeBytes, tailBits):
+    boolIdxNoFlip = bytearray(b'\x00') *  (wholeBytes + (1 if tailBits != 0 else 0))
+
+    for unflipIdx in range(len(INTrep)-1,-1,-1):
+        boolIdxNoFlip[INTrep[unflipIdx]//8] = boolIdxNoFlip[INTrep[unflipIdx]//8] | (1<<(INTrep[unflipIdx] % 8))
+
+    return boolIdxNoFlip
+
+def bytesToList(boolIdxNoFlip,wholeBytes,tailBits):
+    INTrep = []
+    for bIdx in range(wholeBytes + (1 if tailBits != 0 else 0)):
+        for bitIdx in range(8 if bIdx < wholeBytes else tailBits):
+            if boolIdxNoFlip[bIdx] & ( 1 << bitIdx):
+                INTrep.append(8*bIdx + bitIdx)
+    return INTrep
 
