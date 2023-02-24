@@ -191,6 +191,10 @@ class Poset(Chare):
     def getSuccGroupProxy(self):
         return self.succGroupFull
 
+    @coro
+    def getHashTableProxy(self):
+        return self.distHashTable
+
     # Because charm4py seems to filter **kwargs, pass all arguments to populatePoset in a single dictionary.
     # This avoids having to distinguish between those arguments that are for populatePoset itself and those
     # that are merely passed on to setMethod. This is an implementation distinction not a semantic one: all

@@ -13,6 +13,7 @@ from numba.typed import Dict
 from numba.np.unsafe.ndarray import to_fixed_tuple
 from numba.pycc import CC
 from functools import partial
+from region_helpers import hashNodeBytes
 
 XFER_CHUNK_SIZE = 1000
 
@@ -107,6 +108,7 @@ class HashWorker(Chare):
         self.queryLoopback = Channel(self,remote=self.thisProxy[self.thisIndex])
         self.controlLoopback = Channel(self,remote=self.thisProxy[self.thisIndex])
         self.nodeEqualityFn = lambda x,y: (x == y)
+        self.hashStoreMode = 0
         #print(self.thisIndex)
 
     @coro
@@ -178,14 +180,15 @@ class HashWorker(Chare):
             self.numHashBits = self.numHashBits << 1
         self.hashMask = self.numHashBits - 1
         self.numHashBits -= 1
-        if self.N % 4 == 0:
-            self.numBytes = self.N/4
-        else:
-            self.numBytes = int(self.N/4)+1
+        print(f'Finished Executing initHashChannels on first distributed hash')
+        # if self.N % 4 == 0:
+        #     self.numBytes = self.N/4
+        # else:
+        #     self.numBytes = int(self.N/4)+1
         # print(self.hashChannels)
     @coro
     def initQueryChannel(self, procGroupProxies, distHashProxy):
-        if not charm.myPe() in self.posetPElist:
+        if not charm.myPe() in self.hashPElist:
             return
         # self.numHashWorkers = len(procGroupProxies)
         self.queryChannels = [Channel(self, remote=proxy) for proxy in procGroupProxies]
@@ -211,13 +214,67 @@ class HashWorker(Chare):
             self.rateChannel = Channel(self,remote=overlapPElist[charm.myPe()][1])
         # self.feedbackChannel = Channel(self,remote=proxy)
 
+    @coro
     def startListening(self):
         if not charm.myPe() in self.hashPElist:
             return
         for ch in self.hashChannels:
             ch.send(-100)
 
+    @coro
+    def deferControl(self, code=1):
+        if not self.rateChannel is None:
+            self.rateChannel.send(code)
+            control = self.rateChannel.recv()
+            while control > 0:
+                control = self.rateChannel.recv()
+            if control == -3:
+                return False
+        return True
+    def hashNode(self,toHash,payload=None):
+        # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
+        # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
+        hashInt = hashNodeBytes(toHash[0])
+        if self.hashStoreMode == 0:
+            regEncode = toHash[0]
+        elif self.hashStoreMode == 1:
+            regEncode = tuple(toHash[1])
+        else:
+            # default to tuple mode
+            regEncode = tuple(toHash[1])
+        if payload is not None:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), payload)
+        else:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), )
 
+    @coro
+    def hashAndSend(self,toHash,payload=None):
+        val = self.hashNode(toHash,payload=payload)
+        self.hashChannels[val[0]].send(val)
+        print('Trying to hash integer ' + str(val))
+        # retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
+        retVal = self.thisProxy[self.thisIndex].deferControl(ret=True).get()
+        print('Saw defercontrol return the following within HashAndSend ' + str(retVal))
+        return retVal
+    def sendAll(self,val):
+        if not charm.myPe() in self.hashPElist:
+            return
+        for ch in self.hashChannels:
+            ch.send(val)
+
+    @coro
+    def flushMessages(self):
+        if not charm.myPe() in self.overlapPElistAsFeeder:
+            return
+        self.rateChannel.send(2)
+    @coro
+    def closeQueryChannels(self):
+        if not charm.myPe() in self.hashPElist:
+            return
+        for ch in self.queryChannels:
+            ch.send(-2)
+        if not self.queryMutexChannel is None:
+            self.queryMutexChannel.send(-2)
     @coro
     def addFeedbackChannel(self,proxy):
         if not charm.myPe() in self.hashPElist:
@@ -693,6 +750,8 @@ class DistHash(Chare):
         self.hashWorkerProxies = list(itertools.chain.from_iterable( \
                 [self.hashWorkerProxies[r[0]:r[1]:r[2]] for r in self.hashPEs]
             ))
+        self.amFeeder = False
+        self.hashStoreMode = 0
         # self.hashWorkerProxies = self.hashWorkerProxies.get()
         self.hashWorkerChannels = [Channel(self, remote=proxy) for proxy in self.hashWorkerProxies]
 
@@ -745,6 +804,31 @@ class DistHash(Chare):
 
         myFut = self.hWorkersFull.initQueryChannelHashEnd(self.feederProxies,awaitable=True)
         myFut.get()
+
+    @coro
+    def initAsFeeder(self, nodeConstructor, localVarGroup, hashPEs ):
+        self.usePosetChecking = True
+        self.nodeConstructorAsFeeder = nodeConstructor
+        self.localVarGroupAsFeeder = localVarGroup
+        self.targetHashPEs = hashPEs
+        self.targetHashPElist = list(itertools.chain.from_iterable( \
+               [list(range(r[0],r[1],r[2])) for r in self.targetHashPEs] \
+            ))
+        self.targetDistHashTable = Chare(DistHash,args=[ \
+            self.hWorkersFull, \
+            self.nodeConstructorAsFeeder, \
+            self.localVarGroupAsFeeder , \
+            self.targetHashPEs, \
+            self.hashPEs \
+        ],onPE=self.targetHashPElist[0])
+        charm.awaitCreation(self.targetDistHashTable)
+        # print('Initialized distHashTable group')
+        initFut = self.targetDistHashTable.initialize(awaitable=True)
+        initFut.get()
+        if self.usePosetChecking:
+            self.localVarGroupAsFeeder.init(self.hWorkersFull,self.hashPElist)
+        self.amFeeder = True
+        return self.targetDistHashTable
 
     @coro
     def updateNodeEqualityFn(self,fn=None, nodeType='standard', tol=1e-9, rTol=1e-9, H=None):
@@ -811,8 +895,29 @@ class DistHash(Chare):
 
     @coro
     def levelDone(self):
-        return all(self.hWorkers.awaitLevel(ret=True).get())
+        res = all(self.hWorkers.awaitLevel(ret=True).get())
+        return res
+    @coro
+    def levelDoneSecondary(self):
+        checkVal = None
+        if self.amFeeder:
+            self.targetDistHashTable.awaitPending(awaitable=True).get()
+            print(f'Secondary Hash table shut down listener')
+            self.hWorkers.sendAll(-2,awaitable=True).get()
+            self.hWorkers.closeQueryChannels(awaitable=True).get()
+            self.hWorkers.flushMessages(ret=True).get()
 
+            # print('Finished looking for successors on level ' + str(level))
+            checkVal = self.targetDistHashTable.levelDone(ret=True).get()
+            # if not checkVal or timedOut:
+            #     if timedOut: checkVal = None
+        return None
+    @coro
+    def awaitShutdownSecondary(self):
+        feederVal = None
+        if self.amFeeder:
+            feederVal = self.targetDistHashTable.awaitShutdown(ret=True).get()
+        return feederVal
     @coro
     def getLevelList(self):
         nextlevel = Future()
@@ -853,6 +958,7 @@ class DistHash(Chare):
     def awaitPending(self):
         while True:
             pendingCnt = sum(self.localVarGroup.getSchedCount(ret=True).get())
+            print(f'pendingCnt = {pendingCnt}')
             if pendingCnt == 0:
                 break
 
@@ -894,6 +1000,10 @@ class DistHash(Chare):
         self.hWorkers.listen()
         # print('All workers done!')
         # self.hWorkers.listen()
+
+    @coro
+    def startListeningSecondary(self):
+        self.hWorkersFull.startListening(awaitable=True).get()
 
     @coro
     def clearHashTable(self):
