@@ -494,7 +494,7 @@ class successorWorker(Chare):
         self.doRS = reverseSearch
         self.tol = tol
         self.rTol = rTol
-        self.sendFaces = False
+        self.sendFaces = sendFaces
         self.verbose = verbose
         if hashStore == 'bits':
             self.hashStoreMode = 0
