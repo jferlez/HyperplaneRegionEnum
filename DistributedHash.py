@@ -676,6 +676,9 @@ class HashWorker(Chare):
         self.levelList = []
         self.table = {}
     @coro
+    def getTable(self):
+        return self.table
+    @coro
     def resetLevelCount(self):
         self.level=-1
     # @coro
@@ -978,6 +981,7 @@ class DistHash(Chare):
 
     def getWorkerProxy(self):
         return self.hWorkers
+    @coro
     def getWorkerProxyFull(self):
         return self.hWorkersFull
     @coro
