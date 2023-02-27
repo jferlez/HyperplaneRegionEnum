@@ -978,6 +978,8 @@ class DistHash(Chare):
 
     def getWorkerProxy(self):
         return self.hWorkers
+    def getWorkerProxyFull(self):
+        return self.hWorkersFull
     @coro
     def initListening(self,allDone):
         for ch in self.queryMutexChannelsHashEnd:
