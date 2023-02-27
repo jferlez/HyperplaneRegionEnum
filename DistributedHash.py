@@ -806,8 +806,8 @@ class DistHash(Chare):
         myFut.get()
 
     @coro
-    def initAsFeeder(self, nodeConstructor, localVarGroup, hashPEs ):
-        self.usePosetChecking = True
+    def initAsFeeder(self, nodeConstructor, localVarGroup, hashPEs, usePosetChecking ):
+        self.usePosetChecking = usePosetChecking
         self.nodeConstructorAsFeeder = nodeConstructor
         self.localVarGroupAsFeeder = localVarGroup
         self.targetHashPEs = hashPEs
@@ -901,7 +901,8 @@ class DistHash(Chare):
     def levelDoneSecondary(self):
         checkVal = None
         if self.amFeeder:
-            self.targetDistHashTable.awaitPending(awaitable=True).get()
+            if self.usePosetChecking:
+                self.targetDistHashTable.awaitPending(awaitable=True).get()
             # print(f'Secondary Hash table shut down listener')
             self.hWorkers.sendAll(-2,awaitable=True).get()
             self.hWorkers.closeQueryChannels(awaitable=True).get()
