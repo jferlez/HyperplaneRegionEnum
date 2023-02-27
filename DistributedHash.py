@@ -19,7 +19,7 @@ XFER_CHUNK_SIZE = 1000
 
 class Node():
 
-    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes, originPe, *args):
+    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes, originPe, face, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
@@ -27,6 +27,7 @@ class Node():
         self.storePe = storePe
         self.parentChare = parentChare
         self.originPe = originPe
+        self.face = face
         self.nodeEqualityFn = nodeEqualityFn
         self.payload = args
 

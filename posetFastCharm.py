@@ -209,7 +209,8 @@ class Poset(Chare):
         self.clearTable = 'speed'
         self.retrieveFaces = False
         self.verbose = True
-        defaultSettings = ['clearTable','retrieveFaces','verbose']
+        self.sendFaces = False
+        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces']
         for ky in defaultSettings:
             if ky in opts:
                 setattr(self,ky,opts[ky])
@@ -486,13 +487,14 @@ class successorWorker(Chare):
     def getTimeout(self):
         return self.timedOut
 
-    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,verbose=True):
+    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,verbose=True):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.rsLP.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.useQuery = useQuery
         self.doRS = reverseSearch
         self.tol = tol
         self.rTol = rTol
+        self.sendFaces = False
         self.verbose = verbose
         if hashStore == 'bits':
             self.hashStoreMode = 0
@@ -626,10 +628,14 @@ class successorWorker(Chare):
         else:
             # default to tuple mode
             regEncode = tuple(toHash[1])
-        if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), payload)
+        if len(toHash) >= 3:
+            face = toHash[2]
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), )
+            face = -1
+        if payload is not None:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, payload)
+        else:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face )
 
     @coro
     def hashAndSend(self,toHash,payload=None,vertex=None):
@@ -1019,7 +1025,8 @@ class successorWorker(Chare):
                 if not cont:
                     H[INTrep,:] = -H[INTrep,:]
                     return successors, -1, witnessList
-
+        if not self.doRS and self.sendFaces:
+            self.thisProxy[self.thisIndex].hashAndSend([boolIdxNoFlip,intIdxNoFlip,[ii[2] for ii in successors]], ret=True).get()
         # facesInt = np.full(self.N,0,dtype=bool)
         sel = tuple(np.array(intIdx,dtype=np.uint64)[faces].tolist())
         # facesInt[sel] = np.full(len(sel),1,dtype=bool)
