@@ -631,7 +631,7 @@ class successorWorker(Chare):
         if len(toHash) >= 3:
             face = toHash[2]
         else:
-            face = -1
+            face = (-1,)
         if payload is not None:
             return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, payload)
         else:
@@ -1011,7 +1011,7 @@ class successorWorker(Chare):
                 temp = copy(intIdxNoFlip)
                 temp.insert(insertIdx,intIdx[i])
                 successors.append( \
-                        [ copy(boolIdxNoFlip), tuple(temp), intIdx[i], None ]
+                        [ copy(boolIdxNoFlip), tuple(temp), (intIdx[i],), None ]
                     )
                 boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] ^ 1<<(intIdx[i] % 8)
                 # self.conversionTime += time.time() - t
@@ -1026,7 +1026,7 @@ class successorWorker(Chare):
                     H[INTrep,:] = -H[INTrep,:]
                     return successors, -1, witnessList
         if not self.doRS and self.sendFaces:
-            self.thisProxy[self.thisIndex].hashAndSend([boolIdxNoFlip,intIdxNoFlip,[ii[2] for ii in successors]], ret=True).get()
+            self.thisProxy[self.thisIndex].hashAndSend([boolIdxNoFlip,intIdxNoFlip,[ii[2][0] for ii in successors]], ret=True).get()
         # facesInt = np.full(self.N,0,dtype=bool)
         sel = tuple(np.array(intIdx,dtype=np.uint64)[faces].tolist())
         # facesInt[sel] = np.full(len(sel),1,dtype=bool)

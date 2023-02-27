@@ -27,7 +27,7 @@ class Node():
         self.storePe = storePe
         self.parentChare = parentChare
         self.originPe = originPe
-        self.face = face
+        self.face = set(face)
         self.nodeEqualityFn = nodeEqualityFn
         self.payload = args
 
