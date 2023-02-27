@@ -589,7 +589,7 @@ class HashWorker(Chare):
                         if self.nodeCalls & 1:
                             newNode.init()
                         if not newNode in self.table:
-                            self.table[newNode] = {'checked':False}
+                            self.table[newNode] = {'checked':False, 'ptr':newNode}
                             # self.levelList.append((val[2],*newNode.payload))
                             self.levelList.append(newNode)
                             # Check node here:
@@ -599,6 +599,8 @@ class HashWorker(Chare):
                                 self.status[ch] = -3
                                 # self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
                                 self.levelDone = True
+                        elif self.nodeCalls & 2:
+                            self.table[newNode]['ptr'].update(*val)
                     # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
                     elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
                         print(self.status)
