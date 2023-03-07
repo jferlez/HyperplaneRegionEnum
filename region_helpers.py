@@ -42,22 +42,36 @@ class flipConstraints:
         self.wholeBytes = (self.N + 7) // 8
         self.tailBits = self.N - 8*(self.N // 8)
 
-    def translateRegion(self,nodeBytes):
+    # This method returns flips of the hyperplanes *as provided* to obtain the region
+    # specified by nodeBytes.
+    # This is useful when you don't just care about the region specification but the 
+    # hyperplanes themselves, as in e.g. FastBATLLNN (there the sign of the hyperplanes
+    # means something for the output of the TLL).
+    def translateRegion(self,nodeBytes, allN=True):
         regSet = np.full(self.allN, True, dtype=bool)
         regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
         regSet[nodeBytes,] = np.full(len(nodeBytes),False,dtype=bool)
         unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,list(nodeBytes))
         regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
-        regSet = tuple(np.nonzero(regSet)[0])
-        return regSet
+        return np.nonzero(regSet)[0]
 
-    def regionInteriorPoint(self,nodeBytes):
-        H = self.allConstraints.copy()
-        regSet = self.translateRegion(nodeBytes)
+    # This method accepts region specifications *relative* to the original flipping
+    # (i.e. flipped so that self.pt is on the positive side of all hyperplanes).
+    # These region specifications are the ones output by the poset enumerator for example.
+    def regionInteriorPoint(self,nodeBytes, allN=False):
+        return findInteriorPoint(self.getRegionConstraints(nodeBytes, allN=False))
+
+    # This method also accepts region specifications relative to the original flipping
+    # ** It will produce INCORRECT results if fed with the output of translateRegion!! **
+    def getRegionConstraints(self, nodeBytes, allN=True):
+        H = self.allConstraints.copy() if allN else self.constraints.copy()
+        regSet = self.insertRedundant(nodeBytes) if allN and self.N != self.allN else nodeBytes
         H[regSet,] = -H[regSet,]
-        iPoint = findInteriorPoint(H)
-        # print(iPoint)
-        return iPoint
+        return H
+    
+    # This helper method is only meant to be called in getRegionConstraints above
+    def insertRedundant(self, nodeBytes):
+        return tuple(self.nonRedundantHyperplanes[nodeBytes,])
 
 
 class flipConstraintsReduced(flipConstraints):
@@ -114,15 +128,16 @@ class flipConstraintsReducedMin(flipConstraints):
 
         self.root = tuple()
 
-    def translateRegion(self,nodeBytes):
+    def translateRegion(self,nodeBytes, allN=True):
         regSet = np.full(self.allN, True, dtype=bool)
         regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
-        sel = nodeBytes
+        sel = self.nonRedundantHyperplanes[nodeBytes,]
         regSet[sel,] = np.full(len(sel),False,dtype=bool)
         unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,sel.tolist())
         regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
-        regSet = tuple(np.nonzero(regSet)[0])
-        return regSet
+        if not allN:
+            regSet = regSet[self.nonRedundantHyperplanes,]
+        return np.nonzero(regSet)[0]
 
 
 # H2 is a CDD-style matrix specifying inequality constraints, and intIdx is a list of indices of inequalities to check for redundancy
