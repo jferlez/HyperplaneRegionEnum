@@ -248,7 +248,7 @@ class Poset(Chare):
         boolIdxNoFlip = bytearray(b'\x00') * (self.flippedConstraints.wholeBytes + (1 if self.flippedConstraints.tailBits != 0 else 0))
         for unflipIdx in range(len(thisLevel[0][0])-1,-1,-1):
             boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
-        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0]],vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())),ret=True).get()
+        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0],tuple(),self.flippedConstraints.pt],vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())),ret=True).get()
 
         self.distHashTable.awaitPending(awaitable=True).get()
         # Send a final termination signal:
@@ -487,7 +487,7 @@ class successorWorker(Chare):
     def getTimeout(self):
         return self.timedOut
 
-    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,verbose=True):
+    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,sendWitness=False,verbose=True):
         self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.rsLP.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
         self.useQuery = useQuery
@@ -495,6 +495,7 @@ class successorWorker(Chare):
         self.tol = tol
         self.rTol = rTol
         self.sendFaces = sendFaces
+        self.sendWitness = True if sendWitness else None
         self.verbose = verbose
         if hashStore == 'bits':
             self.hashStoreMode = 0
@@ -769,7 +770,7 @@ class successorWorker(Chare):
         if len(self.workInts) > 0:
             successorList = [[None,None] for k in range(len(self.workInts))]
             for ii in range(len(successorList)):
-                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.N,self.constraints,**self.processNodesArgs,payload=self.workInts[ii][1:]).get()
+                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.N,self.constraints,**self.processNodesArgs,witness=self.sendWitness, payload=self.workInts[ii][1:]).get()
                 self.timedOut = (time.time() > self.clockTimeout) if self.clockTimeout is not None else False
                 # print('Working on ' + str(self.workInts[ii]) + 'on PE ' + str(charm.myPe()) + '; with timeout ' + str(self.timedOut))
                 if type(successorList[ii][1]) is int or self.timedOut:
@@ -1004,7 +1005,8 @@ class successorWorker(Chare):
         faces, witnessList = self.thisProxy[self.thisIndex].concreteMinHRep(H,constraint_list,boolIdxNoFlip,intIdxNoFlip,intIdx,solver=solver,interiorPoint=witness,ret=True).get()
 
         successors = []
-        for i in faces:
+        for idx in range(len(faces)):
+            i = faces[idx]
             if boolIdxNoFlip[intIdx[i]//8] & 1<<(intIdx[i] % 8) == 0:
                 # boolIdxNoFlip[intIdx[i]] = 1
                 # t = time.time()
@@ -1015,7 +1017,7 @@ class successorWorker(Chare):
                 temp = copy(intIdxNoFlip)
                 temp.insert(insertIdx,intIdx[i])
                 successors.append( \
-                        [ copy(boolIdxNoFlip), tuple(temp), (intIdx[i],), None ]
+                        [ copy(boolIdxNoFlip), tuple(temp), (intIdx[i],), None if witness is None else witnessList[idx], None ]
                     )
                 boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] ^ 1<<(intIdx[i] % 8)
                 # self.conversionTime += time.time() - t
