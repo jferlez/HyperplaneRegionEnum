@@ -689,7 +689,7 @@ class HashWorker(Chare):
         self.table = {}
     @coro
     def getTable(self):
-        return self.table
+        return [(ky.nodeBytes, ky.face, ky.witness, ky.payload) for ky in self.table.keys()]
     @coro
     def resetLevelCount(self):
         self.level=-1
@@ -1034,3 +1034,7 @@ class DistHash(Chare):
     @coro
     def resetLevelCount(self):
         self.hWorkersFull.resetLevelCount(awaitable=True).get()
+
+    @coro
+    def getTable(self):
+        return self.hWorkersFull.getTable(ret=True).get()
