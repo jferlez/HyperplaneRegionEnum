@@ -153,7 +153,7 @@ class Poset(Chare):
 
 
     @coro
-    def setConstraint(self,lb=0,out=0,timeout=None,prefilter=True):
+    def setConstraint(self,lb=0,out=0,timeout=None,prefilter=True,rebasePt=None):
         self.populated = False
         self.incomplete = True
         self.N = len(self.AbPairs[0][0])
@@ -169,6 +169,8 @@ class Poset(Chare):
                 self.fixedb \
             )
         self.N = self.flippedConstraints.N
+        if not rebasePt is None:
+            self.flippedConstraints.setRebase(copy(rebasePt))
 
 
         stat = self.succGroup.initialize(self.N,self.flippedConstraints,timeout,awaitable=True)
