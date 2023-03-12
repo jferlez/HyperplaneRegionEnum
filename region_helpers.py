@@ -86,7 +86,8 @@ class flipConstraints:
             return None
         regSet = set(nodeBytes)
         doubleFlip = self.rebaseSet & regSet
-        return tuple(sorted(list( (self.rebaseSet - doubleFlip) | (regSet - doubleFlip) )))
+        retTup = tuple(sorted(list( (self.rebaseSet - doubleFlip) | (regSet - doubleFlip) )))
+        return tupToBytes(retTup, self.wholeBytes, self.tailBits)
 
 
 class flipConstraintsReduced(flipConstraints):
