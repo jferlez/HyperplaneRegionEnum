@@ -719,7 +719,7 @@ class successorWorker(Chare):
             self.queryMutexChannel.send(1)
         retVal = self.queryChannels[val[0]].recv()
         # print('^^^^^^ Recieved answer to query ' + str(q) + ' of ' + str(retVal))
-        if retVal > 0:
+        if retVal[0] > 0:
             self.stats['successfulQueries'] += 1
         return retVal
 
@@ -935,7 +935,7 @@ class successorWorker(Chare):
                 # print('PE' + str(charm.myPe()) + ' Queried table with node ' + str(origInt) + ' and received reply ' + str(q))
                 # If the node corresponding to the hyperplane we're about to flip is already in the table
                 # then treat it as redundant and skip it (saving the LP)
-                if q > 0:
+                if q[0] > 0:
                     continue
             if interiorPoint is None:
                 # Set the extra row to the negation of the pre-relaxed current constraint

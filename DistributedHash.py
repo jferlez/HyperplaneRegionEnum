@@ -371,7 +371,8 @@ class HashWorker(Chare):
         return 1
 
     @coro
-    def initListen(self,fut):
+    def initListen(self,fut,queryReturnInfo=False):
+        self.queryReturnInfo = queryReturnInfo
         if not charm.myPe() in self.hashPElist:
             return
         # Make sure all of the loopback channels are empty:
@@ -522,7 +523,8 @@ class HashWorker(Chare):
                         newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
                         if newNode in self.table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
-                            self.queryChannelsHashEnd[chIdx].send(1)
+                            nd = self.table[newNode]['ptr']
+                            self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness))
                         else:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             self.queryChannelsHashEnd[chIdx].send(-1)
@@ -997,7 +999,7 @@ class DistHash(Chare):
     def getWorkerProxyFull(self):
         return self.hWorkersFull
     @coro
-    def initListening(self,allDone):
+    def initListening(self,allDone,queryReturnInfo=False):
         for ch in self.queryMutexChannelsHashEnd:
             self.queryMutexStatus[ch] = 0
         if len(self.queryMutexChannelsHashEnd) > 0:
@@ -1007,7 +1009,7 @@ class DistHash(Chare):
             self.thisProxy.queryMutexListen()
         doneFuts = [Future() for k in range(len(self.hashWorkerProxies))]
         for k in range(len(doneFuts)):
-            self.hashWorkerProxies[k].initListen(doneFuts[k])
+            self.hashWorkerProxies[k].initListen(doneFuts[k],queryReturnInfo=queryReturnInfo)
         cnt = 0
         for fut in charm.iwait(doneFuts):
             cnt += fut.get()
