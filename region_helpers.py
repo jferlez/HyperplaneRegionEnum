@@ -17,6 +17,8 @@ class flipConstraints:
         self.N = len(nA)
         self.d = len(nA[0])
         self.pt = pt
+        self.tol = tol
+        self.rTol = rTol
 
         if (fA is not None) and (fb is not None):
             v = fA @ pt
@@ -107,7 +109,7 @@ class flipConstraintsReduced(flipConstraints):
 class flipConstraintsReducedMin(flipConstraints):
 
     def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9):
-        super().__init__(nA, nb, pt, fA=fA, fb=fb)
+        super().__init__(nA, nb, pt, fA=fA, fb=fb, tol=tol, rTol=rTol)
         if self.fA is None:
             return
 
