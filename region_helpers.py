@@ -43,10 +43,11 @@ class flipConstraints:
         self.nonRedundantHyperplanes = np.arange(self.N)
         self.wholeBytes = (self.N + 7) // 8
         self.tailBits = self.N - 8*(self.N // 8)
+        self.rebasePt = None
 
     # This method returns flips of the hyperplanes *as provided* to obtain the region
     # specified by nodeBytes.
-    # This is useful when you don't just care about the region specification but the 
+    # This is useful when you don't just care about the region specification but the
     # hyperplanes themselves, as in e.g. FastBATLLNN (there the sign of the hyperplanes
     # means something for the output of the TLL).
     def translateRegion(self,nodeBytes, allN=True):
@@ -70,16 +71,28 @@ class flipConstraints:
         regSet = self.insertRedundant(nodeBytes) if allN and self.N != self.allN else nodeBytes
         H[regSet,] = -H[regSet,]
         return H
-    
+
     # This helper method is only meant to be called in getRegionConstraints above
     def insertRedundant(self, nodeBytes):
         return tuple(self.nonRedundantHyperplanes[nodeBytes,])
+
+    def setRebase(self, rebasePoint):
+        self.rebasePt = rebasePoint
+        v = self.constraints[:self.N, 1:] @ self.rebasePt + self.constraints[:self.N, 0].reshape(-1,1)
+        self.rebaseSet = frozenset(np.nonzero(v.flatten() < -self.tol)[0])
+
+    def rebaseRegion(self, nodeBytes):
+        if self.rebasePt is None:
+            return None
+        regSet = set(nodeBytes)
+        doubleFlip = self.rebaseSet & regSet
+        return tuple(sorted(list( (self.rebaseSet - doubleFlip) | (regSet - doubleFlip) )))
 
 
 class flipConstraintsReduced(flipConstraints):
 
     def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9):
-        super().__init__(nA, nb, pt, fA=fA, fb=fb)
+        super().__init__(nA, nb, pt, fA=fA, fb=fb, tol=tol, rTol=rTol)
         if self.fA is None:
             return
 
