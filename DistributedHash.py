@@ -243,10 +243,14 @@ class HashWorker(Chare):
         else:
             # default to tuple mode
             regEncode = tuple(toHash[1])
-        if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), payload)
+        if len(toHash) >= 3:
+            face = toHash[2]
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), )
+            face = (-1,)
+        if payload is not None:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, payload)
+        else:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face )
 
     @coro
     def hashAndSend(self,toHash,payload=None):
