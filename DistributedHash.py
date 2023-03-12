@@ -19,7 +19,7 @@ XFER_CHUNK_SIZE = 1000
 
 class Node():
 
-    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes, originPe, face, *args):
+    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes, originPe, face, witness, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
@@ -28,6 +28,7 @@ class Node():
         self.parentChare = parentChare
         self.originPe = originPe
         self.face = set(face)
+        self.witness = witness
         self.nodeEqualityFn = nodeEqualityFn
         self.payload = args
 
@@ -246,7 +247,11 @@ class HashWorker(Chare):
         if len(toHash) >= 3:
             face = toHash[2]
         else:
-            face = (-1,)
+            face = tuple()
+        if len(toHash) >= 4:
+            witness = toHash[3]
+        else:
+            witness = None
         if payload is not None:
             return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, payload)
         else:

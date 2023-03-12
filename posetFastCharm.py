@@ -631,11 +631,15 @@ class successorWorker(Chare):
         if len(toHash) >= 3:
             face = toHash[2]
         else:
-            face = (-1,)
-        if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, payload)
+            face = tuple()
+        if len(toHash) >= 4:
+            witness = toHash[3]
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face )
+            witness = None
+        if payload is not None:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, witness, payload)
+        else:
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, witness )
 
     @coro
     def hashAndSend(self,toHash,payload=None,vertex=None):
