@@ -904,7 +904,7 @@ class successorWorker(Chare):
         witnessList = []
         safe = False
         if len(intIdx) == 0:
-            return np.full(0,0,dtype=bool)
+            return [], []
 
         restricted = False if constraint_list_in is None else True
 
