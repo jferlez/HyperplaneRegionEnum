@@ -103,7 +103,7 @@ class Poset(Chare):
         self.rsPeScheduler = Chare(peSchedulerRS,args=[self.succGroupFull,self.posetPElist])
         charm.awaitCreation(self.rsPeScheduler)
 
-        self.succGroupFull.initPEs(self.posetPElist,rsScheduler=self.rsPeScheduler)
+        self.succGroupFull.initPEs(self.posetPElist,localVarGroup=self.localVarGroup,rsScheduler=self.rsPeScheduler)
         secs = [self.succGroupFull[r[0]:r[1]:r[2]] for r in self.posetPEs]
         self.succGroup = charm.combine(*secs)
         successorProxies = self.succGroupFull.getProxies(ret=True).get()
@@ -387,7 +387,7 @@ class Poset(Chare):
         else:
             print('Error: RS Pe scheduler not configured properly')
 
-        self.rsPeScheduler.awaitResult(awaitable=True).get()
+        checkVal = self.rsPeScheduler.awaitResult(awaitable=True).get()
 
         statsFut = Future()
         self.succGroupFull.getStats(statsFut)
@@ -416,49 +416,64 @@ class peSchedulerRS(Chare):
         self.posetPElist = posetPElist
         self.peFree = copy(self.posetPElist)
         self.resultFut = None
+        self.retVal = True
 
     @coro
     def resetScheduler(self):
         self.peFree = copy(self.posetPElist)
         self.succGroup.setPeAvailableRS(True,awaitable=True).get()
         self.resultFut = None
+        self.retVal = True
 
     @coro
     def awaitResult(self):
         self.resultFut = Future()
-        self.resultFut.get()
+        return self.resultFut.get()
 
     # If there is a PE available, schedule it. If there isn't, return -1 so the successorWorker
     # knows that the scheduling was unsuccessful (as my be the case due to concurrency issues)
     @coro
     def schedNextFreePE(self):
+        if not self.retVal:
+            return -1
         if len(self.peFree) > 1:
             return self.peFree.pop()
         elif len(self.peFree) == 1:
             lastFreePe = self.peFree.pop()
-            self.succGroup.setPeAvailableRS(False,awaitable=True).get()
+            self.succGroup.setPeAvailableRS(False,abort=(not self.retVal))
             return lastFreePe
         else:
             return -1
 
     @coro
     def freePe(self,pe):
+        # print(f'Free PEs = {self.peFree}; To free = {pe}; retVal = {self.retVal}')
         self.peFree.append(pe)
         if len(self.peFree) == len(self.posetPElist):
             print(f'*** All done! {self.peFree} ***')
-            self.resultFut.send(1)
-        self.succGroup.setPeAvailableRS(True,awaitable=True).get()
+            self.resultFut.send(self.retVal)
+        self.succGroup.setPeAvailableRS(self.retVal,abort=(not self.retVal))
 
     @coro
-    def setrsDone(self):
-        self.succGroup.setrsDone(awaitable=True).get()
+    def failAbort(self):
+        self.retVal = False
+        self.succGroup.setPeAvailableRS(False,abort=True)
+
+    # @coro
+    # def setrsDone(self):
+    #     self.succGroup.setrsDone(awaitable=True).get()
 
 
 
 class successorWorker(Chare):
 
-    def initPEs(self,pes,rsScheduler=None):
+    def initPEs(self,pes,localVarGroup=None,rsScheduler=None):
         self.posetPElist = pes
+        self.checkRS= False
+        test = getattr(localVarGroup,'checkNodeRS',None)
+        if not test is None:
+            self.checkRS = True
+        self.localVarGroup = localVarGroup
         self.timedOut = False
         self.rsScheduler = rsScheduler
         self.rsPeFree = True
@@ -534,8 +549,10 @@ class successorWorker(Chare):
         return getattr(self,prop)
 
     @coro
-    def setPeAvailableRS(self,status):
+    def setPeAvailableRS(self,status,abort=False):
         self.rsPeFree = status
+        if abort:
+            self.rsDone = True
 
     @coro
     def getStats(self, statsFut):
@@ -796,7 +813,23 @@ class successorWorker(Chare):
     def reverseSearch(self,INTrep,payload=None,witness=None):
         #print(f'PE {charm.myPe()}: working on {INTrep}')
         #print(f'PE {charm.myPe()} working on region {INTrep}')
+        if self.rsDone:
+            return
+
         self.rsDepth += 1
+
+        if self.checkRS:
+            INTrep2, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
+            tempRetVal = self.localVarGroup[charm.myPe()].checkNodeRS(INTrep,ret=True).get()
+            # print(f'{charm.myPe()} --> INTrep = {INTrep2}; boolIdxNoFlip = {boolIdxNoFlip}; intIdx = {intIdx}; intIdxNoFlip = {intIdxNoFlip}; witness = {witness}; retVal = {tempRetVal}')
+            if not tempRetVal:
+                self.rsDone = True
+                self.rsPeFree = False
+                self.rsDepth -= 1
+                self.rsScheduler.failAbort()
+                if self.rsDepth == 0:
+                    self.rsScheduler.freePe(charm.myPe(),awaitable=True).get()
+                return
         # Compute all of the adjacent nodes (from among the unflipped hyperplanes)
         H2 = self.constraints.copy()
         successorList, _, witnessList = self.processNodeSuccessors(INTrep,self.N,H2,**self.processNodesArgs,payload=payload,witness=witness).get()
@@ -834,7 +867,7 @@ class successorWorker(Chare):
                 if currentRegionIsParent:
                     #print(f'PE {charm.myPe()}: Visiting {successorList[ii][1]}')
                     peToUse = -1
-                    if self.rsPeFree:
+                    if self.rsPeFree and not self.rsDone:
                         peToUse = self.rsScheduler.schedNextFreePE(ret=True).get()
                     if peToUse >= 0:
                         self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][3],witness=interiorPoint)
