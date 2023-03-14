@@ -992,7 +992,7 @@ class DistHash(Chare):
         # print('Count was ' + str(val))
         return val
 
-
+    @coro
     def getWorkerProxy(self):
         return self.hWorkers
     @coro
