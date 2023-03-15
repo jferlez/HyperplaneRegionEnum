@@ -383,7 +383,7 @@ class Poset(Chare):
         # Start reverse search on the root on the first PE
         peToUse = self.rsPeScheduler.schedNextFreePE(ret=True).get()
         if peToUse >= 0:
-            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root,witness=self.flippedConstraints.pt)
+            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root,payload=tuple(),witness=self.flippedConstraints.pt)
         else:
             print('Error: RS Pe scheduler not configured properly')
 
@@ -872,9 +872,9 @@ class successorWorker(Chare):
                     if self.rsPeFree and not self.rsDone:
                         peToUse = self.rsScheduler.schedNextFreePE(ret=True).get()
                     if peToUse >= 0:
-                        self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][3],witness=interiorPoint)
+                        self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][4],witness=interiorPoint)
                     else:
-                        self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][3],witness=interiorPoint,awaitable=True).get()
+                        self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][4],witness=interiorPoint,awaitable=True).get()
         self.rsDepth -= 1
         if self.rsDepth == 0:
             self.rsScheduler.freePe(charm.myPe(),awaitable=True).get()
@@ -1054,7 +1054,7 @@ class successorWorker(Chare):
                 temp = copy(intIdxNoFlip)
                 temp.insert(insertIdx,intIdx[i])
                 successors.append( \
-                        [ copy(boolIdxNoFlip), tuple(temp), (intIdx[i],) if self.sendFaces else tuple() , None if witness is None else witnessList[idx] ]
+                        [ copy(boolIdxNoFlip), tuple(temp), (intIdx[i],) if self.sendFaces else tuple() , None if witness is None else witnessList[idx], None ]
                     )
                 boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] ^ 1<<(intIdx[i] % 8)
                 # self.conversionTime += time.time() - t
