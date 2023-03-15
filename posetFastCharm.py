@@ -39,6 +39,8 @@ class PosetNode(DistributedHash.Node):
 
     # def check(self):
     #     pass
+    def update(self, lsb,msb,nodeBytes, originPe, face, *args):
+        self.face |= set(face)
 
 class localVar(Chare):
     def setConstraints(self,constraints):
