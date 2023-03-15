@@ -527,7 +527,7 @@ class HashWorker(Chare):
                             self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness))
                         else:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
-                            self.queryChannelsHashEnd[chIdx].send(-1)
+                            self.queryChannelsHashEnd[chIdx].send((-1,))
                     elif val < 0:
                         answeredSelf = True
                         # for chIt in self.queryChannelsHashEnd:
