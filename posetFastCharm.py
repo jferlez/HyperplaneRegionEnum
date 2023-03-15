@@ -791,7 +791,7 @@ class successorWorker(Chare):
         if len(self.workInts) > 0:
             successorList = [[None,None] for k in range(len(self.workInts))]
             for ii in range(len(successorList)):
-                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.N,self.constraints,**self.processNodesArgs, payload=self.workInts[ii][1:],awaitable=True).get()
+                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.N,self.constraints,**self.processNodesArgs,witness=self.sendWitness, payload=self.workInts[ii][1:],awaitable=True).get()
                 self.timedOut = (time.time() > self.clockTimeout) if self.clockTimeout is not None else False
                 # print('Working on ' + str(self.workInts[ii]) + 'on PE ' + str(charm.myPe()) + '; with timeout ' + str(self.timedOut))
                 if type(successorList[ii][1]) is int or self.timedOut:
@@ -1020,7 +1020,7 @@ class successorWorker(Chare):
             return to_keep, witnessList
 
     @coro
-    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',lpopts={}):
+    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None):
         # INTrep = INTrep[0]
         # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
         # t = time.time()
@@ -1054,7 +1054,7 @@ class successorWorker(Chare):
                 temp = copy(intIdxNoFlip)
                 temp.insert(insertIdx,intIdx[i])
                 successors.append( \
-                        [ copy(boolIdxNoFlip), tuple(temp), (intIdx[i],) if self.sendFaces else tuple() , None if not self.sendWitness else witnessList[idx] ]
+                        [ copy(boolIdxNoFlip), tuple(temp), (intIdx[i],) if self.sendFaces else tuple() , None if witness is None else witnessList[idx] ]
                     )
                 boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] ^ 1<<(intIdx[i] % 8)
                 # self.conversionTime += time.time() - t
