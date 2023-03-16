@@ -293,6 +293,39 @@ def findInteriorPointOld(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
         return None
 
 
+def regionBBox(H,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7):
+    if lpObj is None:
+       lpObj = encapsulateLP.encapsulateLP()
+       lpObj.initSolver(solver=solver)
+    assert not findInteriorPoint(H,solver=solver,lpObj=lpObj,tol=tol,rTol=rTol) is None, 'H matrix specifies an empty region'
+    n = H.shape[1]-1
+    box = np.array([ [-np.inf, np.inf] for _ in range(n) ],dtype=np.float64)
+    objective = np.zeros(n,dtype=np.float64)
+    for idx in range(n):
+        for direc, idx2 in [(1,0),(-1,1)]:
+            objective[idx] = direc
+            status, sol = lpObj.runLP( \
+                    objective, \
+                    -H[:,1:], \
+                    H[:,0], \
+                    lpopts = {'solver':solver} \
+                )
+            objective[idx] = 0
+            box[idx,idx2] = np.array(sol).flatten()[idx]
+    return box
+
+def sampleRegion(H,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,numSamples=10000):
+    if lpObj is None:
+       lpObj = encapsulateLP.encapsulateLP()
+       lpObj.initSolver(solver=solver)
+    box = regionBBox(H,solver=solver,lpObj=lpObj,tol=tol,rTol=rTol)
+    # print(box)
+    n = box.shape[0]
+    diff = box[:,1].reshape(-1,1) - box[:,0].reshape(-1,1)
+    summ = box[:,1].reshape(-1,1) + box[:,0].reshape(-1,1)
+    samps = diff * np.random.random((n,numSamples)) + 0.5 * summ - 0.5 * diff
+    locs = np.nonzero(np.all(-H[:,1:] @ samps - H[:,0].reshape(-1,1) <= 0,axis=0))[0]
+    return samps[:,locs].copy()
 
 
 
