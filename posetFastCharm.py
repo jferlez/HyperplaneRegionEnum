@@ -39,7 +39,7 @@ class PosetNode(DistributedHash.Node):
 
     # def check(self):
     #     pass
-    def update(self, lsb,msb,nodeBytes, originPe, face, *args):
+    def update(self, lsb,msb,nodeBytes, originPe, face, witness, *args):
         self.face |= set(face)
 
 class localVar(Chare):
