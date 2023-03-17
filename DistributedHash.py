@@ -110,8 +110,12 @@ class HashWorker(Chare):
         self.queryLoopback = Channel(self,remote=self.thisProxy[self.thisIndex])
         self.controlLoopback = Channel(self,remote=self.thisProxy[self.thisIndex])
         self.nodeEqualityFn = lambda x,y: (x == y)
-        self.hashStoreMode = 0
+        self.hashStoreMode = 1
         #print(self.thisIndex)
+    
+    @coro
+    def setConstraint(self,hashStoreMode=1):
+        self.hashStoreMode = 1
 
     @coro
     def updateNodeEqualityFn(self,fn=None,nodeType='standard',tol=1e-9,rTol=1e-9,H=None):
@@ -253,9 +257,9 @@ class HashWorker(Chare):
         else:
             witness = None
         if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, payload)
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, witness, payload)
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face )
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, witness )
 
     @coro
     def hashAndSend(self,toHash,payload=None):
@@ -823,7 +827,7 @@ class DistHash(Chare):
         myFut.get()
 
     @coro
-    def initAsFeeder(self, nodeConstructor, localVarGroup, hashPEs, usePosetChecking ):
+    def initAsFeeder(self, nodeConstructor, localVarGroup, hashPEs, usePosetChecking, opts={} ):
         self.usePosetChecking = usePosetChecking
         self.nodeConstructorAsFeeder = nodeConstructor
         self.localVarGroupAsFeeder = localVarGroup
@@ -839,6 +843,7 @@ class DistHash(Chare):
             self.hashPEs \
         ],onPE=self.targetHashPElist[0])
         charm.awaitCreation(self.targetDistHashTable)
+        self.hWorkersFull.setConstraint(**opts,awaitable=True).get()
         # print('Initialized distHashTable group')
         initFut = self.targetDistHashTable.initialize(awaitable=True)
         initFut.get()
