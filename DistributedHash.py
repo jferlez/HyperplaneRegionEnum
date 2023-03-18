@@ -30,7 +30,7 @@ class Node():
         self.face = set(face)
         self.witness = witness
         self.nodeEqualityFn = nodeEqualityFn
-        self.payload = args
+        self.payload = args[0] if len(args) > 0 else tuple()
 
     def __hash__(self):
         return self.msbHash
@@ -714,7 +714,7 @@ class HashWorker(Chare):
             xferDone = [Future() for _ in range(len(self.feederPElist))]
             for feederPEidx in range(len(self.feederPElist)):
                 idx = (feederPEidx + feederPEoffset) % len(self.feederPElist)
-                self.feederProxies[idx].appendToWorkList([(nd.nodeBytes, *nd.payload) for nd in self.levelList[feederPEidx:chunkSize:len(self.feederPElist)]],xferDone[feederPEidx])
+                self.feederProxies[idx].appendToWorkList([(nd.nodeBytes, nd.payload) for nd in self.levelList[feederPEidx:chunkSize:len(self.feederPElist)]],xferDone[feederPEidx])
             cnt = 0
             for fut in charm.iwait(xferDone):
                 cnt += fut.get()
