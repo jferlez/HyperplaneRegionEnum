@@ -43,6 +43,8 @@ class flipConstraints:
         self.nonRedundantHyperplanes = np.arange(self.N)
         self.wholeBytes = (self.N + 7) // 8
         self.tailBits = self.N - 8*(self.N // 8)
+        self.wholeBytesAllN = self.wholeBytes
+        self.tailBitsAllN = self.tailBits
         self.rebasePt = None
 
     # This method returns flips of the hyperplanes *as provided* to obtain the region
@@ -80,14 +82,23 @@ class flipConstraints:
         self.rebasePt = rebasePoint
         v = self.constraints[:self.N, 1:] @ self.rebasePt + self.constraints[:self.N, 0].reshape(-1,1)
         self.rebaseSet = frozenset(np.nonzero(v.flatten() < -self.tol)[0])
+        v = self.allConstraints[:self.allN, 1:] @ self.rebasePt + self.allConstraints[:self.allN, 0].reshape(-1,1)
+        self.rebaseSetAllN = frozenset(np.nonzero(v.flatten() < -self.tol)[0])
 
-    def rebaseRegion(self, nodeBytes):
+    def rebaseRegion(self, nodeBytes, allN=False):
         if self.rebasePt is None:
             return None
         regSet = set(nodeBytes)
-        doubleFlip = self.rebaseSet & regSet
-        retTup = tuple(sorted(list( (self.rebaseSet - doubleFlip) | (regSet - doubleFlip) )))
-        return tupToBytes(retTup, self.wholeBytes, self.tailBits), retTup
+        rebaseSet = self.rebaseSetAllN if allN else self.rebaseSet
+        doubleFlip = rebaseSet & regSet
+        retTup = tuple(sorted(list( (rebaseSet - doubleFlip) | (regSet - doubleFlip) )))
+        return tupToBytes(retTup, self.wholeBytesAllN if allN else self.wholeBytes, self.tailBitsAllN if allN else self.tailBits), retTup
+    
+    def expandRegion(self, nodeBytes):
+        return nodeBytes
+
+    def collapseRegion(self, nodeBytes):
+        return nodeBytes
 
 
 class flipConstraintsReduced(flipConstraints):
@@ -141,6 +152,8 @@ class flipConstraintsReducedMin(flipConstraints):
         self.N = len(self.nonRedundantHyperplanes)
         self.wholeBytes = (self.N + 7) // 8
         self.tailBits = self.N - 8*(self.N // 8)
+        self.wholeBytesAllN = (self.allN + 7) // 8
+        self.tailBitsAllN = self.allN - 8*(self.allN // 8)
 
         self.root = tuple()
 
@@ -155,6 +168,16 @@ class flipConstraintsReducedMin(flipConstraints):
             regSet = regSet[self.nonRedundantHyperplanes,]
         return np.nonzero(regSet)[0]
 
+    def expandRegion(self,nodeBytes):
+        regSet = np.full(self.allN,False,dtype=bool)
+        for ii in nodeBytes:
+            regSet[self.nonRedundantHyperplanes[ii]] = True
+        return tuple(np.nonzero(regSet)[0])
+
+    def collapseRegion(self,nodeBytes):
+        regSet = np.full(self.allN,False, dtype=bool)
+        regSet[nodeBytes,] = np.full(len(nodeBytes),True,dtype=bool)
+        return tuple(np.nonzero(regSet[self.nonRedundantHyperplanes,])[0])
 
 # H2 is a CDD-style matrix specifying inequality constraints, and intIdx is a list of indices of inequalities to check for redundancy
 # The return value is a list of indices into the list intIdx specifying which of those constraints are non-redundant
