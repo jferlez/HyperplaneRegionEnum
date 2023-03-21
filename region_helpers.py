@@ -327,7 +327,28 @@ def sampleRegion(H,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,numSamples=10000)
     locs = np.nonzero(np.all(-H[:,1:] @ samps - H[:,0].reshape(-1,1) <= 0,axis=0))[0]
     return samps[:,locs].copy()
 
+def projectConstraints(H,hyper,subIdx=None,tol=1e-8,rTol=1e-8):
+    hyper = hyper.flatten()
+    assert H.shape[1] == hyper.shape[0]
+    assert H.shape[1] > 2, 'Projecting constraints over 1-d results in points'
+    tempIdx = np.nonzero(hyper[1:])[0]
+    assert len(tempIdx) > 0
+    if subIdx is None:
+        subIdx = tempIdx[0]
+        print(f'Local subIdx {subIdx}')
+    else:
+        assert subIdx in tempIdx
+    retH = np.zeros((H.shape[0],H.shape[1]-1),dtype=np.float64)
+    hyperSlice = np.zeros((hyper.shape[0]-2,),dtype=np.float64)
+    hyperSlice[0:subIdx] = hyper[1:(subIdx+1)]
+    hyperSlice[subIdx:] = hyper[(subIdx+2):]
 
+    W = H[:,1:]
+    b = H[:,0]
+    retH[:,1:(subIdx+1)] = W[:,0:subIdx] + W[:,subIdx].reshape(-1,1) * (-1/hyper[subIdx+1]) * hyperSlice
+    retH[:,(subIdx+1):] = W[:,(subIdx+1):] + W[:,subIdx].reshape(-1,1) * (-1/hyper[subIdx+1]) * hyperSlice
+    retH[:,0] = b - W[:,subIdx] * (1/hyper[subIdx+1]) * hyper[0]
+    return retH, subIdx
 
 # Helper functions:
 
