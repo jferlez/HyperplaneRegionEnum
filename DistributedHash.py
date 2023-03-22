@@ -11,7 +11,6 @@ from numba import njit
 from numba.core import types
 from numba.typed import Dict
 from numba.np.unsafe.ndarray import to_fixed_tuple
-from numba.pycc import CC
 from functools import partial
 from region_helpers import hashNodeBytes
 
