@@ -473,7 +473,7 @@ class successorWorker(Chare):
         self.posetPElist = pes
         self.checkRS= False
         test = getattr(localVarGroup,'checkNodeRS',None)
-        if not test is None:
+        if not test is None and callable(localVarGroup.checkNodeRS):
             self.checkRS = True
         self.localVarGroup = localVarGroup
         self.timedOut = False
