@@ -475,6 +475,10 @@ class successorWorker(Chare):
         test = getattr(localVarGroup,'checkNodeRS',None)
         if not test is None and callable(localVarGroup.checkNodeRS):
             self.checkRS = True
+        self.doRSCleanup = False
+        test = getattr(self,'cleanupRS',None)
+        if not test is None and callable(self.cleanupRS):
+            self.doRSCleanup = True
         self.localVarGroup = localVarGroup
         self.timedOut = False
         self.rsScheduler = rsScheduler
@@ -842,6 +846,7 @@ class successorWorker(Chare):
         else:
             #print(f'PE {charm.myPe()}: successorList = {successorList}; witnessList = {witnessList}')
             findWitnessLocally = True
+            witnessList = []
         #print(f'PE {charm.myPe()}: successors of {INTrep} are {successorList}')
         self.rsRegionCount += 1
         #print(f'PE {charm.myPe()} working on region {INTrep}; found successors {successorList}')
@@ -852,6 +857,7 @@ class successorWorker(Chare):
             H[successorList[ii][1],:] = -H[successorList[ii][1],:]
             if findWitnessLocally:
                 interiorPoint = region_helpers.findInteriorPoint(H,lpObj=self.rsLP)
+                witnessList.append(interiorPoint)
             else:
                 interiorPoint = witnessList[ii]
             # If the ray connecting interiorPoint to the origin point doesn't pass through the current
@@ -877,6 +883,8 @@ class successorWorker(Chare):
                         self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][4],witness=interiorPoint)
                     else:
                         self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][4],witness=interiorPoint,awaitable=True).get()
+        if self.doRSCleanup:
+            self.cleanupRS(successorList,witnessList)
         self.rsDepth -= 1
         if self.rsDepth == 0:
             self.rsScheduler.freePe(charm.myPe(),awaitable=True).get()
