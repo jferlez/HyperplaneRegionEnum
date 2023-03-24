@@ -884,7 +884,7 @@ class successorWorker(Chare):
                     else:
                         self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][4],witness=interiorPoint,awaitable=True).get()
         if self.doRSCleanup:
-            self.cleanupRS(successorList,witnessList)
+            self.thisProxy[self.thisIndex].cleanupRS(successorList,witnessList,awaitable=True).get()
         self.rsDepth -= 1
         if self.rsDepth == 0:
             self.rsScheduler.freePe(charm.myPe(),awaitable=True).get()
