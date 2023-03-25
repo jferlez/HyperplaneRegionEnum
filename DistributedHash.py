@@ -527,7 +527,7 @@ class HashWorker(Chare):
                         if newNode in self.table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             nd = self.table[newNode]['ptr']
-                            self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness))
+                            self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness, nd.payload))
                         else:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             self.queryChannelsHashEnd[chIdx].send((-1,))
