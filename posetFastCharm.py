@@ -1093,7 +1093,9 @@ class successorWorker(Chare):
         else:
             return successors, sel, witnessList
 
-
+    @coro
+    def _NOOP_(self):
+        pass
 
 
 
