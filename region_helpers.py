@@ -354,7 +354,7 @@ def projectConstraints(H,hyperIn,subIdx=None,tol=1e-8,rTol=1e-8):
     hyper = hyperIn.flatten()
     hyper[1:] = -hyper[1:]
     assert H.shape[1] == hyper.shape[0]
-    assert H.shape[1] > 2, 'Projecting constraints over 1-d results in points'
+    # assert H.shape[1] > 2, 'Projecting constraints over 1-d results in points'
     tempIdx = np.nonzero(hyper[1:])[0]
     assert len(tempIdx) > 0
     if subIdx is None:
