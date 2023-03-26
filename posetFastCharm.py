@@ -828,7 +828,7 @@ class successorWorker(Chare):
 
         if self.checkRS:
             # INTrep2, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
-            tempRetVal = self.localVarGroup[charm.myPe()].checkNodeRS(INTrep,ret=True).get()
+            tempRetVal = self.localVarGroup[charm.myPe()].checkNodeRS(INTrep,payload=payload, witness=witness, ret=True).get()
             # print(f'{charm.myPe()} --> INTrep = {INTrep2}; boolIdxNoFlip = {boolIdxNoFlip}; intIdx = {intIdx}; intIdxNoFlip = {intIdxNoFlip}; witness = {witness}; retVal = {tempRetVal}')
             if not tempRetVal:
                 self.rsDone = True
