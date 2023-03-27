@@ -71,7 +71,7 @@ class flipConstraints:
     def getRegionConstraints(self, nodeBytes, allN=True):
         H = self.allConstraints.copy() if allN else self.constraints.copy()
         regSet = self.insertRedundant(nodeBytes) if allN and self.N != self.allN else nodeBytes
-        H[regSet,] = -H[regSet,]
+        H[regSet,:] = -H[regSet,:]
         return H
 
     # This helper method is only meant to be called in getRegionConstraints above
