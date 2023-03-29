@@ -207,7 +207,7 @@ class Poset(Chare):
     # opts dictionary keys 'clearTable' and 'retrieveFaces' set parameters in populatePoset itself; any
     # other keys are passed as keyword arguments to setMethod
     @coro
-    def populatePoset(self, opts={} ):
+    def populatePoset(self,payload=None, opts={} ):
         if self.populated:
             return
         self.clearTable = 'speed'
@@ -252,7 +252,7 @@ class Poset(Chare):
         boolIdxNoFlip = bytearray(b'\x00') * (self.flippedConstraints.wholeBytes + (1 if self.flippedConstraints.tailBits != 0 else 0))
         for unflipIdx in range(len(thisLevel[0][0])-1,-1,-1):
             boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
-        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0],tuple(),self.flippedConstraints.pt],vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())),ret=True).get()
+        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0],tuple(),self.flippedConstraints.pt],payload=(None if payload is None else payload),vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())),ret=True).get()
 
         self.distHashTable.awaitPending(awaitable=True).get()
         # Send a final termination signal:
