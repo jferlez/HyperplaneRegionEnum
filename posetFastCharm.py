@@ -368,7 +368,7 @@ class Poset(Chare):
         return checkVal
 
     @coro
-    def populatePosetRS(self, opts={}):
+    def populatePosetRS(self,payload=None, opts={}):
         if self.populated:
             return
 
@@ -385,7 +385,7 @@ class Poset(Chare):
         # Start reverse search on the root on the first PE
         peToUse = self.rsPeScheduler.schedNextFreePE(ret=True).get()
         if peToUse >= 0:
-            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root,payload=tuple(),witness=self.flippedConstraints.pt)
+            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root,payload=(tuple() if payload is None else payload),witness=self.flippedConstraints.pt)
         else:
             print('Error: RS Pe scheduler not configured properly')
 
