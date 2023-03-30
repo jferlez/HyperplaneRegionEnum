@@ -1113,5 +1113,21 @@ def DictAccum(contribs):
 
 Reducer.addReducer(DictAccum)
 
+def DictListJoin(contribs):
+    result = defaultdict(list)
+    for trib in contribs:
+        for ky in trib.keys():
+            result[ky] += trib[ky]
+    return result
 
+Reducer.addReducer(DictListJoin)
+
+def DictSetUnion(contribs):
+    result = defaultdict(set)
+    for trib in contribs:
+        for ky in trib.keys():
+            result[ky] |= trib[ky]
+    return result
+
+Reducer.addReducer(DictSetUnion)
 
