@@ -25,6 +25,7 @@ class encapsulateLP():
             status = sol['status']
             x = sol['x']
         elif lpopts['solver']=='clp':
+            assert 'clp' in self.initializedSolvers and self.initializedSolvers['clp'], f'{msgID}: Please initialize solver CLP first'
             for constr in range(len(self.cylp.constraints)):
                 self.cylp.removeConstraint(self.cylp.constraints[constr].name)
             self.cylp += np.matrix(A) * self.xVar <= CyLPArray(b.flatten())
