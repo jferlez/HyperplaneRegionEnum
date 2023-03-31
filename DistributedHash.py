@@ -110,8 +110,9 @@ class HashWorker(Chare):
         self.controlLoopback = Channel(self,remote=self.thisProxy[self.thisIndex])
         self.nodeEqualityFn = lambda x,y: (x == y)
         self.hashStoreMode = 1
+        self.enumChannelsHashEnd = {}
         #print(self.thisIndex)
-    
+
     @coro
     def setConstraint(self,hashStoreMode=1):
         self.hashStoreMode = 1
@@ -723,6 +724,43 @@ class HashWorker(Chare):
             self.levelList = self.levelList[chunkSize:]
         retFut.send(1)
 
+    @coro
+    def registerEnumHashEnd(self, remChare, chareKey):
+        if chareKey in self.enumChannelsHashEnd:
+            print(f'Error: coordinating chare is already registered.')
+            return
+        self.enumChannelsHashEnd[chareKey] = {'data':Channel(self,remote=remChare),'ctrl':Channel(self,remote=remChare),'lock':False}
+
+    @coro
+    def enumListener(self, chareKey, statusFut):
+        if not chareKey in self.enumChannelsHashEnd:
+            print(f'Error: {chareKey} is not registered...')
+            statusFut.send(-1)
+            return False
+        if self.enumChannelsHashEnd[chareKey]['lock']:
+            print(f'Error: {chareKey} already has a lock!')
+            statusFut.send(-1)
+        self.enumChannelsHashEnd[chareKey]['lock'] = True
+        statusFut.send(self.hashPElist.index(charm.myPe()))
+        ctrlChan = self.enumChannelsHashEnd[chareKey]['ctrl']
+        dataChan = self.enumChannelsHashEnd[chareKey]['data']
+        term = False
+        for nd in self.table.keys():
+            ctrlVal = ctrlChan.recv()
+            if ctrlVal > 0:
+                ptr = self.table[nd]['ptr']
+                dataChan.send((ptr.lsbHash, ptr.msbHash, ptr.nodeBytes, ptr.originPe, ptr.face, ptr.witness, ptr.payload))
+            else:
+                term = True
+                dataChan.send(None)
+                break
+        if not term:
+            ctrlVal = ctrlChan.recv()
+            dataChan.send(None)
+        print(f'Shutting down enumListener on PE {charm.myPe()}... Reason: ' + ('table done' if not term else 'shutdown requested'))
+        self.enumChannelsHashEnd[chareKey]['lock'] = False
+
+
 
 class DistHash(Chare):
     @coro
@@ -774,6 +812,8 @@ class DistHash(Chare):
         self.hashStoreMode = 0
         # self.hashWorkerProxies = self.hashWorkerProxies.get()
         self.hashWorkerChannels = [Channel(self, remote=proxy) for proxy in self.hashWorkerProxies]
+
+        self.enumChannels = {}
 
     @coro
     def initialize(self):
@@ -1044,3 +1084,94 @@ class DistHash(Chare):
     @coro
     def getTable(self):
         return self.hWorkersFull.getTable(ret=True).get()
+
+    @coro
+    def getTableLen(self):
+        return sum(self.hWorkersFull.getTableLen(ret=True).get())
+
+    @coro
+    def registerEnumChannels(self, remChare):
+        if remChare in self.enumChannels:
+            print(f'Warning: remote Chare already registered!')
+            return
+        chans = {'extData':Channel(self,remote=remChare), 'extCtrl':Channel(self,remote=remChare), 'hashWorkers':[]}
+        remChare.registerEnum(self.thisProxy,awaitable=True).get()
+        chans['hashWorkers'] = [{'data':Channel(self,remote=r),'ctrl':Channel(self,remote=r)} for r in self.hashWorkerProxies]
+        for r in self.hashWorkerProxies:
+            r.registerEnumHashEnd(self.thisProxy,remChare,awaitable=True).get()
+        self.enumChannels[remChare] = chans
+
+    @coro
+    def enumTable(self, remChare, statusFut):
+        if not remChare in self.enumChannels:
+            print(f'Error: remote chare is not registered!')
+            return
+        dataChan = self.enumChannels[remChare]['extData']
+        ctrlChan = self.enumChannels[remChare]['extCtrl']
+        hashChannels = self.enumChannels[remChare]['hashWorkers']
+
+        listenerStats = []
+        remsReady = []
+        for r in self.hashWorkerProxies:
+            f = Future()
+            r.enumListener(remChare,f)
+            listenerStats.append(f)
+        for remStat in charm.iwait(listenerStats):
+            v = remStat.get()
+            if v >= 0:
+                remsReady.append(v)
+        if len(remsReady) < len(self.hashWorkerProxies):
+            for rIdx in remsReady:
+                hashChannels[rIdx]['ctrl'].send(-1)
+                rcvVal = hashChannels[r]['data'].recv()
+                while not rcvVal is None:
+                    rcvVal = hashChannels[rIdx]['data'].recv()
+            print(f'Failed to start all enumerator listeners on hash workers. Exiting...')
+            statusFut.send(False)
+            return
+        statusFut.send(True)
+        print(f'Successfully started all enumerator listeners')
+        term = False
+        next = False
+        for rIdx in range(len(self.hashWorkerProxies)):
+            ch = hashChannels[rIdx]
+            dataVal = 1
+            while not dataVal is None:
+                if next and not term:
+                    ctrlVal = 1
+                elif term:
+                    ctrlVal = -1
+                else:
+                    ctrlVal = ctrlChan.recv()
+                if ctrlVal > 0:
+                    print(f'Passing next signal to hash workers')
+                    ch['ctrl'].send(1)
+                else:
+                    ch['ctrl'].send(-1)
+                    dataVal = ch['data'].recv()
+                    print(f'Shutting down enumListener on PE {charm.myPe()} (received {dataVal})')
+                    assert dataVal is None
+                    term = True
+                    continue
+                dataVal = ch['data'].recv()
+                if not dataVal is None:
+                    dataChan.send(dataVal)
+                else:
+                    print(f'Sent transition value on control channel')
+                    if rIdx < len(self.hashWorkerProxies) - 1:
+                        next = True
+        dataChan.send(None)
+
+
+
+
+        # for ch in hashChannels:
+        #     ch['ctrl'].send(-1)
+        # for ch in hashChannels:
+        #     rcvVal = ch['data'].recv()
+        #     while not rcvVal is None:
+        #         rcvVal = ch['data'].recv()
+        #     print(f'Finished shutting down enumerator listener {ch}')
+
+
+
