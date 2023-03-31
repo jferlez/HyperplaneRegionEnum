@@ -688,6 +688,9 @@ class HashWorker(Chare):
     @coro
     def getLevelSizes(self):
         return len(self.levelList)
+    @coro
+    def getTableLen(self):
+        return len(self.table)
 
     @coro
     def clearHashTable(self):
