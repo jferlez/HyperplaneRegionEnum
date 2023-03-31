@@ -93,7 +93,7 @@ class flipConstraints:
         doubleFlip = rebaseSet & regSet
         retTup = tuple(sorted(list( (rebaseSet - doubleFlip) | (regSet - doubleFlip) )))
         return tupToBytes(retTup, self.wholeBytesAllN if allN else self.wholeBytes, self.tailBitsAllN if allN else self.tailBits), retTup
-    
+
     def expandRegion(self, nodeBytes):
         return nodeBytes
 
