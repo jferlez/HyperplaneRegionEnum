@@ -488,6 +488,7 @@ class successorWorker(Chare):
         self.rsRegionCount = 0
         self.sendFaces = False
         self.sendWitness = False
+        self.deferLock = False
 
     def initialize(self,N,constraints,timeout):
         self.workInts = []
@@ -717,12 +718,17 @@ class successorWorker(Chare):
     @coro
     def deferControl(self, code=1):
         if not self.rateChannel is None:
+            while self.deferLock:
+                self.thisProxy[self.thisIndex]._NOOP_(awaitable=True).get()
+            self.deferLock = True
             self.rateChannel.send(code)
             control = self.rateChannel.recv()
             while control > 0:
                 control = self.rateChannel.recv()
             if control == -3:
+                self.deferLock = False
                 return False
+        self.deferLock = False
         return True
 
     @coro

@@ -111,8 +111,11 @@ class HashWorker(Chare):
         self.nodeEqualityFn = lambda x,y: (x == y)
         self.hashStoreMode = 1
         self.enumChannelsHashEnd = {}
+        self.deferLock = False
         #print(self.thisIndex)
-
+    @coro
+    def _NOOP_(self):
+        pass
     @coro
     def setConstraint(self,hashStoreMode=1):
         self.hashStoreMode = 1
@@ -230,12 +233,17 @@ class HashWorker(Chare):
     @coro
     def deferControl(self, code=1):
         if not self.rateChannel is None:
+            while self.deferLock:
+                self.thisProxy[self.thisIndex]._NOOP_(awaitable=True).get()
+            self.deferLock = True
             self.rateChannel.send(code)
             control = self.rateChannel.recv()
             while control > 0:
                 control = self.rateChannel.recv()
             if control == -3:
+                self.deferLock = False
                 return False
+        self.deferLock = False
         return True
     def hashNode(self,toHash,payload=None):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
