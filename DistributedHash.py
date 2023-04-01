@@ -112,6 +112,7 @@ class HashWorker(Chare):
         self.hashStoreMode = 1
         self.enumChannelsHashEnd = {}
         self.deferLock = False
+        self.msgCounter = 0
         #print(self.thisIndex)
     @coro
     def _NOOP_(self):
@@ -325,7 +326,8 @@ class HashWorker(Chare):
             # sig = str(random.random())
             # before = [self.messages[chIt]['msg'] for chIt in self.hashChannelsHashEnd]
             val = ch.recv()
-            # print('Recieved val ' + str(val) + 'on PE ' + str(charm.myPe()))
+            # print(f'PE{charm.myPe()} MSG:{self.msgCounter}: Recieved val ' + str(val) + 'on PE ' + str(charm.myPe()))
+            # self.msgCounter += 1
             # Make sure we don't start reading until the previous level/poset was done
             if not validInput:
                 if val == -100:
