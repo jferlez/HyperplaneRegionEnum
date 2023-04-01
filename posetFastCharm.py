@@ -489,6 +489,7 @@ class successorWorker(Chare):
         self.sendFaces = False
         self.sendWitness = False
         self.deferLock = False
+        self.hashedNodeCount = 0
 
     def initialize(self,N,constraints,timeout):
         self.workInts = []
@@ -639,6 +640,7 @@ class successorWorker(Chare):
             #print('Message sent!')
 
     def startListening(self):
+        self.hashedNodeCount = 0
         if not charm.myPe() in self.posetPElist:
             return
         for ch in self.hashChannels:
@@ -672,6 +674,7 @@ class successorWorker(Chare):
 
     @coro
     def hashAndSend(self,toHash,payload=None,vertex=None):
+        self.hashedNodeCount += 1
         val = self.hashNode(toHash,payload=payload,vertex=vertex)
         self.hashChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(nodeInt))
@@ -679,6 +682,12 @@ class successorWorker(Chare):
         retVal = self.thisProxy[self.thisIndex].deferControl(ret=True).get()
         # print('Saw defercontrol return the following within HashAndSend ' + str(retVal))
         return retVal
+    @coro
+    def getHashedNodeCount(self):
+        return self.hashedNodeCount
+    @coro
+    def resetHashedNodeCount(self):
+        self.hashedNodeCount = 0
 
     def decodeRegionStore(self,INTrep):
         if type(INTrep) == tuple and len(INTrep) == 2 and type(INTrep[1]) is tuple:

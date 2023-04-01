@@ -113,6 +113,8 @@ class HashWorker(Chare):
         self.enumChannelsHashEnd = {}
         self.deferLock = False
         self.msgCounter = 0
+        self.processedNodeCounter = 0
+        self.hashedNodeCount = 0
         #print(self.thisIndex)
     @coro
     def _NOOP_(self):
@@ -272,6 +274,7 @@ class HashWorker(Chare):
 
     @coro
     def hashAndSend(self,toHash,payload=None):
+        self.hashedNodeCount += 1
         val = self.hashNode(toHash,payload=payload)
         self.hashChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(val))
@@ -279,6 +282,12 @@ class HashWorker(Chare):
         retVal = self.thisProxy[self.thisIndex].deferControl(ret=True).get()
         # print('Saw defercontrol return the following within HashAndSend ' + str(retVal))
         return retVal
+    @coro
+    def getHashedNodeCount(self):
+        return self.hashedNodeCount
+    @coro
+    def resetHashedNodeCount(self):
+        self.hashedNodeCount = 0
     def sendAll(self,val):
         if not charm.myPe() in self.hashPElist:
             return
@@ -386,6 +395,7 @@ class HashWorker(Chare):
 
     @coro
     def initListen(self,fut,queryReturnInfo=False):
+        self.processedNodeCounter = 0
         self.queryReturnInfo = queryReturnInfo
         if not charm.myPe() in self.hashPElist:
             return
@@ -618,14 +628,23 @@ class HashWorker(Chare):
                             # self.levelList.append((val[2],*newNode.payload))
                             self.levelList.append(newNode)
                             # Check node here:
-                            if self.nodeCalls & 4 and not newNode.check(): # If result of node check is False return False on all the workerDone Futures
-                                if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
-                                    self.workerDone[ch].send(False)
-                                self.status[ch] = -3
-                                # self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
-                                self.levelDone = True
+                            if self.nodeCalls & 4:
+                                if not newNode.check(): # If result of node check is False return False on all the workerDone Futures
+                                    self.processedNodeCounter += 1
+                                    if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
+                                        self.workerDone[ch].send(False)
+                                    self.status[ch] = -3
+                                    # self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
+                                    self.levelDone = True
+                                else:
+                                    self.processedNodeCounter += 1
+                            else:
+                                self.processedNodeCounter += 1
                         elif self.nodeCalls & 2:
                             self.table[newNode]['ptr'].update(*val)
+                            self.processedNodeCounter += 1
+                        else:
+                            self.processedNodeCounter += 1
                     # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
                     elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
                         print(self.status)
@@ -676,7 +695,12 @@ class HashWorker(Chare):
     @coro
     def awaitQueries(self):
         return all([self.queryDone[ch].get() for ch in self.queryChannelsHashEnd])
-
+    @coro
+    def getSchedCount(self):
+        return self.processedNodeCounter
+    @coro
+    def resetSchedCount(self):
+        self.processedNodeCounter = 0
     @coro
     def awaitListenerShutdown(self, shutdownFut):
         cnt = 0
@@ -1032,8 +1056,10 @@ class DistHash(Chare):
     @coro
     def awaitPending(self):
         while True:
-            pendingCnt = sum(self.localVarGroup.getSchedCount(ret=True).get())
+            pendingCnt = sum(self.feederGroup.getHashedNodeCount(ret=True).get()) - sum(self.hWorkersFull.getSchedCount(ret=True).get())
             if pendingCnt == 0:
+                self.hWorkersFull.resetSchedCount(awaitable=True).get()
+                self.feederGroup.resetHashedNodeCount(awaitable=True).get()
                 break
 
     @coro
@@ -1101,7 +1127,9 @@ class DistHash(Chare):
     @coro
     def getTableLen(self):
         return sum(self.hWorkersFull.getTableLen(ret=True).get())
-
+    @coro
+    def _NOOP_(self):
+        pass
     @coro
     def registerEnumChannels(self, remChare):
         if remChare in self.enumChannels:
