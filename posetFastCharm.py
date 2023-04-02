@@ -372,10 +372,15 @@ class Poset(Chare):
     def populatePosetRS(self,payload=None, opts={}):
         if self.populated:
             return
+        self.verbose = True
+        defaultSettings = ['verbose']
+        for ky in defaultSettings:
+            if ky in opts:
+                setattr(self,ky,opts[ky])
 
         opts['reverseSearch'] = True
         self.succGroup.setMethod(**opts)
-        self.rsPeScheduler.resetScheduler(awaitable=True).get()
+        self.rsPeScheduler.resetScheduler(verbose=self.verbose,awaitable=True).get()
 
         checkVal = True
         level = 0
@@ -395,18 +400,20 @@ class Poset(Chare):
         statsFut = Future()
         self.succGroupFull.getStats(statsFut)
         stats = statsFut.get()
-        print('Total LPs used: ' + str(stats))
-
-        print('Checker returned value: ' + str(checkVal))
-
-        # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
-        print('Computed a (partial) poset of size: ' + str(stats['RSRegionCount']))
-
         regionDist = self.succGroup.getProperty('rsRegionCount',ret=True).get()
-        print(f'Regions discovered by PE: {regionDist}')
 
-        if timedOut:
-            print('Poset computation timed out...')
+        if self.verbose:
+            print('Total LPs used: ' + str(stats))
+
+            print('Checker returned value: ' + str(checkVal))
+
+            # print('Computed a (partial) poset of size: ' + str(len(self.hashTable.keys())))
+            print('Computed a (partial) poset of size: ' + str(stats['RSRegionCount']))
+
+            print(f'Regions discovered by PE: {regionDist}')
+
+            if timedOut:
+                print('Poset computation timed out...')
         # return [i.iINT for i in self.hashTable.keys()]
         self.populated = True
         return checkVal
@@ -420,9 +427,11 @@ class peSchedulerRS(Chare):
         self.peFree = copy(self.posetPElist)
         self.resultFut = None
         self.retVal = True
+        self.verbose = True
 
     @coro
-    def resetScheduler(self):
+    def resetScheduler(self,verbose):
+        self.verbose = verbose
         self.peFree = copy(self.posetPElist)
         self.succGroup.setPeAvailableRS(True,awaitable=True).get()
         self.resultFut = None
@@ -453,7 +462,8 @@ class peSchedulerRS(Chare):
         # print(f'Free PEs = {self.peFree}; To free = {pe}; retVal = {self.retVal}')
         self.peFree.append(pe)
         if len(self.peFree) == len(self.posetPElist):
-            print(f'*** All done! {self.peFree} ***')
+            if self.verbose:
+                print(f'*** All done! {self.peFree} ***')
             self.resultFut.send(self.retVal)
         self.succGroup.setPeAvailableRS(self.retVal,abort=(not self.retVal))
 
