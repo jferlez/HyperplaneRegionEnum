@@ -780,7 +780,7 @@ class HashWorker(Chare):
         if not term:
             ctrlVal = ctrlChan.recv()
             dataChan.send(None)
-        print(f'Shutting down enumListener on PE {charm.myPe()}... Reason: ' + ('table done' if not term else 'shutdown requested'))
+        # print(f'Shutting down enumListener on PE {charm.myPe()}... Reason: ' + ('table done' if not term else 'shutdown requested'))
         self.enumChannelsHashEnd[chareKey]['lock'] = False
 
 
@@ -1177,12 +1177,12 @@ class DistHash(Chare):
                 else:
                     ctrlVal = ctrlChan.recv()
                 if ctrlVal > 0:
-                    print(f'Passing next signal to hash workers')
+                    # print(f'Passing next signal to hash workers')
                     ch['ctrl'].send(1)
                 else:
                     ch['ctrl'].send(-1)
                     dataVal = ch['data'].recv()
-                    print(f'Shutting down enumListener on PE {charm.myPe()} (received {dataVal})')
+                    # print(f'Shutting down enumListener on PE {charm.myPe()} (received {dataVal})')
                     assert dataVal is None
                     term = True
                     continue
@@ -1190,7 +1190,7 @@ class DistHash(Chare):
                 if not dataVal is None:
                     dataChan.send(dataVal)
                 else:
-                    print(f'Sent transition value on control channel')
+                    # print(f'Sent transition value on control channel')
                     if rIdx < len(self.hashWorkerProxies) - 1:
                         next = True
         dataChan.send(None)
