@@ -65,10 +65,11 @@ class localVar(Chare):
 class Poset(Chare):
 
     @coro
-    def init(self, peSpec, nodeConstructor, localVarGroup, successorChare):
+    def init(self, peSpec, nodeConstructor, localVarGroup, successorChare, usePosetChecking):
 
         # self.stackNum = batchSize
         # To do: check to make sure we're passed a valid Group in localVarGroup
+        self.usePosetChecking = usePosetChecking
         self.localVarGroup = localVarGroup
         self.useDefaultLocalVarGroup = False
         if localVarGroup is None:
@@ -254,7 +255,7 @@ class Poset(Chare):
             boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
         self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0],tuple(),self.flippedConstraints.pt],payload=(None if payload is None else payload),vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())),ret=True).get()
 
-        self.distHashTable.awaitPending(awaitable=True).get()
+        self.distHashTable.awaitPending(usePosetChecking=self.usePosetChecking, awaitable=True).get()
         # Send a final termination signal:
         self.succGroup.sendAll(-2,awaitable=True).get()
         self.succGroup.closeQueryChannels(awaitable=True).get()
@@ -306,7 +307,7 @@ class Poset(Chare):
             if timedOut:
                 print('Received timeout on level ' + str(level))
 
-            self.distHashTable.awaitPending(awaitable=True).get()
+            self.distHashTable.awaitPending(usePosetChecking=self.usePosetChecking, awaitable=True).get()
             self.succGroup.sendAll(-2,awaitable=True).get()
             self.succGroup.closeQueryChannels(awaitable=True).get()
             self.succGroup.flushMessages(ret=True).get()
@@ -688,6 +689,9 @@ class successorWorker(Chare):
     @coro
     def resetHashedNodeCount(self):
         self.hashedNodeCount = 0
+    @coro
+    def decHashedNodeCount(self):
+        self.hashedNodeCount -= 1
 
     def decodeRegionStore(self,INTrep):
         if type(INTrep) == tuple and len(INTrep) == 2 and type(INTrep[1]) is tuple:

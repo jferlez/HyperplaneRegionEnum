@@ -346,6 +346,7 @@ class HashWorker(Chare):
             self.messages[ch]['msg'] = val
             ackFut = Future()
             self.messages[ch]['fut'] = ackFut
+            # print(f'PE{charm.myPe()} MSG:{self.msgCounter-1}: {self.messages}')
             self.loopback.send(chIdx)
             # if not self.initiatedNodeProc:
             #     print('----'*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'LocalListener ' + sig + ' -- Signaling to listen()' )
@@ -628,23 +629,14 @@ class HashWorker(Chare):
                             # self.levelList.append((val[2],*newNode.payload))
                             self.levelList.append(newNode)
                             # Check node here:
-                            if self.nodeCalls & 4:
-                                if not newNode.check(): # If result of node check is False return False on all the workerDone Futures
-                                    self.processedNodeCounter += 1
+                            if self.nodeCalls & 4 and not newNode.check(): # If result of node check is False return False on all the workerDone Futures
                                     if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
                                         self.workerDone[ch].send(False)
                                     self.status[ch] = -3
                                     # self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
                                     self.levelDone = True
-                                else:
-                                    self.processedNodeCounter += 1
-                            else:
-                                self.processedNodeCounter += 1
                         elif self.nodeCalls & 2:
                             self.table[newNode]['ptr'].update(*val)
-                            self.processedNodeCounter += 1
-                        else:
-                            self.processedNodeCounter += 1
                     # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
                     elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
                         print(self.status)
@@ -695,12 +687,6 @@ class HashWorker(Chare):
     @coro
     def awaitQueries(self):
         return all([self.queryDone[ch].get() for ch in self.queryChannelsHashEnd])
-    @coro
-    def getSchedCount(self):
-        return self.processedNodeCounter
-    @coro
-    def resetSchedCount(self):
-        self.processedNodeCounter = 0
     @coro
     def awaitListenerShutdown(self, shutdownFut):
         cnt = 0
@@ -933,6 +919,10 @@ class DistHash(Chare):
         self.hWorkersFull.updateNodeEqualityFn(fn=fn,nodeType=nodeType,tol=tol,rTol=rTol, H=H, awaitable=True).get()
 
     @coro
+    def decHashedNodeCountFeeder(self,pe):
+        self.feederGroup[pe].decHashedNodeCount()
+
+    @coro
     def queryMutexLocalListener(self,ch,chIdx):
         # print('Starting queryMutex LocalListener')
         while True:
@@ -1054,13 +1044,15 @@ class DistHash(Chare):
 
 
     @coro
-    def awaitPending(self):
-        while True:
-            pendingCnt = sum(self.feederGroup.getHashedNodeCount(ret=True).get()) - sum(self.hWorkersFull.getSchedCount(ret=True).get())
-            if pendingCnt == 0:
-                self.hWorkersFull.resetSchedCount(awaitable=True).get()
-                self.feederGroup.resetHashedNodeCount(awaitable=True).get()
+    def awaitPending(self, usePosetChecking=True):
+        while usePosetChecking:
+            hashCount = [ x == 0 for x in self.feederGroup.getHashedNodeCount(ret=True).get() ]
+            # print(f'hashCount = {hashCount} P{self.feederGroup.getHashedNodeCount(ret=True).get()}')
+            # print(f'PE {charm.myPe()}: pendingCnt = {(hashCount, schedCount)}; hashPEs = {self.hashPElist}')
+            if all(hashCount):
                 break
+        if usePosetChecking:
+            self.feederGroup.resetHashedNodeCount(awaitable=True).get()
 
     @coro
     def awaitShutdown(self):
