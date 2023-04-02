@@ -841,6 +841,8 @@ class successorWorker(Chare):
         #print(f'PE {charm.myPe()}: working on {INTrep}')
         #print(f'PE {charm.myPe()} working on region {INTrep}')
         if self.rsDone:
+            if self.rsDepth == 0:
+                self.rsScheduler.freePe(charm.myPe(),awaitable=True).get()
             return
 
         self.rsDepth += 1
