@@ -359,7 +359,7 @@ def projectConstraints(H,hyperIn,subIdx=None,tol=1e-8,rTol=1e-8):
     assert len(tempIdx) > 0
     if subIdx is None:
         subIdx = tempIdx[0]
-        print(f'Local subIdx {subIdx}')
+        # print(f'Local subIdx {subIdx}')
     else:
         assert subIdx in tempIdx
     retH = np.zeros((H.shape[0],H.shape[1]-1),dtype=np.float64)
