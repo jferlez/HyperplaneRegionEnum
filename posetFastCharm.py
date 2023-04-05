@@ -65,7 +65,7 @@ class localVar(Chare):
 class Poset(Chare):
 
     @coro
-    def init(self, peSpec, nodeConstructor, localVarGroup, successorChare, usePosetChecking):
+    def __init__(self, peSpec, nodeConstructor, localVarGroup, successorChare, usePosetChecking, feederSpec):
 
         # self.stackNum = batchSize
         # To do: check to make sure we're passed a valid Group in localVarGroup
@@ -74,6 +74,7 @@ class Poset(Chare):
         self.useDefaultLocalVarGroup = False
         if localVarGroup is None:
             self.useDefaultLocalVarGroup = True
+            self.usePosetChecking = False
             self.localVarGroup = Group(localVar,args=[])
             charm.awaitCreation(self.localVarGroup)
         self.nodeConstructor = nodeConstructor
@@ -103,7 +104,7 @@ class Poset(Chare):
         charm.awaitCreation(self.succGroupFull)
 
         # Create a PE scheduler Chare for use in Reverse Search implementations
-        self.rsPeScheduler = Chare(peSchedulerRS,args=[self.succGroupFull,self.posetPElist])
+        self.rsPeScheduler = Chare(peSchedulerRS,args=[self.succGroupFull,self.posetPElist],onPE=0)
         charm.awaitCreation(self.rsPeScheduler)
 
         self.succGroupFull.initPEs(self.posetPElist,localVarGroup=self.localVarGroup,rsScheduler=self.rsPeScheduler)
@@ -121,13 +122,20 @@ class Poset(Chare):
             self.nodeConstructor, \
             self.localVarGroup, \
             self.hashPEs, \
-            self.posetPEs \
-        ],onPE=self.hashPElist[0])
+            self.posetPEs, \
+            feederSpec \
+        ],onPE=0)
         charm.awaitCreation(self.distHashTable)
+        self.migrationInfo = {'poset':[(self.posetPElist,self.thisProxy), (self.posetPElist, self.rsPeScheduler)], 'hash':[(self.hashPElist,self.distHashTable)] + self.distHashTable.getMigrationInfo(ret=True).get()}
         # print('Initialized distHashTable group')
+    @coro
+    def init(self):
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
 
+    @coro
+    def getMigrationInfo(self):
+        return self.migrationInfo
 
     def initialize(self, AbPairs, pt, fixedA, fixedb, normalize=1.0):
         self.AbPairs = deepcopy(AbPairs)

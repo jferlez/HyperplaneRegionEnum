@@ -104,7 +104,7 @@ class HashWorker(Chare):
             callIdx += 1
         self.localVarGroup = localVarGroup
         self.parentProxy = parentProxy
-        self.parentChannel = Channel(self,remote=self.parentProxy)
+        # self.parentChannel = Channel(self,remote=self.parentProxy)
         self.loopback = Channel(self,remote=self.thisProxy[self.thisIndex])
         self.queryLoopback = Channel(self,remote=self.thisProxy[self.thisIndex])
         self.controlLoopback = Channel(self,remote=self.thisProxy[self.thisIndex])
@@ -787,7 +787,7 @@ class HashWorker(Chare):
 
 class DistHash(Chare):
     @coro
-    def __init__(self, feederGroup, nodeConstructor, localVarGroup, hashPEs, posetPEs):
+    def __init__(self, feederGroup, nodeConstructor, localVarGroup, hashPEs, posetPEs, feederSpec):
         self.feederGroup = feederGroup
         self.posetPEs = posetPEs
         self.posetPElist = list(itertools.chain.from_iterable( \
@@ -834,13 +834,58 @@ class DistHash(Chare):
         self.amFeeder = False
         self.hashStoreMode = 0
         # self.hashWorkerProxies = self.hashWorkerProxies.get()
-        self.hashWorkerChannels = [Channel(self, remote=proxy) for proxy in self.hashWorkerProxies]
 
         self.enumChannels = {}
 
+        if feederSpec is None:
+            feederSpec = []
+        feederKeys = ['nodeConstructor', 'localVarGroup', 'hashPEs', 'usePosetChecking', 'opts']
+        if len(feederSpec) > 0:
+            feederDef = feederSpec[0]
+            assert isinstance(feederDef,dict)
+            for ky in feederKeys:
+                assert ky in feederDef
+        # @coro
+        # def initAsFeeder(self, nodeConstructor, localVarGroup, hashPEs, usePosetChecking, opts={} ):
+            self.usePosetChecking = feederDef['usePosetChecking']
+            self.nodeConstructorAsFeeder = feederDef['nodeConstructor']
+            self.localVarGroupAsFeeder = feederDef['localVarGroup']
+            self.targetHashPEs = feederDef['hashPEs']
+            self.targetHashPElist = list(itertools.chain.from_iterable( \
+                [list(range(r[0],r[1],r[2])) for r in self.targetHashPEs] \
+                ))
+            self.targetDistHashTable = Chare(DistHash,args=[ \
+                self.hWorkersFull, \
+                self.nodeConstructorAsFeeder, \
+                self.localVarGroupAsFeeder , \
+                self.targetHashPEs, \
+                self.hashPEs, \
+                feederSpec[1:] \
+            ],onPE=0)
+            charm.awaitCreation(self.targetDistHashTable)
+            # self.targetDistHashTable.migrate(self.targetHashPElist[0],awaitable=True).get()
+            self.hWorkersFull.setConstraint(**feederDef['opts'],awaitable=True).get()
+
+            self.amFeeder = True
+    @coro
+    def getMigrationInfo(self):
+        if self.amFeeder:
+            # self.targetDistHashTable.migrate(self.targetHashPElist[0],awaitable=True).get()
+            return [(self.targetHashPElist, self.targetDistHashTable)] + self.targetDistHashTable.getMigrationInfo(ret=True).get()
+        else:
+            return []
+    @coro
+    def getTargetDistHashProxy(self):
+        return self.targetDistHashTable
     @coro
     def initialize(self):
-
+        # self.hashWorkerChannels = [Channel(self, remote=proxy) for proxy in self.hashWorkerProxies]
+        if self.amFeeder:
+            # print('Initialized distHashTable group')
+            initFut = self.targetDistHashTable.initialize(awaitable=True)
+            initFut.get()
+            if self.usePosetChecking:
+                self.localVarGroupAsFeeder.init(self.hWorkersFull,self.hashPElist,awaitable=True).get()
         # Establish a feedback channel so that the hash table can send messages to the feeder workers:
         feeders = sorted(zip(self.posetPElist,self.feederProxies))
         hashes = sorted(zip(self.hashPElist,self.hashWorkerProxies))
@@ -887,32 +932,6 @@ class DistHash(Chare):
 
         myFut = self.hWorkersFull.initQueryChannelHashEnd(self.feederProxies,awaitable=True)
         myFut.get()
-
-    @coro
-    def initAsFeeder(self, nodeConstructor, localVarGroup, hashPEs, usePosetChecking, opts={} ):
-        self.usePosetChecking = usePosetChecking
-        self.nodeConstructorAsFeeder = nodeConstructor
-        self.localVarGroupAsFeeder = localVarGroup
-        self.targetHashPEs = hashPEs
-        self.targetHashPElist = list(itertools.chain.from_iterable( \
-               [list(range(r[0],r[1],r[2])) for r in self.targetHashPEs] \
-            ))
-        self.targetDistHashTable = Chare(DistHash,args=[ \
-            self.hWorkersFull, \
-            self.nodeConstructorAsFeeder, \
-            self.localVarGroupAsFeeder , \
-            self.targetHashPEs, \
-            self.hashPEs \
-        ],onPE=self.targetHashPElist[0])
-        charm.awaitCreation(self.targetDistHashTable)
-        self.hWorkersFull.setConstraint(**opts,awaitable=True).get()
-        # print('Initialized distHashTable group')
-        initFut = self.targetDistHashTable.initialize(awaitable=True)
-        initFut.get()
-        if self.usePosetChecking:
-            self.localVarGroupAsFeeder.init(self.hWorkersFull,self.hashPElist)
-        self.amFeeder = True
-        return self.targetDistHashTable
 
     @coro
     def updateNodeEqualityFn(self,fn=None, nodeType='standard', tol=1e-9, rTol=1e-9, H=None):
