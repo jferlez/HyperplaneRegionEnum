@@ -99,7 +99,7 @@ class flipConstraints:
 
     def collapseRegion(self, nodeBytes):
         return nodeBytes
-    
+
     def bytesToList(self, nodeBytes, allN=False):
         return bytesToList(nodeBytes, self.wholeBytes if not allN else self.wholeBytesAllN, self.tailBits if not allN else self.tailBitsAllN)
     def tupToBytes(self, nodeBytes, allN=False):
