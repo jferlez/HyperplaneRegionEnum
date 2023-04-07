@@ -349,11 +349,18 @@ def sampleRegion(H,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,numSamples=10000)
     box = regionBBox(H,solver=solver,lpObj=lpObj,tol=tol,rTol=rTol)
     # print(box)
     n = box.shape[0]
-    diff = box[:,1].reshape(-1,1) - box[:,0].reshape(-1,1)
-    summ = box[:,1].reshape(-1,1) + box[:,0].reshape(-1,1)
-    samps = diff * np.random.random((n,numSamples)) + 0.5 * summ - 0.5 * diff
-    locs = np.nonzero(np.all(-H[:,1:] @ samps - H[:,0].reshape(-1,1) <= 0,axis=0))[0]
-    return samps[:,locs].copy()
+    retSamples = np.zeros((n,numSamples),dtype=np.float64)
+    maxSamples = 0
+    while maxSamples < numSamples:
+        diff = box[:,1].reshape(-1,1) - box[:,0].reshape(-1,1)
+        summ = box[:,1].reshape(-1,1) + box[:,0].reshape(-1,1)
+        samps = diff * np.random.random((n,numSamples)) + 0.5 * summ - 0.5 * diff
+        locs = np.nonzero(np.all(-H[:,1:] @ samps - H[:,0].reshape(-1,1) <= 0,axis=0))[0]
+        newMaxSamples = min(maxSamples + len(locs),numSamples)
+        locs = locs[:(newMaxSamples - maxSamples)]
+        retSamples[:,maxSamples:newMaxSamples] = samps[:,locs]
+        maxSamples = newMaxSamples
+    return retSamples
 
 class DegenerateHyperplane(ValueError): pass
 
