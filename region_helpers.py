@@ -355,7 +355,7 @@ def sampleRegion(H,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,numSamples=10000)
     locs = np.nonzero(np.all(-H[:,1:] @ samps - H[:,0].reshape(-1,1) <= 0,axis=0))[0]
     return samps[:,locs].copy()
 
-class ParallelHyperplane(ValueError): pass
+class DegenerateHyperplane(ValueError): pass
 
 def projectConstraints(H,hyperIn,subIdx=None,tol=1e-8,rTol=1e-8):
     hyper = hyperIn.flatten()
@@ -364,7 +364,7 @@ def projectConstraints(H,hyperIn,subIdx=None,tol=1e-8,rTol=1e-8):
     # assert H.shape[1] > 2, 'Projecting constraints over 1-d results in points'
     tempIdx = np.nonzero(hyper[1:])[0]
     if len(tempIdx) == 0:
-        raise ParallelHyperplane
+        raise DegenerateHyperplane
     if subIdx is None:
         subIdx = tempIdx[0]
         # print(f'Local subIdx {subIdx}')
