@@ -147,7 +147,7 @@ class Poset(Chare):
         self.nrms = []
         if normalize > 0:
             for out in range(len(AbPairs)):
-                self.nrms.append(self.normalize / np.linalg.norm(self.AbPairs[out][0],axis=1).reshape(-1,1))
+                self.nrms.append(self.normalize / np.linalg.norm(np.hstack([self.AbPairs[out][1].reshape(-1,1),self.AbPairs[out][0]]),axis=1).reshape(-1,1))
                 self.AbPairs[out][0] = self.nrms[out] * self.AbPairs[out][0]
                 self.AbPairs[out][1] = self.nrms[out] * self.AbPairs[out][1]
             nrms = np.linalg.norm(self.fixedA,axis=1).reshape(-1,1) * self.normalize
