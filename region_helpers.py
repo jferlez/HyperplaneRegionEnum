@@ -252,14 +252,20 @@ def findInteriorPointFull(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
     H = copy(H2)
     obj = np.zeros(n+1,dtype=np.float64)
     obj[n] = -1
+    constraints = np.hstack([\
+            np.hstack([H[:,0], 1.0, 0.0]).reshape(-1,1), \
+            np.vstack([ \
+                np.hstack([-H[:,1:], np.ones((N,1),dtype=np.float64)]), \
+                -obj, \
+                obj \
+            ]) \
+        ])
+    constraints = constraints / np.linalg.norm(constraints,axis=1).reshape(-1,1)
+    obj = constraints[-1,1:]
     status, sol = lpObj.runLP( \
                     obj, \
-                    np.vstack([ \
-                               np.hstack([-H[:,1:], np.ones((N,1),dtype=np.float64)]), \
-                               -obj, \
-                               obj \
-                            ]), \
-                    np.hstack([H[:,0], 1.0, 0.0]), \
+                    constraints[:,1:], \
+                    constraints[:,0], \
                     lpopts = {'solver':solver}
                 )
     return status, (np.frombuffer(sol) if status=='optimal' else None)
