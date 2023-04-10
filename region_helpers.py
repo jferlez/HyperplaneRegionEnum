@@ -267,7 +267,7 @@ def findInteriorPointFull(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
 def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
     status, sol = findInteriorPointFull(H2,solver=solver,lpObj=lpObj,tol=tol,rTol=rTol)
     n = H2.shape[1]-1
-    if status == 'optimal' and sol[-1] > 1e-10:
+    if status == 'optimal' and sol[-1] > tol:
         sol = np.array(sol)[:n].reshape(-1,1)
         return sol
     else:
