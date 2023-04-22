@@ -150,6 +150,8 @@ class flipConstraintsReducedMin(flipConstraints):
             if len(lpMinHRep(mat,None,[0])) == 0:
                 self.redundantFlips[k] = -1
         self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+        if len(self.nonRedundantHyperplanes) == 0:
+            return 0
 
         self.allConstraints = copy(self.constraints)
         self.allN = self.N
@@ -161,6 +163,7 @@ class flipConstraintsReducedMin(flipConstraints):
         self.tailBitsAllN = self.allN - 8*(self.allN // 8)
 
         self.root = tuple()
+        return 1
 
     def translateRegion(self,nodeBytes, allN=True):
         regSet = np.full(self.allN, True, dtype=bool)
