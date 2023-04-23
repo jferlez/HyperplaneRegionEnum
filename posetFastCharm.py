@@ -1042,7 +1042,7 @@ class successorWorker(Chare):
                     print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
                     return [set([]), 0]
                 if (safe and -H2[intIdx[idx],1:]@x < H2[intIdx[idx],0]) \
-                    or (not safe and (status == 'primal infeasible' or np.all(-H2[intIdx[idx],1:]@x - H2[intIdx[idx],0] <= 1e-10))):
+                    or (not safe and (status == 'primal infeasible' or np.all(-H2[intIdx[idx],1:]@x - H2[intIdx[idx],0] <= self.tol + self.rTol * np.abs(H[:,0].reshape(-1,1))))):
                     # inequality is redundant, so skip it
                     constraint_list[offsetIdx] = False
                 else:
