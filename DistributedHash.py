@@ -1191,6 +1191,7 @@ class DistHash(Chare):
             while not dataVal is None:
                 if next and not term:
                     ctrlVal = 1
+                    next = False
                 elif term:
                     ctrlVal = -1
                 else:
