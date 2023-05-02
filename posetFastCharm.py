@@ -750,7 +750,9 @@ class successorWorker(Chare):
     def deferControl(self, code=1):
         if not self.rateChannel is None:
             while self.deferLock:
-                self.thisProxy[self.thisIndex]._NOOP_(awaitable=True).get()
+                suspendFut = Future()
+                suspendFut.send(1)
+                suspendFut.get()
             self.deferLock = True
             self.rateChannel.send(code)
             control = self.rateChannel.recv()
@@ -1132,9 +1134,6 @@ class successorWorker(Chare):
         else:
             return successors, sel, witnessList
 
-    @coro
-    def _NOOP_(self):
-        pass
 
 
 

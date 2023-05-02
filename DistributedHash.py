@@ -117,9 +117,6 @@ class HashWorker(Chare):
         self.hashedNodeCount = 0
         #print(self.thisIndex)
     @coro
-    def _NOOP_(self):
-        pass
-    @coro
     def setConstraint(self,hashStoreMode=1):
         self.hashStoreMode = 1
 
@@ -237,7 +234,9 @@ class HashWorker(Chare):
     def deferControl(self, code=1):
         if not self.rateChannel is None:
             while self.deferLock:
-                self.thisProxy[self.thisIndex]._NOOP_(awaitable=True).get()
+                suspendFut = Future()
+                suspendFut.send(1)
+                suspendFut.get()
             self.deferLock = True
             self.rateChannel.send(code)
             control = self.rateChannel.recv()
@@ -1150,9 +1149,6 @@ class DistHash(Chare):
     @coro
     def getTableLen(self):
         return sum(self.hWorkersFull.getTableLen(ret=True).get())
-    @coro
-    def _NOOP_(self):
-        pass
     @coro
     def registerEnumChannels(self, remChare):
         if remChare in self.enumChannels:
