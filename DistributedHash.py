@@ -1064,12 +1064,24 @@ class DistHash(Chare):
 
     @coro
     def awaitPending(self, usePosetChecking=True):
+        outstandingHashesPrev = None
+        cnt = 0
         while usePosetChecking:
-            hashCount = [ x == 0 for x in self.feederGroup.getHashedNodeCount(ret=True).get() ]
+            outstandingHashes = self.feederGroup.getHashedNodeCount(ret=True).get()
+            hashCount = [ x == 0 for x in outstandingHashes ]
             # print(f'hashCount = {hashCount} P{self.feederGroup.getHashedNodeCount(ret=True).get()}')
             # print(f'PE {charm.myPe()}: pendingCnt = {(hashCount, schedCount)}; hashPEs = {self.hashPElist}')
             if all(hashCount):
                 break
+            if not outstandingHashesPrev is None and sum(outstandingHashes) >= sum(outstandingHashesPrev):
+                if cnt < 9:
+                    f = Future()
+                    f.send(1)
+                    f.get()
+                else:
+                    charm.sleep(0.001)
+            outstandingHashesPrev = outstandingHashes
+            cnt = (cnt + 1) % 10
         if usePosetChecking:
             self.feederGroup.resetHashedNodeCount(awaitable=True).get()
 
