@@ -42,7 +42,7 @@ class encapsulateLP():
                 status = 'unk'
 
         if status != 'optimal' and status != 'primal infeasible' and status != 'dual infeasible':
-            if 'fallback' in lpopts:
+            if 'fallback' in lpopts and lpopts['fallback'] != lpopts['solver']:
                 lpopts['solver'] = lpopts['fallback']
                 lpopts.pop('fallback',None)
                 status, x = self.runLP(obj,A,b,Ae,be,lpopts,msgID)
