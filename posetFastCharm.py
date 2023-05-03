@@ -534,8 +534,8 @@ class successorWorker(Chare):
         return self.timedOut
 
     def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,sendWitness=False,verbose=True):
-        self.lp.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
-        self.rsLP.initSolver(solver=solver, opts={'dim':len(self.constraints[0])-1})
+        self.lp.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
+        self.rsLP.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
         self.useQuery = useQuery
         self.doRS = reverseSearch
         self.tol = tol
