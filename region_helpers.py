@@ -266,7 +266,7 @@ def findInteriorPointFull(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
                     obj, \
                     constraints[:,1:], \
                     constraints[:,0], \
-                    lpopts = {'solver':solver}
+                    lpopts = {'solver':solver, 'fallback':'glpk'}
                 )
     return status, (np.frombuffer(sol) if status=='optimal' else None)
 
