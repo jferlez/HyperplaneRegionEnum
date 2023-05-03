@@ -520,7 +520,9 @@ class successorWorker(Chare):
         self.processNodesArgs = {'solver':'glpk','ret':True}
         # Defaults to glpk, so this empty call is ok:
         self.lp = encapsulateLP.encapsulateLP()
+        self.lpIntPoint = encapsulateLP.encapsulateLP()
         self.rsLP = encapsulateLP.encapsulateLP()
+        self.rsLPIntPoint = encapsulateLP.encapsulateLP()
         # self.hashChannels = []
         self.clockTimeout = (timeout + time.time()) if timeout is not None else None
         self.timedOut = False
@@ -535,7 +537,9 @@ class successorWorker(Chare):
 
     def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,sendWitness=False,verbose=True):
         self.lp.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
+        self.lpIntPoint.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1])})
         self.rsLP.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
+        self.rsLPIntPoint.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1])})
         self.useQuery = useQuery
         self.doRS = reverseSearch
         self.tol = tol
@@ -897,7 +901,7 @@ class successorWorker(Chare):
             H = self.constraints.copy()
             H[successorList[ii][1],:] = -H[successorList[ii][1],:]
             if findWitnessLocally:
-                interiorPoint = region_helpers.findInteriorPoint(H,lpObj=self.rsLP)
+                interiorPoint = region_helpers.findInteriorPoint(H,lpObj=self.rsLPIntPoint)
                 witnessList.append(interiorPoint)
             else:
                 interiorPoint = witnessList[ii]
@@ -1051,7 +1055,7 @@ class successorWorker(Chare):
                     to_keep.append(idx)
             else:
                 H[offsetIdx,:] = -H[offsetIdx,:]
-                x = region_helpers.findInteriorPoint(H,solver=solver,lpObj=self.lp,tol=self.tol,rTol=self.rTol)
+                x = region_helpers.findInteriorPoint(H,solver=solver,lpObj=self.lpIntPoint,tol=self.tol,rTol=self.rTol)
                 H[offsetIdx,:] = -H[offsetIdx,:]
                 if x is not None:
                     # If x satisfies all of the original constraints then it is a redundant hyperplane
