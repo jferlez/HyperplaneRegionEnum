@@ -342,7 +342,7 @@ def regionBBox(H,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7):
                     objective, \
                     -H[:,1:], \
                     H[:,0], \
-                    lpopts = {'solver':solver} \
+                    lpopts = {'solver':solver, 'fallback':'glpk'} \
                 )
             objective[idx] = 0
             box[idx,idx2] = np.array(sol).flatten()[idx]
