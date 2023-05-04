@@ -17,7 +17,7 @@ class encapsulateLP():
             self.cylp.logLevel = 0
             self.initializedSolvers['clp'] = True
 
-    def runLP(self,obj,A,b,Ae=None,be=None,lpopts={'solver':'clp', 'fallback':'glpk'},msgID=''):
+    def runLP(self,obj,A,b,Ae=None,be=None,lpopts={'solver':'clp', 'fallback':{'solver':'glpk'}},msgID=''):
         self.lpCount += 1
         if lpopts['solver']=='glpk':
             cvxArgs = [cvxopt.matrix(obj), cvxopt.matrix(A), cvxopt.matrix(b)]
@@ -37,14 +37,13 @@ class encapsulateLP():
                 # Something went wrong with the CLP solver, so force use of GLPK
                 print(' ')
                 print('********************  PE' + msgID + ' WARNING!!  ********************')
-                print('PE' + msgID + ': Needed to fallback to GLPK for unknown reasons!!' )
+                print('PE' + msgID + ': Trying to execute fallback solvers in seqeunce...' )
                 print(' ')
                 status = 'unk'
 
         if status != 'optimal' and status != 'primal infeasible' and status != 'dual infeasible':
-            if 'fallback' in lpopts and lpopts['fallback'] != lpopts['solver']:
-                lpopts['solver'] = lpopts['fallback']
-                lpopts.pop('fallback',None)
+            if 'fallback' in lpopts:
+                lpopts = lpopts['fallback']
                 status, x = self.runLP(obj,A,b,Ae,be,lpopts,msgID)
             else:
                 status = 'unk'

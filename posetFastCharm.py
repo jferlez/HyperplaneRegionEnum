@@ -566,10 +566,17 @@ class successorWorker(Chare):
             if self.hashStoreMode == 2:
                 print(f'WARNING: vertex region encodings are not supported for method {method}. Defaulting to bit region encodings...')
         if len(lpopts) == 0:
-            self.processNodesArgs['lpopts'] = lpopts
+            self.lpopts = {}
+        else:
+            self.lpopts = deepcopy(lpopts)
+        if solver != 'glpk' and not 'fallback' in self.lpopts:
+            self.lpopts['fallback'] = {'solver':'glpk'}
+        self.lpopts['solver'] = solver
+        self.processNodesArgs['lpopts'] = self.lpopts
         self.processNodesArgs['ret'] = True
         self.method = method
         self.solver = solver
+        
         self.Hcol0Close = self.tol + self.rTol * np.abs(self.constraints[:,0])
         self.Hcol0CloseVertex = self.constraints[:,0] - self.Hcol0Close
 
@@ -885,7 +892,7 @@ class successorWorker(Chare):
                 return
         # Compute all of the adjacent nodes (from among the unflipped hyperplanes)
         H2 = self.constraints.copy()
-        successorList, _, witnessList = self.processNodeSuccessors(INTrep,self.N,H2,**self.processNodesArgs,payload=payload,witness=witness).get()
+        successorList, _, witnessList = self.processNodeSuccessors(INTrep,self.N,H2,**self.processNodesArgs,payload=payload,witness=witness,lpopts=self.lpopts).get()
         if type(witnessList) is list and len(witnessList) == len(successorList):
             findWitnessLocally = False
         else:
@@ -901,7 +908,7 @@ class successorWorker(Chare):
             H = self.constraints.copy()
             H[successorList[ii][1],:] = -H[successorList[ii][1],:]
             if findWitnessLocally:
-                interiorPoint = region_helpers.findInteriorPoint(H,lpObj=self.rsLPIntPoint)
+                interiorPoint = region_helpers.findInteriorPoint(H,lpObj=self.rsLPIntPoint,lpopts=self.lpopts)
                 witnessList.append(interiorPoint)
             else:
                 interiorPoint = witnessList[ii]
@@ -1037,7 +1044,7 @@ class successorWorker(Chare):
                         H2[intIdx[idx],1:], \
                         -H[constraint_list,1:], \
                         H[constraint_list,0], \
-                        lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
+                        lpopts = self.lpopts, \
                         msgID = str(charm.myPe()) \
                     )
                 H[offsetIdx,0] -= 1
@@ -1055,7 +1062,7 @@ class successorWorker(Chare):
                     to_keep.append(idx)
             else:
                 H[offsetIdx,:] = -H[offsetIdx,:]
-                x = region_helpers.findInteriorPoint(H,solver=solver,lpObj=self.lpIntPoint,tol=self.tol,rTol=self.rTol)
+                x = region_helpers.findInteriorPoint(H,solver=solver,lpObj=self.lpIntPoint,tol=self.tol,rTol=self.rTol,lpopts=self.lpopts)
                 H[offsetIdx,:] = -H[offsetIdx,:]
                 if x is not None:
                     # If x satisfies all of the original constraints then it is a redundant hyperplane
