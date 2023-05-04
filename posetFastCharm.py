@@ -892,7 +892,7 @@ class successorWorker(Chare):
                 return
         # Compute all of the adjacent nodes (from among the unflipped hyperplanes)
         H2 = self.constraints.copy()
-        successorList, _, witnessList = self.processNodeSuccessors(INTrep,self.N,H2,**self.processNodesArgs,payload=payload,witness=witness,lpopts=self.lpopts).get()
+        successorList, _, witnessList = self.processNodeSuccessors(INTrep,self.N,H2,**self.processNodesArgs,payload=payload,witness=witness).get()
         if type(witnessList) is list and len(witnessList) == len(successorList):
             findWitnessLocally = False
         else:
