@@ -89,7 +89,7 @@ class encapsulateLP():
                         **glpkOpts \
                     )
             if 'x' in res:
-                x = res['x'].reshape(-1,1)
+                x = res['x']
             else:
                 x = None
             if 'status' in res:
