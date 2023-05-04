@@ -81,8 +81,11 @@ class encapsulateLP():
                     glpkOpts[ky] = lpopts[ky]
             res = glpk( \
                         obj, \
-                        A_ub=A, \
-                        b_ub=b, \
+                        A_ub=A.copy(), \
+                        b_ub=b.copy(), \
+                        A_eq=None, \
+                        b_eq=None, \
+                        bounds=(None, None), \
                         message_level=GLPK.GLP_MSG_OFF, \
                         disp=False, \
                         simplex_options=simplexOpts, \
