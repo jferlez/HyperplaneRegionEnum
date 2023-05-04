@@ -98,7 +98,6 @@ class encapsulateLP():
                 status = glpkRetCodes[res['status']]
             else:
                 status = 'unk'
-            return status, x
 
         if status != 'optimal' and status != 'primal infeasible' and status != 'dual infeasible':
             if 'fallback' in lpopts:
