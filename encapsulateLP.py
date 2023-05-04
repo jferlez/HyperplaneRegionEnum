@@ -89,11 +89,16 @@ class encapsulateLP():
                         **glpkOpts \
                     )
             if 'x' in res:
-                return glpkStatus[res['status']], res['x'].reshape(-1,1)
-            elif 'status' in res:
-                return glpkRetCodes[res['status']], None
+                x = res['x'].reshape(-1,1)
             else:
-                return 'unk', None
+                x = None
+            if 'status' in res:
+                status = glpkStatus[res['status']]
+            elif 'ret_code' in res:
+                status = glpkRetCodes[res['status']]
+            else:
+                status = 'unk'
+            return status, x
 
         if status != 'optimal' and status != 'primal infeasible' and status != 'dual infeasible':
             if 'fallback' in lpopts:
