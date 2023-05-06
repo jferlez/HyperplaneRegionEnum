@@ -98,7 +98,7 @@ class encapsulateLP():
             if 'status' in res:
                 status = glpkStatus[res['status']]
             elif 'ret_code' in res:
-                status = glpkRetCodes[res['status']]
+                status = glpkRetCodes[res['ret_code']]
             else:
                 status = 'unk'
 
