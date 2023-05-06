@@ -241,7 +241,7 @@ def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None):
 
 # H2 is a CDD-style matrix specifying inequality constraints
 # Function returns an interior point to the associated region, if one exists, and None otherwise
-def findInteriorPointFull(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,lpopts={}):
+def findInteriorPointFull(H2,allowEquality=None,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,lpopts={}):
     lpopts = deepcopy(lpopts)
     lpopts['solver'] = solver
 
@@ -255,10 +255,13 @@ def findInteriorPointFull(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,lpopts=
     H = copy(H2)
     obj = np.zeros(n+1,dtype=np.float64)
     obj[n] = -1
+    eqConstraints = np.ones((N,1),dtype=np.float64)
+    if not allowEquality is None:
+        eqConstraints[allowEquality,] = np.zeros_like(eqConstraints[allowEquality,])
     constraints = np.hstack([\
             np.hstack([H[:,0], 1.0, 0.0]).reshape(-1,1), \
             np.vstack([ \
-                np.hstack([-H[:,1:], np.ones((N,1),dtype=np.float64)]), \
+                np.hstack([-H[:,1:], eqConstraints]), \
                 -obj, \
                 obj \
             ]) \
@@ -273,8 +276,8 @@ def findInteriorPointFull(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,lpopts=
                 )
     return status, (np.frombuffer(sol) if status=='optimal' else None)
 
-def findInteriorPoint(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,lpopts={}):
-    status, sol = findInteriorPointFull(H2,solver=solver,lpObj=lpObj,tol=tol,rTol=rTol,lpopts=lpopts)
+def findInteriorPoint(H2,allowEqualityConstraints=None,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,lpopts={}):
+    status, sol = findInteriorPointFull(H2,solver=solver,lpObj=lpObj,allowEquality=allowEqualityConstraints,tol=tol,rTol=rTol,lpopts=lpopts)
     n = H2.shape[1]-1
     if status == 'optimal' and sol[-1] > tol:
         sol = np.array(sol)[:n].reshape(-1,1)
