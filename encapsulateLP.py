@@ -6,7 +6,7 @@ import numpy as np
 from copy import copy, deepcopy
 
 glpkDefaults = {'basis_fac':'btf+cgr'}
-glpkSimplexDefaults = {'init_basis':'adv','method':'dualp','tol_bnd':1e-10,'presolve':False}
+glpkSimplexDefaults = {'init_basis':'adv','method':'dualp','tol_bnd':1e-10,'tol_dj':1e-10,'presolve':False}
 glpkSimplexKeys = {'method','init_basis','steep','ratio','tol_bnd','tol_dj','tol_piv','obj_ll','obj_ul','presolve','exact'}
 glpkArgs = {'scale','maxit','timeout','basis_fac'}
 glpkStatus = {1:'undefined',2:'feasible',3:'infeasible',4:'primal infeasible',5:'optimal',6:'dual infeasible'}
