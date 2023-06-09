@@ -377,6 +377,13 @@ class Poset(Chare):
         return checkVal
 
     @coro
+    def getLPCount(self):
+        statsFut = Future()
+        self.succGroupFull.getStats(statsFut)
+        stats = statsFut.get()
+        return stats
+
+    @coro
     def populatePosetRS(self,payload=None, opts={}):
         if self.populated:
             return
