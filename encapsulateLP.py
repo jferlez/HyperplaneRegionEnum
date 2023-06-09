@@ -40,6 +40,7 @@ class encapsulateLP():
         self.lpCount = 0
 
     def initSolver(self, solver='glpk', opts={}):
+        self.lpCount = 0
         if solver == 'clp' and not 'clp' in self.initializedSolvers:
             self.d = opts['dim']
             self.cylp = CyClpSimplex()
