@@ -31,6 +31,13 @@ class Node():
         self.nodeEqualityFn = nodeEqualityFn
         self.payload = args[0] if len(args) > 0 else tuple()
 
+    def copy(self):
+        cl = type(self)
+        return cl( \
+                  self.localProxy, self.storePe, self.parentChare, self.nodeEqualityFn, self.lsbHash, \
+                  self.msbHash, copy(self.nodeBytes), self.originPe, deepcopy(self.face), deepcopy(self.witness), (deepcopy(self.payload),) \
+                )
+
     def __hash__(self):
         return self.msbHash
 
