@@ -15,6 +15,7 @@ from cylp.py.modeling.CyLPModel import CyLPArray
 import sys
 import warnings
 import numba as nb
+import random
 # import TLLHypercubeReach
 import posetFastCharm_numba
 import region_helpers
@@ -61,6 +62,16 @@ class localVar(Chare):
     def reset(self):
         self.skip = False
         self.schedCount = 0
+    @coro
+    def schedRandomPosetPe(self):
+        # self.schedCount += 1
+        return random.choice(self.posetPElist)
+    @coro
+    def checkNode(self, *args):
+        return True
+    @coro
+    def checkNodeRS(self,*args):
+        return True
 
 class Poset(Chare):
 
