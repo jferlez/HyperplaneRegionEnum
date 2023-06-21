@@ -44,6 +44,13 @@ class PosetNode(DistributedHash.Node):
         self.face |= set(face)
 
 class localVar(Chare):
+    def init(self,succGroupProxy,posetPElist):
+        self.posetSuccGroupProxy = succGroupProxy
+        self.posetPElist = posetPElist
+        self.schedCount = 0
+        # self.closedCalls = []
+        self.skip = False
+        self.counterExample = None
     def setConstraints(self,constraints):
         self.constraints = constraints
         self.schedCount = 0
@@ -83,11 +90,7 @@ class Poset(Chare):
         self.usePosetChecking = usePosetChecking
         self.localVarGroup = localVarGroup
         self.useDefaultLocalVarGroup = False
-        if localVarGroup is None:
-            self.useDefaultLocalVarGroup = True
-            self.usePosetChecking = False
-            self.localVarGroup = Group(localVar,args=[])
-            charm.awaitCreation(self.localVarGroup)
+
         self.nodeConstructor = nodeConstructor
         if self.nodeConstructor is None:
             self.nodeConstructor = PosetNode
@@ -113,6 +116,13 @@ class Poset(Chare):
             ))
         self.succGroupFull = Group(self.successorChare,args=[])
         charm.awaitCreation(self.succGroupFull)
+
+        if localVarGroup is None:
+            self.useDefaultLocalVarGroup = True
+            self.usePosetChecking = False
+            self.localVarGroup = Group(localVar,args=[])
+            charm.awaitCreation(self.localVarGroup)
+            self.localVarGroup.init(self.succGroupFull,self.posetPElist,awaitable=True).get()
 
         # Create a PE scheduler Chare for use in Reverse Search implementations
         self.rsPeScheduler = Chare(peSchedulerRS,args=[self.succGroupFull,self.posetPElist],onPE=0)
