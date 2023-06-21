@@ -154,6 +154,7 @@ class HashWorker(Chare):
             print(f'Table operations are in progress. Changing tables is not supported')
             return False
         if not tableName in self.tableStore:
+            print(f'Table {tableName} does not exist')
             return False
         else:
             self.table = self.tableStore[tableName]
