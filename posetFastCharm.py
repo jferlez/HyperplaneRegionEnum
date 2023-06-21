@@ -228,6 +228,9 @@ class Poset(Chare):
     @coro
     def getHashTableProxy(self):
         return self.distHashTable
+    @coro
+    def clearHashTable(self):
+        self.distHashTable.clearHashTable(awaitable=True).get()
 
     # Because charm4py seems to filter **kwargs, pass all arguments to populatePoset in a single dictionary.
     # This avoids having to distinguish between those arguments that are for populatePoset itself and those
@@ -295,6 +298,8 @@ class Poset(Chare):
             level = self.N+2
         listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
+        # If clearTable is set, then the result won't be the full table, so might as well
+        # clear what we have in there already (I'm torn about the logic of this behavior...)
         if self.clearTable:
             self.distHashTable.clearHashTable(awaitable=True).get()
 
