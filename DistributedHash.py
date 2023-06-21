@@ -190,6 +190,9 @@ class HashWorker(Chare):
                     self.table = self.tableStore[ky]
                     break
             return True
+    @coro
+    def getTableNames(self):
+        return frozenset(self.tableStore.keys())
 
     @coro
     def setConstraint(self,hashStoreMode=1):
@@ -1050,7 +1053,12 @@ class DistHash(Chare):
     def deleteTable(self,tableName):
         retVal = self.hWorkersFull.deleteTable(tableName,ret=True).get()
         return all(retVal)
-
+    @coro
+    def getTableNames(self):
+        retVal = self.hWorkersFull.getTableNames(ret=True).get()
+        assert len(retVal) > 0, f'Error'
+        assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent active table names'
+        return sorted(list(retVal[0]))
     @coro
     def decHashedNodeCountFeeder(self,pe):
         self.feederGroup[pe].decHashedNodeCount()
