@@ -175,7 +175,10 @@ class HashWorker(Chare):
             print(f'Table operations are in progress, and either the source or destination is the active table. Changing tables is not permitted at this time')
             return False
         else:
-            self.tableStore[dest] = deepcopy(self.tableStore[src])
+            self.tableStore[dest] = { \
+                                     (nTab:=val['ptr'].copy()) : {'checked':val['checked'],'ptr':nTab} \
+                                     for ky,val in self.tableStore[src].items()
+                            }
             if dest == self.activeTableName:
                 self.table = self.tableStore[dest]
             return True
