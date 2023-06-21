@@ -231,6 +231,27 @@ class Poset(Chare):
     @coro
     def clearHashTable(self):
         self.distHashTable.clearHashTable(awaitable=True).get()
+    @coro
+    def newTable(self,tableName):
+        return self.distHashTable.newTable(tableName,ret=True).get()
+    @coro
+    def isTable(self,tableName):
+        return self.distHashTable.isTable(tableName,ret=True).get()
+    @coro
+    def getActiveTable(self):
+        return self.distHashTable.getActiveTable(ret=True).get()
+    @coro
+    def activateTable(self,tableName):
+        return self.distHashTable.activateTable(tableName,ret=True).get()
+    @coro
+    def copyTable(self,src=None,dest=None):
+        return self.distHashTable.copyTable(src=src,dest=dest,ret=True).get()
+    @coro
+    def deleteTable(self,tableName):
+        return self.distHashTable.deleteTable(tableName,ret=True).get()
+    @coro
+    def getTableNames(self):
+        return self.distHashTable.getTableNames(ret=True).get()
 
     # Because charm4py seems to filter **kwargs, pass all arguments to populatePoset in a single dictionary.
     # This avoids having to distinguish between those arguments that are for populatePoset itself and those
