@@ -224,6 +224,9 @@ class Poset(Chare):
     @coro
     def getSuccGroupProxy(self):
         return self.succGroupFull
+    @coro
+    def getTableLen(self):
+        return self.distHashTable.getTableLen(ret=True).get()
 
     @coro
     def getHashTableProxy(self):
