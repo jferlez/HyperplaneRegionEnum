@@ -158,6 +158,8 @@ class HashWorker(Chare):
             return False
         else:
             self.table = self.tableStore[tableName]
+            self.levelList = []
+            self.level = -1
             return True
     @coro
     def copyTable(self,src=None,dest=None):
