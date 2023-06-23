@@ -18,10 +18,11 @@ XFER_CHUNK_SIZE = 1000
 
 class Node():
 
-    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes, originPe, face, witness, *args):
+    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes,N, originPe, face, witness, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
+        self.N = N
         self.localProxy = localProxy
         self.storePe = storePe
         self.parentChare = parentChare
@@ -35,7 +36,7 @@ class Node():
         cl = type(self)
         return cl( \
                   self.localProxy, self.storePe, self.parentChare, self.nodeEqualityFn, self.lsbHash, \
-                  self.msbHash, copy(self.nodeBytes), self.originPe, deepcopy(self.face), deepcopy(self.witness), (deepcopy(self.payload),) \
+                  self.msbHash, copy(self.nodeBytes),self.N, self.originPe, deepcopy(self.face), deepcopy(self.witness), (deepcopy(self.payload),) \
                 )
 
     def __hash__(self):
@@ -45,7 +46,9 @@ class Node():
         if type(other) == type(self.nodeBytes):
             return self.nodeEqualityFn(self.nodeBytes, other)
         elif isinstance(other,Node):
-            return self.nodeEqualityFn(self.nodeBytes, other.nodeBytes)
+            return self.N == other.N and self.nodeEqualityFn(self.nodeBytes, other.nodeBytes)
+        else:
+            return False
 
 # Vertex Node equality check
 @njit( \
@@ -874,7 +877,7 @@ class HashWorker(Chare):
             ctrlVal = ctrlChan.recv()
             if ctrlVal > 0:
                 ptr = self.table[nd]['ptr']
-                dataChan.send((ptr.lsbHash, ptr.msbHash, ptr.nodeBytes, ptr.originPe, ptr.face, ptr.witness, ptr.payload))
+                dataChan.send((ptr.lsbHash, ptr.msbHash, ptr.nodeBytes, ptr.N, ptr.originPe, ptr.face, ptr.witness, ptr.payload))
             else:
                 term = True
                 dataChan.send(None)
