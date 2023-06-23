@@ -837,11 +837,14 @@ class successorWorker(Chare):
         return True
 
     @coro
-    def query(self, q):
+    def query(self, q, op=None):
+        qOp = 0
+        if isinstance(op,int):
+            qOp = op
         # print('PE' + str(charm.myPe()) + ' Query to send is ' + str(q))
         self.stats['numQueries'] += 1
         val = self.hashNode(q)
-        self.queryChannels[val[0]].send(val)
+        self.queryChannels[val[0]].send((qOp,) + val)
         # print('PE' + str(charm.myPe()) + ' sending query ' + str(val))
         if not self.queryMutexChannel is None:
             self.queryMutexChannel.send(charm.myPe())

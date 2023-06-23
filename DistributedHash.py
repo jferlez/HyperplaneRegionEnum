@@ -16,6 +16,8 @@ from region_helpers import hashNodeBytes
 
 XFER_CHUNK_SIZE = 1000
 
+QUERYOP_DELETE = 1
+
 class Node():
 
     def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes,N, originPe, face, witness, *args):
@@ -640,18 +642,22 @@ class HashWorker(Chare):
                     chList.append(ch)
                     val = msg['msg']
                     # print(prefix + ' Processing QUERY message ' + str(val) + ' on PE ' + str(charm.myPe()))
-                    if type(val) is tuple and len(val) >= 3:
+                    if type(val) is tuple and len(val) >= 4:
+                        qOp = val[0]
                         if (not charm.myPe() in self.overlapPElist) or (not selfQuery or charm.myPe() == chIdx):
                             answeredSelf = True
-                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
+                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val[1:])
                         if newNode in self.table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             nd = self.table[newNode]['ptr']
                             self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness, nd.payload))
+                            if qOp == QUERYOP_DELETE:
+                                self.table[newNode]['ptr'] = None
+                                del self.table[newNode]
                         else:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             self.queryChannelsHashEnd[chIdx].send((-1,))
-                    elif val < 0:
+                    elif isinstance(val,int) and val < 0:
                         answeredSelf = True
                         # for chIt in self.queryChannelsHashEnd:
                         self.queryStatus[ch] = -2
