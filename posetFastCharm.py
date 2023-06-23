@@ -276,6 +276,9 @@ class Poset(Chare):
             if ky in opts:
                 setattr(self,ky,opts[ky])
                 #opts.pop(ky)
+        if self.clearTable and self.sendFaces:
+            print(f'ERROR: \'clearTable\' flag is incompatible with \'sendFaces\'.')
+            return None
 
 
         #print(f'verbose is {self.verbose}')
@@ -633,7 +636,7 @@ class successorWorker(Chare):
         self.processNodesArgs['ret'] = True
         self.method = method
         self.solver = solver
-        
+
         self.Hcol0Close = self.tol + self.rTol * np.abs(self.constraints[:,0])
         self.Hcol0CloseVertex = self.constraints[:,0] - self.Hcol0Close
 
