@@ -4,7 +4,7 @@ from numpy import may_share_memory
 import time
 import itertools
 import random
-from copy import copy
+from copy import copy, deepcopy
 import numpy as np
 import numba as nb
 from numba import njit
@@ -16,12 +16,15 @@ from region_helpers import hashNodeBytes
 
 XFER_CHUNK_SIZE = 1000
 
+QUERYOP_DELETE = 1
+
 class Node():
 
-    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes, originPe, face, witness, *args):
+    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes,N, originPe, face, witness, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
+        self.N = N
         self.localProxy = localProxy
         self.storePe = storePe
         self.parentChare = parentChare
@@ -35,7 +38,7 @@ class Node():
         cl = type(self)
         return cl( \
                   self.localProxy, self.storePe, self.parentChare, self.nodeEqualityFn, self.lsbHash, \
-                  self.msbHash, copy(self.nodeBytes), self.originPe, deepcopy(self.face), deepcopy(self.witness), (deepcopy(self.payload),) \
+                  self.msbHash, copy(self.nodeBytes),self.N, self.originPe, deepcopy(self.face), deepcopy(self.witness), (deepcopy(self.payload),) \
                 )
 
     def __hash__(self):
@@ -45,7 +48,9 @@ class Node():
         if type(other) == type(self.nodeBytes):
             return self.nodeEqualityFn(self.nodeBytes, other)
         elif isinstance(other,Node):
-            return self.nodeEqualityFn(self.nodeBytes, other.nodeBytes)
+            return self.N == other.N and self.nodeEqualityFn(self.nodeBytes, other.nodeBytes)
+        else:
+            return False
 
 # Vertex Node equality check
 @njit( \
@@ -99,7 +104,14 @@ class HashWorker(Chare):
         self.level = -1
         self.levelList = []
         self.levelDone = True
-        self.table = {}
+        self.tableStore = {'default':{}}
+        self.activeTableName = 'default'
+        self.table = self.tableStore['default']
+        self.localListenerActive = False
+        self.localQueryListenterActive = False
+        self.enumListenerActive = False
+        self.disableTableChanges = False
+        self.mainListenerActive = False
         self.nodeConstructor = nodeConstructor
         self.nodeCalls = 0
         self.maxNodeYields = 1
@@ -123,6 +135,83 @@ class HashWorker(Chare):
         self.processedNodeCounter = 0
         self.hashedNodeCount = 0
         #print(self.thisIndex)
+
+    @coro
+    def newTable(self,tableName):
+        if tableName in self.tableStore:
+            print(f'Table name {tableName} already exists in distributed hash...')
+            return False
+        else:
+            self.tableStore[tableName] = {}
+            return True
+    @coro
+    def isTable(self,tableName):
+        if tableName in self.tableStore:
+            return True
+        else:
+            return False
+    @coro
+    def getActiveTable(self):
+        return self.activeTableName
+    @coro
+    def activateTable(self,tableName):
+        if self.localListenerActive or self.localQueryListenterActive or self.mainListenerActive or self.disableTableChanges or self.enumListenerActive:
+            print(f'Table operations are in progress. Changing tables is not supported')
+            return False
+        if not tableName in self.tableStore:
+            print(f'Table {tableName} does not exist')
+            return False
+        else:
+            self.table = self.tableStore[tableName]
+            self.levelList = []
+            self.level = -1
+            return True
+    @coro
+    def copyTable(self,src=None,dest=None):
+        if not isinstance(src,str) or not isinstance(dest,str):
+            print(f'Must specify a source and destination as strings')
+            return False
+        elif not src in self.tableStore:
+            print(f'Source table {src} doesn\'t exist')
+            return False
+        elif src == dest:
+            print(f'Source and destination must be different tables')
+            return False
+        elif self.localListenerActive or self.localQueryListenterActive or self.mainListenerActive or self.disableTableChanges or self.enumListenerActive \
+                and self.activeTableName == src or  self.activeTableName == dest:
+            print(f'Table operations are in progress, and either the source or destination is the active table. Changing tables is not permitted at this time')
+            return False
+        else:
+            self.tableStore[dest] = { \
+                                     (nTab:=val['ptr'].copy()) : {'checked':val['checked'],'ptr':nTab} \
+                                     for ky,val in self.tableStore[src].items()
+                            }
+            if dest == self.activeTableName:
+                self.table = self.tableStore[dest]
+            return True
+    @coro
+    def deleteTable(self,tableName):
+        if not tableName in self.tableStore:
+            print(f'Specified table cannot be deleted because it doesn\'t exist')
+            return False
+        elif self.localListenerActive or self.localQueryListenterActive or self.mainListenerActive or self.disableTableChanges or self.enumListenerActive \
+                and tableName == self.activeTableName:
+            print(f'Cannot delete table because it is active and table operations are in progress')
+            return False
+        else:
+            del self.tableStore[tableName]
+            if len(self.tableStore) == 0:
+                self.tableStore['default'] = {}
+            if tableName == self.activeTableName:
+                for ky in self.tableStore.keys():
+                    self.activeTableName = ky
+                    self.table = self.tableStore[ky]
+                    break
+            return True
+    @coro
+    def getTableNames(self):
+        return frozenset(self.tableStore.keys())
+
     @coro
     def setConstraint(self,hashStoreMode=1):
         self.hashStoreMode = 1
@@ -333,6 +422,7 @@ class HashWorker(Chare):
 
     @coro
     def localListener(self,ch,chIdx):
+        self.localListenerActive = True
         self.initiatedNodeProc = False
         validInput = False
         while True:
@@ -368,10 +458,12 @@ class HashWorker(Chare):
             if val == -3 or val == -2:
                 # print('----'*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'LocalListener ' + sig + ' -- TERMINATING!')
                 break
+        self.localListenerActive = False
         return 1
 
     @coro
     def localQueryListener(self,ch,chIdx):
+        self.localQueryListenterActive = True
         self.initiatedQueryProc = False
         while True:
             # print('Listener started')
@@ -398,6 +490,7 @@ class HashWorker(Chare):
             if val == -2:
                 # print('===='*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'QUERYLocalListener ' + sig + ' -- TERMINATING!')
                 break
+        self.localQueryListenterActive = False
         return 1
 
     @coro
@@ -441,6 +534,7 @@ class HashWorker(Chare):
 
     @coro
     def listen(self):
+        self.mainListenerActive = True
         # print('Started main listener')
         free = False
         pendingChecks = False
@@ -548,18 +642,22 @@ class HashWorker(Chare):
                     chList.append(ch)
                     val = msg['msg']
                     # print(prefix + ' Processing QUERY message ' + str(val) + ' on PE ' + str(charm.myPe()))
-                    if type(val) is tuple and len(val) >= 3:
+                    if type(val) is tuple and len(val) >= 4:
+                        qOp = val[0]
                         if (not charm.myPe() in self.overlapPElist) or (not selfQuery or charm.myPe() == chIdx):
                             answeredSelf = True
-                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
+                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val[1:])
                         if newNode in self.table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             nd = self.table[newNode]['ptr']
                             self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness, nd.payload))
+                            if qOp == QUERYOP_DELETE:
+                                self.table[newNode]['ptr'] = None
+                                del self.table[newNode]
                         else:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             self.queryChannelsHashEnd[chIdx].send((-1,))
-                    elif val < 0:
+                    elif isinstance(val,int) and val < 0:
                         answeredSelf = True
                         # for chIt in self.queryChannelsHashEnd:
                         self.queryStatus[ch] = -2
@@ -683,6 +781,7 @@ class HashWorker(Chare):
             # print(prefix + ' Finished trace on PE ' + str(charm.myPe()) + ' ----------------------')
             cnt += 1
         # print('Shutting down main listener on PE ' + str(charm.myPe()))
+        self.mainListenerActive = False
         return 1
 
     @coro
@@ -719,9 +818,12 @@ class HashWorker(Chare):
         return len(self.table)
 
     @coro
-    def clearHashTable(self):
+    def clearHashTable(self,tableName=None):
+        if tableName is None:
+            tableName = self.activeTableName
         self.levelList = []
-        self.table = {}
+        self.tableStore[tableName] = {}
+        self.table = self.tableStore[tableName]
     @coro
     def getTable(self):
         return [(ky.nodeBytes, ky.face, ky.witness, ky.payload) for ky in self.table.keys()]
@@ -738,6 +840,7 @@ class HashWorker(Chare):
     #     return count
     @coro
     def distributeTableChunk(self,feederPEoffset,retFut,clearTable=True):
+        self.disableTableChanges = True
         while len(self.levelList) > 0:
             chunkSize = min(XFER_CHUNK_SIZE * len(self.feederPElist), len(self.levelList))
             xferDone = [Future() for _ in range(len(self.feederPElist))]
@@ -751,6 +854,7 @@ class HashWorker(Chare):
                 for idx in range(chunkSize):
                     self.table.pop(self.levelList[idx])
             self.levelList = self.levelList[chunkSize:]
+        self.disableTableChanges = False
         retFut.send(1)
 
     @coro
@@ -762,6 +866,7 @@ class HashWorker(Chare):
 
     @coro
     def enumListener(self, chareKey, statusFut):
+        self.enumListenerActive = True
         if not chareKey in self.enumChannelsHashEnd:
             print(f'Error: {chareKey} is not registered...')
             statusFut.send(-1)
@@ -778,7 +883,7 @@ class HashWorker(Chare):
             ctrlVal = ctrlChan.recv()
             if ctrlVal > 0:
                 ptr = self.table[nd]['ptr']
-                dataChan.send((ptr.lsbHash, ptr.msbHash, ptr.nodeBytes, ptr.originPe, ptr.face, ptr.witness, ptr.payload))
+                dataChan.send((ptr.lsbHash, ptr.msbHash, ptr.nodeBytes, ptr.N, ptr.originPe, ptr.face, ptr.witness, ptr.payload))
             else:
                 term = True
                 dataChan.send(None)
@@ -787,6 +892,7 @@ class HashWorker(Chare):
             ctrlVal = ctrlChan.recv()
             dataChan.send(None)
         # print(f'Shutting down enumListener on PE {charm.myPe()}... Reason: ' + ('table done' if not term else 'shutdown requested'))
+        self.enumListenerActive = False
         self.enumChannelsHashEnd[chareKey]['lock'] = False
 
 
@@ -943,6 +1049,38 @@ class DistHash(Chare):
     def updateNodeEqualityFn(self,fn=None, nodeType='standard', tol=1e-9, rTol=1e-9, H=None):
         self.hWorkersFull.updateNodeEqualityFn(fn=fn,nodeType=nodeType,tol=tol,rTol=rTol, H=H, awaitable=True).get()
 
+    @coro
+    def newTable(self,tableName):
+        retVal = self.hWorkersFull.newTable(tableName,ret=True).get()
+        return all(retVal)
+    @coro
+    def isTable(self,tableName):
+        retVal = self.hWorkersFull.isTable(tableName,ret=True).get()
+        return all(retVal)
+    @coro
+    def getActiveTable(self):
+        retVal = self.hWorkersFull.getActiveTable(ret=True).get()
+        assert len(retVal) > 0, f'Error'
+        assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent active table names'
+        return retVal[0]
+    @coro
+    def activateTable(self,tableName):
+        retVal = self.hWorkersFull.activateTable(tableName,ret=True).get()
+        return all(retVal)
+    @coro
+    def copyTable(self,src=None,dest=None):
+        retVal = self.hWorkersFull.copyTable(src=src,dest=dest,ret=True).get()
+        return all(retVal)
+    @coro
+    def deleteTable(self,tableName):
+        retVal = self.hWorkersFull.deleteTable(tableName,ret=True).get()
+        return all(retVal)
+    @coro
+    def getTableNames(self):
+        retVal = self.hWorkersFull.getTableNames(ret=True).get()
+        assert len(retVal) > 0, f'Error'
+        assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent active table names'
+        return sorted(list(retVal[0]))
     @coro
     def decHashedNodeCountFeeder(self,pe):
         self.feederGroup[pe].decHashedNodeCount()

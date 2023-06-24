@@ -40,7 +40,7 @@ class PosetNode(DistributedHash.Node):
 
     # def check(self):
     #     pass
-    def update(self, lsb,msb,nodeBytes, originPe, face, witness, *args):
+    def update(self, lsb,msb,nodeBytes,N, originPe, face, witness, *args):
         self.face |= set(face)
 
 class localVar(Chare):
@@ -234,6 +234,27 @@ class Poset(Chare):
     @coro
     def clearHashTable(self):
         self.distHashTable.clearHashTable(awaitable=True).get()
+    @coro
+    def newTable(self,tableName):
+        return self.distHashTable.newTable(tableName,ret=True).get()
+    @coro
+    def isTable(self,tableName):
+        return self.distHashTable.isTable(tableName,ret=True).get()
+    @coro
+    def getActiveTable(self):
+        return self.distHashTable.getActiveTable(ret=True).get()
+    @coro
+    def activateTable(self,tableName):
+        return self.distHashTable.activateTable(tableName,ret=True).get()
+    @coro
+    def copyTable(self,src=None,dest=None):
+        return self.distHashTable.copyTable(src=src,dest=dest,ret=True).get()
+    @coro
+    def deleteTable(self,tableName):
+        return self.distHashTable.deleteTable(tableName,ret=True).get()
+    @coro
+    def getTableNames(self):
+        return self.distHashTable.getTableNames(ret=True).get()
 
     # Because charm4py seems to filter **kwargs, pass all arguments to populatePoset in a single dictionary.
     # This avoids having to distinguish between those arguments that are for populatePoset itself and those
@@ -255,6 +276,9 @@ class Poset(Chare):
             if ky in opts:
                 setattr(self,ky,opts[ky])
                 #opts.pop(ky)
+        if self.clearTable and self.sendFaces:
+            print(f'ERROR: \'clearTable\' flag is incompatible with \'sendFaces\'.')
+            return None
 
 
         #print(f'verbose is {self.verbose}')
@@ -288,7 +312,7 @@ class Poset(Chare):
         boolIdxNoFlip = bytearray(b'\x00') * (self.flippedConstraints.wholeBytes + (1 if self.flippedConstraints.tailBits != 0 else 0))
         for unflipIdx in range(len(thisLevel[0][0])-1,-1,-1):
             boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
-        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0],tuple(),self.flippedConstraints.pt],payload=(None if payload is None else payload),vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())),ret=True).get()
+        self.successorProxies[0].hashAndSend([boolIdxNoFlip,thisLevel[0][0],self.flippedConstraints.N,tuple(),self.flippedConstraints.pt],payload=(None if payload is None else payload),vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())),ret=True).get()
 
         self.distHashTable.awaitPending(usePosetChecking=self.usePosetChecking, awaitable=True).get()
         # Send a final termination signal:
@@ -612,7 +636,7 @@ class successorWorker(Chare):
         self.processNodesArgs['ret'] = True
         self.method = method
         self.solver = solver
-        
+
         self.Hcol0Close = self.tol + self.rTol * np.abs(self.constraints[:,0])
         self.Hcol0CloseVertex = self.constraints[:,0] - self.Hcol0Close
 
@@ -725,18 +749,19 @@ class successorWorker(Chare):
         else:
             # default to tuple mode
             regEncode = tuple(toHash[1])
-        if len(toHash) >= 3:
-            face = toHash[2]
+        N = toHash[2]
+        if len(toHash) >= 4:
+            face = toHash[3]
         else:
             face = tuple()
-        if len(toHash) >= 4:
-            witness = toHash[3]
+        if len(toHash) >= 5:
+            witness = toHash[4]
         else:
             witness = None
         if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, witness, payload)
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, payload)
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, witness )
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness )
 
     @coro
     def hashAndSend(self,toHash,payload=None,vertex=None):
@@ -812,11 +837,14 @@ class successorWorker(Chare):
         return True
 
     @coro
-    def query(self, q):
+    def query(self, q, op=None):
+        qOp = 0
+        if isinstance(op,int):
+            qOp = op
         # print('PE' + str(charm.myPe()) + ' Query to send is ' + str(q))
         self.stats['numQueries'] += 1
         val = self.hashNode(q)
-        self.queryChannels[val[0]].send(val)
+        self.queryChannels[val[0]].send((qOp,) + val)
         # print('PE' + str(charm.myPe()) + ' sending query ' + str(val))
         if not self.queryMutexChannel is None:
             self.queryMutexChannel.send(charm.myPe())
@@ -1065,7 +1093,7 @@ class successorWorker(Chare):
                 temp = copy(intIdxNoFlip)
                 temp.insert(insertIdx,intIdx[idx])
                 # q = self.thisProxy[self.thisIndex].query( bytes(np.packbits(boolIdx,bitorder='little')), ret=True).get()
-                q = self.thisProxy[self.thisIndex].query( [boolIdxNoFlip, tuple(temp)], ret=True).get()
+                q = self.thisProxy[self.thisIndex].query( [boolIdxNoFlip, tuple(temp), self.flippedConstraints.N], ret=True).get()
                 boolIdxNoFlip[intIdx[idx]//8] = boolIdxNoFlip[intIdx[idx]//8] ^ (1<<(intIdx[idx]%8))
                 # print('PE' + str(charm.myPe()) + ' Queried table with node ' + str(origInt) + ' and received reply ' + str(q))
                 # If the node corresponding to the hyperplane we're about to flip is already in the table
@@ -1152,7 +1180,7 @@ class successorWorker(Chare):
                 temp = copy(intIdxNoFlip)
                 temp.insert(insertIdx,intIdx[i])
                 successors.append( \
-                        [ copy(boolIdxNoFlip), tuple(temp), (intIdx[i],) if self.sendFaces else tuple() , None if witness is None else witnessList[idx], None ]
+                        [ copy(boolIdxNoFlip), tuple(temp), self.flippedConstraints.N, (intIdx[i],) if self.sendFaces else tuple() , None if witness is None else witnessList[idx], None ]
                     )
                 boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] ^ 1<<(intIdx[i] % 8)
                 # self.conversionTime += time.time() - t
@@ -1167,7 +1195,7 @@ class successorWorker(Chare):
                     H[INTrep,:] = -H[INTrep,:]
                     return successors, -1, witnessList
         if not self.doRS and self.sendFaces:
-            self.thisProxy[self.thisIndex].hashAndSend([boolIdxNoFlip,intIdxNoFlip,[ii[2][0] for ii in successors]], ret=True).get()
+            self.thisProxy[self.thisIndex].hashAndSend([boolIdxNoFlip,intIdxNoFlip,self.flippedConstraints.N,[ii[3][0] for ii in successors]], ret=True).get()
         # facesInt = np.full(self.N,0,dtype=bool)
         sel = tuple(np.array(intIdx,dtype=np.uint64)[faces].tolist())
         # facesInt[sel] = np.full(len(sel),1,dtype=bool)
