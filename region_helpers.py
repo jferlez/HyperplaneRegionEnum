@@ -47,6 +47,9 @@ class flipConstraints:
         self.tailBitsAllN = self.tailBits
         self.rebasePt = None
 
+    def copy(self):
+        return deepcopy(self)
+
     def insertHyperplane(self,newA,newb):
         newPt = None
         newSign = None
