@@ -121,6 +121,7 @@ class HashWorker(Chare):
             call = getattr(self.nodeConstructor,checkCall,None)
             if callable(call):
                 self.nodeCalls += 1 << callIdx
+                setattr(self,checkCall+'Dispatch',call)
             callIdx += 1
         self.localVarGroup = localVarGroup
         self.parentProxy = parentProxy
@@ -136,6 +137,20 @@ class HashWorker(Chare):
         self.processedNodeCounter = 0
         self.hashedNodeCount = 0
         #print(self.thisIndex)
+
+    @coro
+    def setCheckDispatch(self,updateDict):
+        callIdx = 0
+        for checkCall in ['init','update','check']:
+            if checkCall in updateDict:
+                call = getattr(self.nodeConstructor,updateDict[checkCall],None)
+                print(call)
+                if callable(call):
+                    self.nodeCalls += 1 << callIdx
+                    setattr(self,checkCall+'Dispatch',call)
+                else:
+                    self.nodeCalls -= 1 << callIdx
+            callIdx += 1
 
     @coro
     def newTable(self,tableName):
@@ -728,20 +743,20 @@ class HashWorker(Chare):
                     elif type(val) == tuple and len(val) >= 3:
                         newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
                         if self.nodeCalls & 1:
-                            newNode.init()
+                            self.initDispatch(newNode)
                         if not newNode in self.table:
                             self.table[newNode] = {'checked':False, 'ptr':newNode}
                             # self.levelList.append((val[2],*newNode.payload))
                             self.levelList.append(newNode)
                             # Check node here:
-                            if self.nodeCalls & 4 and not newNode.check(): # If result of node check is False return False on all the workerDone Futures
+                            if self.nodeCalls & 4 and not self.checkDispatch(newNode): # If result of node check is False return False on all the workerDone Futures
                                     if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
                                         self.workerDone[ch].send(False)
                                     self.status[ch] = -3
                                     # self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
                                     self.levelDone = True
                         elif self.nodeCalls & 2:
-                            self.table[newNode]['ptr'].update(*val)
+                            self.updateDispatch(self.table[newNode]['ptr'],*val)
                     # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
                     elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
                         print(self.status)
@@ -1049,6 +1064,11 @@ class DistHash(Chare):
     @coro
     def updateNodeEqualityFn(self,fn=None, nodeType='standard', tol=1e-9, rTol=1e-9, H=None):
         self.hWorkersFull.updateNodeEqualityFn(fn=fn,nodeType=nodeType,tol=tol,rTol=rTol, H=H, awaitable=True).get()
+
+    @coro
+    def setCheckDispatch(self,updateDict):
+        assert isinstance(updateDict,dict), f'New dispatch table must be a dictionary!'
+        self.hWorkersFull.setCheckDispatch(updateDict,awaitable=True).get()
 
     @coro
     def newTable(self,tableName):
