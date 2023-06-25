@@ -20,7 +20,7 @@ QUERYOP_DELETE = 1
 
 class Node():
 
-    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes,N, originPe, face, witness, *args):
+    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes,N, originPe, face, witness, adj, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
@@ -32,13 +32,14 @@ class Node():
         self.face = set(face)
         self.witness = witness
         self.nodeEqualityFn = nodeEqualityFn
+        self.adj = {} if not adj else adj
         self.payload = args[0] if len(args) > 0 else tuple()
 
     def copy(self):
         cl = type(self)
         return cl( \
                   self.localProxy, self.storePe, self.parentChare, self.nodeEqualityFn, self.lsbHash, \
-                  self.msbHash, copy(self.nodeBytes),self.N, self.originPe, deepcopy(self.face), deepcopy(self.witness), (deepcopy(self.payload),) \
+                  self.msbHash, copy(self.nodeBytes),self.N, self.originPe, deepcopy(self.face), deepcopy(self.witness), deepcopy(self.adj), (deepcopy(self.payload),) \
                 )
 
     def __hash__(self):
@@ -883,7 +884,7 @@ class HashWorker(Chare):
             ctrlVal = ctrlChan.recv()
             if ctrlVal > 0:
                 ptr = self.table[nd]['ptr']
-                dataChan.send((ptr.lsbHash, ptr.msbHash, ptr.nodeBytes, ptr.N, ptr.originPe, ptr.face, ptr.witness, ptr.payload))
+                dataChan.send((ptr.lsbHash, ptr.msbHash, ptr.nodeBytes, ptr.N, ptr.originPe, ptr.face, ptr.witness, ptr.adj, ptr.payload))
             else:
                 term = True
                 dataChan.send(None)

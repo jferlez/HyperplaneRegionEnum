@@ -40,8 +40,11 @@ class PosetNode(DistributedHash.Node):
 
     # def check(self):
     #     pass
-    def update(self, lsb,msb,nodeBytes,N, originPe, face, witness, *args):
+    def update(self, lsb,msb,nodeBytes,N, originPe, face, witness, adj, *args):
         self.face |= set(face)
+        if adj and isinstance(adj,dict):
+            for ky in adj.keys():
+                self.adj[ky] = adj[ky]
 
 class localVar(Chare):
     def init(self,succGroupProxy,posetPElist):
@@ -736,7 +739,7 @@ class successorWorker(Chare):
         for ch in self.hashChannels:
             ch.send(-100)
 
-    def hashNode(self,toHash,payload=None,vertex=None):
+    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=False):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
         # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         hashInt = hashNodeBytes(toHash[0])
@@ -759,14 +762,14 @@ class successorWorker(Chare):
         else:
             witness = None
         if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, payload)
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate, payload)
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness )
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate )
 
     @coro
-    def hashAndSend(self,toHash,payload=None,vertex=None):
+    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=False):
         self.hashedNodeCount += 1
-        val = self.hashNode(toHash,payload=payload,vertex=vertex)
+        val = self.hashNode(toHash,payload=payload,vertex=vertex,adjUpdate=adjUpdate)
         self.hashChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(nodeInt))
         # retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
