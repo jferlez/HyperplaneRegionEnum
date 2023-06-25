@@ -47,6 +47,41 @@ class flipConstraints:
         self.tailBitsAllN = self.tailBits
         self.rebasePt = None
 
+    def insertHyperplane(self,newA,newb):
+        newPt = None
+        newSign = None
+        newHyperplane = np.hstack([newA, -newb])
+        if np.abs( newA.reshape(1,-1) @ self.pt - newb ) <= self.tol:
+            newPt = findInteriorPoint(np.vstack([self.constraints,newHyperplane]))
+            newSign = 1
+            if newPt is None:
+                newPt = findInteriorPoint(np.vstack([self.constraints,-newHyperplane]))
+                newSign = -1
+            if newPt is None:
+                raise ValueError(f'Error: inserted hyperplane doesn\'t split root region associated with point {self.pt}')
+        else:
+            newSign = 1 if newA.reshape(1,-1) @ self.pt > newb + self.tol else -1
+        self.flipMapN = np.hstack([self.flipMapN, np.array([newSign],dtype=np.int64)])
+        self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
+        self.flipMapSet = frozenset(self.flipMapSetNP)
+        self.N += 1
+        self.pt = self.pt if newPt is None else newPt
+        self.nA = np.vstack([self.nA, newSign * newA])
+        self.nb = np.vstack([self.nb, newSign * newb])
+        if self.fA is None:
+            self.constraints = np.hstack((-self.nb,self.nA))
+        else:
+            self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
+        self.allConstraints = self.constraints
+        self.allN = self.N
+        self.redundantFlips = np.full(self.N,1,dtype=np.int64)
+        self.nonRedundantHyperplanes = np.arange(self.N)
+        self.wholeBytes = (self.N + 7) // 8
+        self.tailBits = self.N - 8*(self.N // 8)
+        self.wholeBytesAllN = self.wholeBytes
+        self.tailBitsAllN = self.tailBits
+
+
     # This method returns flips of the hyperplanes *as provided* to obtain the region
     # specified by nodeBytes.
     # This is useful when you don't just care about the region specification but the
@@ -161,6 +196,27 @@ class flipConstraintsReducedMin(flipConstraints):
         self.tailBitsAllN = self.allN - 8*(self.allN // 8)
 
         self.root = tuple()
+
+    def insertHyperplane(self,newA,newb):
+        origNonRedundant = copy(self.redundantFlips)
+        N = self.N
+        super().insertHyperplane(newA,newb)
+        mat = copy(self.constraints[(self.N-1):,:])
+        self.redundantFlips = np.full(self.N,1,dtype=np.float64)
+        self.redundantFlips[:(self.N-1)] = origNonRedundant
+        for k in [self.N-1]:
+            mat[0,:] = self.constraints[k,:]
+            if len(lpMinHRep(mat,None,[0])) == 0:
+                self.redundantFlips[k] = -1
+        self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+
+        self.constraints = np.vstack( ( np.hstack((-1*self.nb[self.nonRedundantHyperplanes,],self.nA[self.nonRedundantHyperplanes,:])), \
+                                       np.hstack((-1*self.fb,self.fA)) ) )
+        self.N = len(self.nonRedundantHyperplanes)
+        self.wholeBytes = (self.N + 7) // 8
+        self.tailBits = self.N - 8*(self.N // 8)
+        self.wholeBytesAllN = (self.allN + 7) // 8
+        self.tailBitsAllN = self.allN - 8*(self.allN // 8)
 
     def translateRegion(self,nodeBytes, allN=True):
         regSet = np.full(self.allN, True, dtype=bool)
