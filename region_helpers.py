@@ -46,6 +46,7 @@ class flipConstraints:
         self.wholeBytesAllN = self.wholeBytes
         self.tailBitsAllN = self.tailBits
         self.rebasePt = None
+        self.baseN = None
 
     def copy(self):
         return deepcopy(self)
@@ -67,6 +68,8 @@ class flipConstraints:
         self.flipMapN = np.hstack([self.flipMapN, np.array([newSign],dtype=np.int64)])
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
         self.flipMapSet = frozenset(self.flipMapSetNP)
+        if self.baseN is None:
+            self.baseN = self.N
         self.N += 1
         self.pt = self.pt if newPt is None else newPt
         self.nA = np.vstack([self.nA, newSign * newA])
@@ -203,6 +206,8 @@ class flipConstraintsReducedMin(flipConstraints):
     def insertHyperplane(self,newA,newb):
         origNonRedundant = copy(self.redundantFlips)
         N = self.N
+        if self.baseN is None:
+            self.baseN = np.nonzero(self.redundantFlips > 0)[0]
         super().insertHyperplane(newA,newb)
         mat = copy(self.constraints[(self.N-1):,:])
         self.redundantFlips = np.full(self.N,1,dtype=np.float64)
