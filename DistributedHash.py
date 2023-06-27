@@ -142,15 +142,15 @@ class HashWorker(Chare):
     def setCheckDispatch(self,updateDict):
         callIdx = 0
         for checkCall in ['init','update','check']:
-            if checkCall in updateDict:
+            if checkCall in updateDict.keys():
                 call = getattr(self.nodeConstructor,updateDict[checkCall],None)
-                print(call)
                 if callable(call):
-                    self.nodeCalls += 1 << callIdx
+                    self.nodeCalls += (1 << callIdx) if self.nodeCalls & (1 << callIdx) > 0 else 0
                     setattr(self,checkCall+'Dispatch',call)
                 else:
-                    self.nodeCalls -= 1 << callIdx
+                    self.nodeCalls -= (1 << callIdx) if self.nodeCalls & (1 << callIdx) > 0 else 0
             callIdx += 1
+        print(f'self.nodeCalls = {self.nodeCalls}')
 
     @coro
     def newTable(self,tableName):
