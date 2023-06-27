@@ -461,13 +461,15 @@ class Poset(Chare):
         self.oldFlippedConstraints = self.flippedConstraints
         if self.augmentedFlippedConstraints is None:
             self.augmentedFlippedConstraints = deepcopy(self.flippedConstraints)
+            self.flippedConstraints = self.augmentedFlippedConstraints
 
         self.augmentedFlippedConstraints.insertHyperplane(newA, newb)
         self.flippedConstraints = self.augmentedFlippedConstraints
         aug = self.augmentedFlippedConstraints
         if aug.N == self.oldFlippedConstraints.N:
-            print(f'Inserted hyperplane doesn\'t intersect constraint set...')
-            return False
+            self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
+            self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
+            return True
 
         localOpts = deepcopy(opts)
         localOpts['method'] = 'insertHyperplane'
