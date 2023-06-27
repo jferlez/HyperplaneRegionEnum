@@ -54,11 +54,11 @@ class localVar(Chare):
         # self.closedCalls = []
         self.skip = False
         self.counterExample = None
-    def setConstraints(self,constraints):
+    def setConstraint(self,constraints):
         self.constraints = constraints
         self.schedCount = 0
         self.skip = False
-    def getConstraints(self):
+    def getConstraint(self):
         return self.constraints
     # This method **must** be implemented for DistributedHash to work:
     @coro
