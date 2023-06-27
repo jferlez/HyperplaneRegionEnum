@@ -33,7 +33,7 @@ class PosetNode(DistributedHash.Node):
         pass
     # These methods are optional, and will be called at an appropriate time by DistributedHash if present
     def init(self):
-        self.constraints = self.localProxy[self.storePe].getConstraints(ret=True).get()
+        self.constraints = self.localProxy[self.storePe].getConstraintsOnly(ret=True).get()
 
     # def update(self):
     #     pass
