@@ -46,6 +46,13 @@ class PosetNode(DistributedHash.Node):
             for ky in adj.keys():
                 self.adj[ky] = adj[ky]
 
+    def checkForInsert(self):
+        return True
+
+    def updateForInsert(self, lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args):
+        self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
+
+
 class localVar(Chare):
     def init(self,succGroupProxy,posetPElist):
         self.posetSuccGroupProxy = succGroupProxy
@@ -82,6 +89,9 @@ class localVar(Chare):
     @coro
     def checkNodeRS(self,*args):
         return True
+    @coro
+    def checkForInsert(self):
+        pass
 
 class Poset(Chare):
 
@@ -434,6 +444,84 @@ class Poset(Chare):
         return checkVal
 
     @coro
+    def insertHyperplane(self,newA, newb, normalize=1.0, opts={}):
+        nrm = np.linalg.norm(np.hstack([-newA.flatten(), newb.flatten()])) / normalize
+        newA = -newA.copy().flatten() / nrm
+        newb = copy(newb).flatten() / nrm
+        self.oldFlippedConstraints = self.flippedConstraints
+        if self.augmentedFlippedConstraints is None:
+            self.augmentedFlippedConstraints = deepcopy(self.flippedConstraints)
+
+        self.augmentedFlippedConstraints.insertHyperplane(newA, newb)
+        self.flippedConstraints = self.augmentedFlippedConstraints
+        aug = self.augmentedFlippedConstraints
+        if aug.N == self.oldFlippedConstraints.N:
+            print(f'Inserted hyperplane doesn\'t intersect constraint set...')
+            return False
+
+        localOpts = deepcopy(opts)
+        localOpts['method'] = 'insertHyperplane'
+        localOpts['clearTable'] = False
+        localOpts['sendWitness'] = True
+        localOpts['sendFaces'] = True
+        tol = opts['tol'] if 'tol' in opts else 1e-9
+        rTol = opts['rTol'] if 'rTol' in opts else 1e-9
+        solver = localOpts['solver'] if 'solver' in localOpts else 'glpk'
+        lpopts = localOpts['lpopts'] if 'lpopts' in localOpts else None
+
+        # From now on, we are going to work in CDD format...
+        hyper = np.hstack([-newb, newA])
+
+        projWb, subIdx = region_helpers.projectConstraints(aug.constraints[:aug.N,:],hyper,tol=tol,rTol=rTol)
+        projFixed, _ = region_helpers.projectConstraints(aug.constraints[aug.N:,:],hyper,subIdx=subIdx,tol=tol,rTol=rTol)
+
+        if projWb.shape[1] > 1: # Should be equivalent to self.tll.n >= 2
+            pt = region_helpers.findInteriorPoint(projFixed,solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
+            hyperSlice = np.hstack([-hyper[1:(subIdx+1)],-hyper[(subIdx+2):]]).reshape(-1,1)
+            is1d = False
+        else:
+            pt = np.array([[hyper[0]/-hyper[1]]],dtype=np.float64)
+            if not np.all(projFixed[:,0] >= -self.tol):
+                pt = None
+            hyperSlice = np.array([[0]],dtype=np.float64)
+            is1d = True
+
+        if pt is None:
+            print(f'Inserted hyperplane doesn\'t intersect constraint set...')
+            return False
+
+        print(hyper[1:].shape)
+        print(pt.shape)
+
+        ptLift = np.zeros((hyper.shape[0]-1,1),dtype=np.float64)
+        ptLift[:subIdx,0] = pt[:subIdx,0]
+        ptLift[(subIdx+1):,0] = pt[subIdx:,0]
+        ptLift[subIdx,0] = (-1/hyper[subIdx+1]) * (-(hyperSlice.reshape(1,-1) @ pt)[0,0] + hyper[0])
+
+        print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
+
+        newBaseReg = np.nonzero((-aug.constraints[:(aug.N-1),1:] @ ptLift - aug.constraints[:(aug.N-1),0].reshape(-1,1)).flatten() >= tol)[0]
+        rebasePt = region_helpers.findInteriorPoint(aug.getRegionConstraints(newBaseReg),solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
+        if rebasePt is None:
+            rebasePt = region_helpers.findInteriorPoint(aug.getRegionConstraints(newBaseReg + (aug.N-1,)),solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
+
+        print(newBaseReg)
+        print(rebasePt)
+
+        print(np.allclose(aug.getRegionConstraints(tuple()) , aug.constraints))
+
+        aug.root = tuple(newBaseReg)
+        aug.rebasePt = rebasePt
+        self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
+        self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
+
+        self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
+
+
+        # Now that we're all done, restore default dispatch for check/update
+        self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
+
+    @coro
     def getLPCount(self):
         statsFut = Future()
         self.succGroupFull.getStats(statsFut)
@@ -629,6 +717,9 @@ class successorWorker(Chare):
             self.processNodesArgs = {'solver':solver}
             if self.hashStoreMode == 2:
                 print(f'WARNING: vertex region encodings are not supported for method {method}. Defaulting to bit region encodings...')
+        elif method=='insertHyperplane':
+            self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsInsertHyperplane
+            self.processNodesArgs = {'solver':solver}
         if len(lpopts) == 0:
             self.lpopts = {}
         else:
@@ -1212,6 +1303,25 @@ class successorWorker(Chare):
             return [], sel, witnessList
         else:
             return successors, sel, witnessList
+
+    @coro
+    def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None):
+        # INTrep = INTrep[0]
+        # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
+        # t = time.time()
+        witnessList = []
+        INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
+
+
+        # Flip the un-flippable hyperplanes; this must be undone later
+        H[INTrep,:] = -H[INTrep,:]
+
+
+        d = H.shape[1]-1
+
+
+
+        constraint_list = None
 
 
 
