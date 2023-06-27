@@ -665,7 +665,7 @@ class HashWorker(Chare):
                         if newNode in self.table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             nd = self.table[newNode]['ptr']
-                            self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness, nd.payload))
+                            self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness, nd.adj, nd.payload))
                             if qOp == QUERYOP_DELETE:
                                 self.table[newNode]['ptr'] = None
                                 del self.table[newNode]
