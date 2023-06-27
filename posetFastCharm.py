@@ -286,12 +286,12 @@ class Poset(Chare):
 
         #print(f'verbose is {self.verbose}')
         self.succGroup.setMethod(**opts)
+        self.tol = opts['tol'] if 'tol' in opts else 1e-9
+        self.rTol = opts['rTol'] if 'rTol' in opts else 1e-9
 
         if 'hashStore' in opts and opts['hashStore'] == 'vertex':
             self.hashStoreMode = 2
-            tol = opts['tol'] if 'tol' in opts else 1e-9
-            rTol = opts['rTol'] if 'rTol' in opts else 1e-9
-            self.distHashTable.updateNodeEqualityFn(nodeType='vertex', tol=tol, rTol=rTol, H=self.flippedConstraints.constraints, awaitable=True).get()
+            self.distHashTable.updateNodeEqualityFn(nodeType='vertex', tol=self.tol, rTol=self.rTol, H=self.flippedConstraints.constraints, awaitable=True).get()
         else:
             self.distHashTable.updateNodeEqualityFn(nodeType='standard', awaitable=True).get()
             self.hashStoreMode = 0
