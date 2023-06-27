@@ -441,7 +441,7 @@ def sampleRegion(H,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,numSamples=10000)
 class DegenerateHyperplane(ValueError): pass
 
 def projectConstraints(H,hyperIn,subIdx=None,tol=1e-8,rTol=1e-8):
-    hyper = hyperIn.flatten()
+    hyper = hyperIn.copy().flatten()
     hyper[1:] = -hyper[1:]
     assert H.shape[1] == hyper.shape[0]
     # assert H.shape[1] > 2, 'Projecting constraints over 1-d results in points'
