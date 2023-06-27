@@ -248,6 +248,9 @@ class flipConstraintsReducedMin(flipConstraints):
         regSet[nodeBytes,] = np.full(len(nodeBytes),True,dtype=bool)
         return tuple(np.nonzero(regSet[self.nonRedundantHyperplanes,])[0])
 
+def byteLenFromN(N):
+    return (  (N + 7) // 8  ), (  N - 8*(N // 8)  )
+
 # H2 is a CDD-style matrix specifying inequality constraints, and intIdx is a list of indices of inequalities to check for redundancy
 # The return value is a list of indices into the list intIdx specifying which of those constraints are non-redundant
 def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None):
