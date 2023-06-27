@@ -54,11 +54,11 @@ class localVar(Chare):
         # self.closedCalls = []
         self.skip = False
         self.counterExample = None
-    def setConstraints(self,constraints):
+    def setConstraintsOnly(self,constraints):
         self.constraints = constraints
         self.schedCount = 0
         self.skip = False
-    def getConstraints(self):
+    def getConstraintsOnly(self):
         return self.constraints
     # This method **must** be implemented for DistributedHash to work:
     @coro
@@ -211,9 +211,10 @@ class Poset(Chare):
         stat = self.succGroup.initialize(self.N,self.flippedConstraints,timeout,awaitable=True)
         stat.get()
         if self.useDefaultLocalVarGroup:
-            self.localVarGroup.setConstraints(self.flippedConstraints,awaitable=True).get()
+            self.localVarGroup.setConstraintsOnly(self.flippedConstraints,awaitable=True).get()
 
         self.populated = False
+        self.augmentedFlippedConstraints = None
 
         return 1
 
