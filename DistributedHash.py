@@ -358,7 +358,7 @@ class HashWorker(Chare):
                 return False
         self.deferLock = False
         return True
-    def hashNode(self,toHash,payload=None):
+    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=False):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
         # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         hashInt = hashNodeBytes(toHash[0])
@@ -366,26 +366,29 @@ class HashWorker(Chare):
             regEncode = toHash[0]
         elif self.hashStoreMode == 1:
             regEncode = tuple(toHash[1])
+        elif self.hashStoreMode == 2 and vertex is not None:
+            regEncode = vertex
         else:
             # default to tuple mode
             regEncode = tuple(toHash[1])
-        if len(toHash) >= 3:
-            face = toHash[2]
+        N = toHash[2]
+        if len(toHash) >= 4:
+            face = toHash[3]
         else:
             face = tuple()
-        if len(toHash) >= 4:
-            witness = toHash[3]
+        if len(toHash) >= 5:
+            witness = toHash[4]
         else:
             witness = None
         if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, witness, payload)
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate, payload)
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, charm.myPe(), face, witness )
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate )
 
     @coro
-    def hashAndSend(self,toHash,payload=None):
+    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=False):
         self.hashedNodeCount += 1
-        val = self.hashNode(toHash,payload=payload)
+        val = self.hashNode(toHash,payload=payload,vertex=vertex,adjUpdate=adjUpdate)
         self.hashChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(val))
         # retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
