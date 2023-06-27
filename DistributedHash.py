@@ -150,7 +150,6 @@ class HashWorker(Chare):
                 else:
                     self.nodeCalls -= (1 << callIdx) if self.nodeCalls & (1 << callIdx) > 0 else 0
             callIdx += 1
-        print(f'self.nodeCalls = {self.nodeCalls}')
 
     @coro
     def newTable(self,tableName):
