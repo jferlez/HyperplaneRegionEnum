@@ -207,7 +207,7 @@ class flipConstraintsReducedMin(flipConstraints):
         origNonRedundant = copy(self.redundantFlips)
         N = self.N
         if self.baseN is None:
-            self.baseN = np.nonzero(self.redundantFlips > 0)[0]
+            self.baseN = len(np.nonzero(self.redundantFlips > 0)[0])
         super().insertHyperplane(newA,newb)
         mat = copy(self.constraints[(self.N-1):,:])
         self.redundantFlips = np.full(self.N,1,dtype=np.float64)
