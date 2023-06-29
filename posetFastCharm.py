@@ -336,7 +336,7 @@ class Poset(Chare):
                                         self.flippedConstraints.pt if witness is None else witness \
                                     ], \
                                     adjUpdate=(False if not adjUpdate else adjUpdate), \
-                                    payload=(None if payload is None else payload), \
+                                    payload=(tuple() if payload is None else payload), \
                                     vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())), \
                                 ret=True).get()
         thisLevel = [( \
@@ -346,7 +346,7 @@ class Poset(Chare):
                       tuple() if face is None else face, \
                       self.flippedConstraints.pt if witness is None else witness, \
                       False if not adjUpdate else adjUpdate, \
-                      None if payload is None else payload
+                      tuple() if payload is None else payload
                     )]
 
         self.distHashTable.awaitPending(usePosetChecking=self.usePosetChecking, awaitable=True).get()
