@@ -508,23 +508,62 @@ class Poset(Chare):
 
         print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
 
-        newBaseReg = np.nonzero((-aug.constraints[:(aug.N-1),1:] @ ptLift - aug.constraints[:(aug.N-1),0].reshape(-1,1)).flatten() >= tol)[0]
-        rebasePt = region_helpers.findInteriorPoint(aug.getRegionConstraints(newBaseReg),solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
+        newBaseRegFullTup = tuple(np.nonzero((-aug.constraints[:(aug.N-1),1:] @ ptLift - aug.constraints[:(aug.N-1),0].reshape(-1,1)).flatten() >= tol)[0])
+        newBaseRegFull = region_helpers.tupToBytes(newBaseRegFullTup, *region_helpers.byteLenFromN(aug.N))
+        rebasePt = region_helpers.findInteriorPoint(aug.getRegionConstraints(newBaseRegFullTup),solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
         if rebasePt is None:
-            rebasePt = region_helpers.findInteriorPoint(aug.getRegionConstraints(newBaseReg + (aug.N-1,)),solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
+            rebasePt = region_helpers.findInteriorPoint(aug.getRegionConstraints(newBaseRegFullTup + (aug.N-1,)),solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
+            newBaseRegFullTup = newBaseRegFullTup + (aug.N-1,)
+        if rebasePt is None:
+            print(f'Couldn\'t find a new rebase point')
+            self.flippedConstraints = self.oldFlippedConstraints
+            self.oldFlippedConstraints = None
+            return False
 
-        print(newBaseReg)
+        print(newBaseRegFullTup)
         print(rebasePt)
 
         print(np.allclose(aug.getRegionConstraints(tuple()) , aug.constraints))
 
-        aug.root = tuple(newBaseReg)
+        # Now we query the poset to find the correct encoding for the region we care about
+        # This will be sent with adjUpdate[-1] to bootstrap the process of removing the old node encodings
+        f = Future()
+        self.distHashTable.initListening(f,queryReturnInfo=True,awaitable=True).get()
+        f.get()
+        self.succGroup.startListening(awaitable=True).get()
+
+        print(f' base N = {aug.baseN} aug.N = {aug.N}')
+
+        # Identify the correct encoding of the first region split by the inserted hyperplane (that identified
+        # by the point ptLift). That is, determine how many hyperplanes were used to encode this region in the
+        # hash table.
+        for idx in range(1,aug.N - aug.baseN + 1):
+            newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeFirstNHyperplanes(idx, newBaseRegFull, aug.N)
+            print((newBaseReg, newBaseRegTup, newBaseRegN))
+            retVal = self.succGroup[0].query([newBaseReg, newBaseRegTup, newBaseRegN],awaitable=True).get()
+            print(retVal)
+            if retVal[0] > 0:
+                stripNum = idx
+                break
+
+        self.distHashTable.awaitPending(usePosetChecking=False,awaitable=True).get()
+        self.succGroup.sendAll(-2,awaitable=True).get()
+        self.succGroup.closeQueryChannels(awaitable=True).get()
+        self.succGroup.flushMessages(ret=True).get()
+
+        aug.root = tuple(newBaseRegFullTup)
         aug.rebasePt = rebasePt
         self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
         self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
 
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
 
+        newAdj = retVal[3]
+        newAdj[-1] = (newBaseRegFull,newBaseRegFullTup,aug.N)
+        print(newAdj)
+
+        self.populated = False
+        self.thisProxy.populatePoset(face=retVal[1],witness=retVal[2],adjUpdate=newAdj,payload=retVal[4],opts=localOpts,awaitable=True).get()
 
         # Now that we're all done, restore default dispatch for check/update
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
@@ -1330,6 +1369,9 @@ class successorWorker(Chare):
 
 
         constraint_list = None
+
+
+        H[INTrep,:] = -H[INTrep,:]
 
 
 
