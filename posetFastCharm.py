@@ -339,6 +339,15 @@ class Poset(Chare):
                                     payload=(None if payload is None else payload), \
                                     vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())), \
                                 ret=True).get()
+        thisLevel = [( \
+                      boolIdxNoFlip if self.hashStoreMode == 1 else thisLevel[0][0], \
+                      self.flippedConstraints.N, \
+                      0, \
+                      tuple() if face is None else face, \
+                      self.flippedConstraints.pt if witness is None else witness, \
+                      False if not adjUpdate else adjUpdate, \
+                      None if payload is None else payload
+                    )]
 
         self.distHashTable.awaitPending(usePosetChecking=self.usePosetChecking, awaitable=True).get()
         # Send a final termination signal:
@@ -1052,9 +1061,9 @@ class successorWorker(Chare):
     def computeSuccessorsNew(self):
         term = False
         if len(self.workInts) > 0:
-            successorList = [[None,None] for k in range(len(self.workInts))]
+            successorList = [[None,None,None,None,None,None,None] for k in range(len(self.workInts))]
             for ii in range(len(successorList)):
-                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.N,self.constraints,**self.processNodesArgs,witness=self.sendWitness, payload=self.workInts[ii][1],awaitable=True).get()
+                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.N,self.constraints,**self.processNodesArgs,witness=self.workInts[ii][4], payload=self.workInts[ii][6],xN=self.workInts[ii][1],face=self.workInts[ii][3],adj=self.workInts[ii][5], awaitable=True).get()
                 self.timedOut = (time.time() > self.clockTimeout) if self.clockTimeout is not None else False
                 # print('Working on ' + str(self.workInts[ii]) + 'on PE ' + str(charm.myPe()) + '; with timeout ' + str(self.timedOut))
                 if type(successorList[ii][1]) is int or self.timedOut:
@@ -1139,9 +1148,9 @@ class successorWorker(Chare):
                     if self.rsPeFree and not self.rsDone:
                         peToUse = self.rsScheduler.schedNextFreePE(ret=True).get()
                     if peToUse >= 0:
-                        self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][4],witness=interiorPoint)
+                        self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][6],witness=interiorPoint)
                     else:
-                        self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][4],witness=interiorPoint,awaitable=True).get()
+                        self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][6],witness=interiorPoint,awaitable=True).get()
         if self.doRSCleanup:
             self.thisProxy[self.thisIndex].cleanupRS(successorList,witnessList,awaitable=True).get()
         self.rsDepth -= 1
@@ -1289,7 +1298,7 @@ class successorWorker(Chare):
             return to_keep, witnessList
 
     @coro
-    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None):
+    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
         # INTrep = INTrep[0]
         # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
         # t = time.time()
@@ -1323,7 +1332,7 @@ class successorWorker(Chare):
                 temp = copy(intIdxNoFlip)
                 temp.insert(insertIdx,intIdx[i])
                 successors.append( \
-                        [ copy(boolIdxNoFlip), tuple(temp), self.flippedConstraints.N, (intIdx[i],) if self.sendFaces else tuple() , None if witness is None else witnessList[idx], None ]
+                        [ copy(boolIdxNoFlip), tuple(temp), self.flippedConstraints.N, (intIdx[i],) if self.sendFaces else tuple() , None if witness is None else witnessList[idx], None, None ]
                     )
                 boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] ^ 1<<(intIdx[i] % 8)
                 # self.conversionTime += time.time() - t

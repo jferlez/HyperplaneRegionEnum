@@ -864,7 +864,7 @@ class HashWorker(Chare):
             xferDone = [Future() for _ in range(len(self.feederPElist))]
             for feederPEidx in range(len(self.feederPElist)):
                 idx = (feederPEidx + feederPEoffset) % len(self.feederPElist)
-                self.feederProxies[idx].appendToWorkList([(nd.nodeBytes, nd.payload) for nd in self.levelList[feederPEidx:chunkSize:len(self.feederPElist)]],xferDone[feederPEidx])
+                self.feederProxies[idx].appendToWorkList([(nd.nodeBytes, nd.N, nd.originPe, nd.face, nd.witness, nd.adj, nd.payload) for nd in self.levelList[feederPEidx:chunkSize:len(self.feederPElist)]],xferDone[feederPEidx])
             cnt = 0
             for fut in charm.iwait(xferDone):
                 cnt += fut.get()
