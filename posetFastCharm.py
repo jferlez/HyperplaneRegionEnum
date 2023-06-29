@@ -162,7 +162,7 @@ class Poset(Chare):
         charm.awaitCreation(self.distHashTable)
         self.migrationInfo = {'poset':[(self.posetPElist,self.thisProxy), (self.posetPElist, self.rsPeScheduler)], 'hash':[(self.hashPElist,self.distHashTable)] + self.distHashTable.getMigrationInfo(ret=True).get()}
         # print('Initialized distHashTable group')
-        self.augFlippedConstraints = None
+        self.oldFlippedConstraints = None
     @coro
     def init(self):
         initFut = self.distHashTable.initialize(awaitable=True)
@@ -225,7 +225,7 @@ class Poset(Chare):
             self.localVarGroup.setConstraintsOnly(self.flippedConstraints,awaitable=True).get()
 
         self.populated = False
-        self.augFlippedConstraints = None
+        self.oldFlippedConstraints = None
 
         return 1
 
@@ -469,11 +469,11 @@ class Poset(Chare):
         nrm = np.linalg.norm(np.hstack([-newA.flatten(), newb.flatten()])) / normalize
         newA = -newA.copy().flatten() / nrm
         newb = copy(newb).flatten() / nrm
-        self.augFlippedConstraints = deepcopy(self.flippedConstraints)
+        self.oldFlippedConstraints = deepcopy(self.flippedConstraints)
 
-        self.augFlippedConstraints.insertHyperplane(newA, newb)
-        aug = self.augFlippedConstraints
-        if aug.N == self.flippedConstraints.N:
+        self.flippedConstraints.insertHyperplane(newA, newb)
+        aug = self.flippedConstraints
+        if aug.N == self.oldFlippedConstraints.N:
             self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
             self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
             return True
@@ -483,6 +483,7 @@ class Poset(Chare):
         localOpts['clearTable'] = False
         localOpts['sendWitness'] = True
         localOpts['sendFaces'] = True
+        localOpts['queryReturnInfo'] = True
         tol = opts['tol'] if 'tol' in opts else 1e-9
         rTol = opts['rTol'] if 'rTol' in opts else 1e-9
         solver = localOpts['solver'] if 'solver' in localOpts else 'glpk'
@@ -527,7 +528,8 @@ class Poset(Chare):
             newBaseRegFullTup = newBaseRegFullTup + (aug.N-1,)
         if rebasePt is None:
             print(f'Couldn\'t find a new rebase point')
-            self.augFlippedConstraints = None
+            self.flippedConstraints = self.oldFlippedConstraints
+            self.oldFlippedConstraints = None
             return False
 
         print(newBaseRegFullTup)
@@ -562,18 +564,18 @@ class Poset(Chare):
         self.succGroup.flushMessages(ret=True).get()
 
         aug.root = tuple(newBaseRegFullTup)
-        aug.rebasePt = rebasePt
+        aug.setRebase(rebasePt)
         self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
         self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
 
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
 
-        newAdj = retVal[3]
+        newAdj = deepcopy(retVal[3])
         newAdj[-1] = (newBaseRegFull,newBaseRegFullTup,aug.N)
         print(newAdj)
 
         self.populated = False
-        self.thisProxy.populatePoset(face=retVal[1],witness=retVal[2],adjUpdate=newAdj,payload=retVal[4],opts=localOpts,awaitable=True).get()
+        self.thisProxy.populatePoset(face=set(),witness=rebasePt,adjUpdate=newAdj,payload=retVal[4],opts=localOpts,awaitable=True).get()
 
         # Now that we're all done, restore default dispatch for check/update
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
@@ -1362,15 +1364,29 @@ class successorWorker(Chare):
             return successors, sel, witnessList
 
     @coro
-    def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None):
-        # INTrep = INTrep[0]
-        # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
-        # t = time.time()
+    def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
         witnessList = []
-        INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
+        # Note the N passed here includes the inserted hyperplane, and INTrep will always be of the same length
+        boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, INTrep, N)
+        boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(-1, INTrep, N)
+        # INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
+
+        # We have to retrieve the information from the node in the table that is going to be split
+        q = self.thisProxy[self.thisIndex].query( [boolIdxNoFlip, INTrep, N-1], ret=True).get()
+        if q[0] > 0:
+            oldFace = q[1]
+            oldWitness = q[2]
+            oldAdj = q[3]
+            oldPayload = q[4]
+        else:
+            raise ValueError
+        print(f'()()()    q = {q}')
+        rebasedINTrep = set(region_helper.recodeRegNewN(-1,self.flippedConstraints.rebaseRegion(INTrepFull),N))
+        validFlips = oldFace - rebasedINTrep
 
 
         # Flip the un-flippable hyperplanes; this must be undone later
+        # Again note that H contains the inserted hyperplane
         H[INTrep,:] = -H[INTrep,:]
 
 
