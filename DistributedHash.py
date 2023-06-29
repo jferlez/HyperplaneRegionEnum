@@ -142,13 +142,13 @@ class HashWorker(Chare):
     def setCheckDispatch(self,updateDict):
         callIdx = 0
         for checkCall in ['init','update','check']:
-            if checkCall in updateDict.keys():
+            if checkCall in updateDict:
                 call = getattr(self.nodeConstructor,updateDict[checkCall],None)
                 if callable(call):
-                    self.nodeCalls += (1 << callIdx) if self.nodeCalls & (1 << callIdx) > 0 else 0
+                    self.nodeCalls += (1 << callIdx) if (self.nodeCalls & (1 << callIdx)) == 0 else 0
                     setattr(self,checkCall+'Dispatch',call)
                 else:
-                    self.nodeCalls -= (1 << callIdx) if self.nodeCalls & (1 << callIdx) > 0 else 0
+                    self.nodeCalls -= (1 << callIdx) if (self.nodeCalls & (1 << callIdx)) > 0 else 0
             callIdx += 1
 
     @coro
