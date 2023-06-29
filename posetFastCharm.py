@@ -286,7 +286,8 @@ class Poset(Chare):
         self.retrieveFaces = False
         self.verbose = True
         self.sendFaces = False
-        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces']
+        self.queryReturnInfo = False
+        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces','queryReturnInfo']
         for ky in defaultSettings:
             if ky in opts:
                 setattr(self,ky,opts[ky])
@@ -320,7 +321,7 @@ class Poset(Chare):
 
         # Send this node into the distributed hash table and check it
         initFut = Future()
-        self.distHashTable.initListening(initFut,awaitable=True).get()
+        self.distHashTable.initListening(initFut,queryReturnInfo=self.queryReturnInfo,awaitable=True).get()
         initFut.get()
         self.succGroupFull.startListening(awaitable=True).get()
 
@@ -381,7 +382,7 @@ class Poset(Chare):
             #     cnt += fut.get()
 
             initFut = Future()
-            self.distHashTable.initListening(initFut,awaitable=True).get()
+            self.distHashTable.initListening(initFut,queryReturnInfo=self.queryReturnInfo,awaitable=True).get()
             initFut.get()
             self.succGroupFull.startListening(awaitable=True).get()
 
