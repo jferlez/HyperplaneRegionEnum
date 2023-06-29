@@ -224,7 +224,7 @@ class Poset(Chare):
             self.localVarGroup.setConstraintsOnly(self.flippedConstraints,awaitable=True).get()
 
         self.populated = False
-        self.augmentedFlippedConstraints = None
+        self.oldFlippedConstraints = None
 
         return 1
 
@@ -458,14 +458,10 @@ class Poset(Chare):
         nrm = np.linalg.norm(np.hstack([-newA.flatten(), newb.flatten()])) / normalize
         newA = -newA.copy().flatten() / nrm
         newb = copy(newb).flatten() / nrm
-        self.oldFlippedConstraints = self.flippedConstraints
-        if self.augmentedFlippedConstraints is None:
-            self.augmentedFlippedConstraints = deepcopy(self.flippedConstraints)
-            self.flippedConstraints = self.augmentedFlippedConstraints
+        self.oldFlippedConstraints = deepcopy(self.flippedConstraints)
 
-        self.augmentedFlippedConstraints.insertHyperplane(newA, newb)
-        self.flippedConstraints = self.augmentedFlippedConstraints
-        aug = self.augmentedFlippedConstraints
+        self.flippedConstraints.insertHyperplane(newA, newb)
+        aug = self.flippedConstraints
         if aug.N == self.oldFlippedConstraints.N:
             self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
             self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
