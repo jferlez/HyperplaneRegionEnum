@@ -251,6 +251,19 @@ class flipConstraintsReducedMin(flipConstraints):
 def byteLenFromN(N):
     return (  (N + 7) // 8  ), (  N - 8*(N // 8)  )
 
+def recodeFirstNHyperplanes(strip, reg, N):
+    if isinstance(reg,tuple):
+        reg = tupToBytes( reg, *byteLenFromN(N) )
+    if strip == 0:
+        return reg, tuple(bytesToList(reg,*byteLenFromN(N))), N
+    newN = N - strip
+    assert newN > 0, f'Can\'t remove {strip} hyperplane from a list of {N}'
+    newWholeBytes, newTailBits = byteLenFromN(newN)
+    newReg = reg[:(newWholeBytes + (1 if newTailBits > 0 else 0))]
+    if newTailBits > 0:
+        newReg[-1] = newReg[-1] & (2**newTailBits - 1)
+    return newReg, tuple(bytesToList(newReg,newWholeBytes,newTailBits)), newN
+
 # H2 is a CDD-style matrix specifying inequality constraints, and intIdx is a list of indices of inequalities to check for redundancy
 # The return value is a list of indices into the list intIdx specifying which of those constraints are non-redundant
 def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None):
