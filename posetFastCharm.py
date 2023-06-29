@@ -162,6 +162,7 @@ class Poset(Chare):
         charm.awaitCreation(self.distHashTable)
         self.migrationInfo = {'poset':[(self.posetPElist,self.thisProxy), (self.posetPElist, self.rsPeScheduler)], 'hash':[(self.hashPElist,self.distHashTable)] + self.distHashTable.getMigrationInfo(ret=True).get()}
         # print('Initialized distHashTable group')
+        self.augFlippedConstraints = None
     @coro
     def init(self):
         initFut = self.distHashTable.initialize(awaitable=True)
@@ -224,7 +225,7 @@ class Poset(Chare):
             self.localVarGroup.setConstraintsOnly(self.flippedConstraints,awaitable=True).get()
 
         self.populated = False
-        self.oldFlippedConstraints = None
+        self.augFlippedConstraints = None
 
         return 1
 
@@ -458,11 +459,11 @@ class Poset(Chare):
         nrm = np.linalg.norm(np.hstack([-newA.flatten(), newb.flatten()])) / normalize
         newA = -newA.copy().flatten() / nrm
         newb = copy(newb).flatten() / nrm
-        self.oldFlippedConstraints = deepcopy(self.flippedConstraints)
+        self.augFlippedConstraints = deepcopy(self.flippedConstraints)
 
-        self.flippedConstraints.insertHyperplane(newA, newb)
-        aug = self.flippedConstraints
-        if aug.N == self.oldFlippedConstraints.N:
+        self.augFlippedConstraints.insertHyperplane(newA, newb)
+        aug = self.augFlippedConstraints
+        if aug.N == self.flippedConstraints.N:
             self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
             self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
             return True
@@ -516,8 +517,7 @@ class Poset(Chare):
             newBaseRegFullTup = newBaseRegFullTup + (aug.N-1,)
         if rebasePt is None:
             print(f'Couldn\'t find a new rebase point')
-            self.flippedConstraints = self.oldFlippedConstraints
-            self.oldFlippedConstraints = None
+            self.augFlippedConstraints = None
             return False
 
         print(newBaseRegFullTup)
