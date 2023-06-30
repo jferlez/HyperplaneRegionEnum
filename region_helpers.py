@@ -46,6 +46,47 @@ class flipConstraints:
         self.wholeBytesAllN = self.wholeBytes
         self.tailBitsAllN = self.tailBits
         self.rebasePt = None
+        self.baseN = None
+
+    def copy(self):
+        return deepcopy(self)
+
+    def insertHyperplane(self,newA,newb):
+        newPt = None
+        newSign = None
+        newHyperplane = np.hstack([newA, -newb])
+        if np.all(np.abs( newA.reshape(1,-1) @ self.pt - newb ) <= self.tol):
+            newPt = findInteriorPoint(np.vstack([self.constraints,newHyperplane]))
+            newSign = 1
+            if newPt is None:
+                newPt = findInteriorPoint(np.vstack([self.constraints,-newHyperplane]))
+                newSign = -1
+            if newPt is None:
+                raise ValueError(f'Error: inserted hyperplane doesn\'t split root region associated with point {self.pt}')
+        else:
+            newSign = 1 if newA.reshape(1,-1) @ self.pt > newb + self.tol else -1
+        self.flipMapN = np.hstack([self.flipMapN, np.array([newSign],dtype=np.int64)])
+        self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
+        self.flipMapSet = frozenset(self.flipMapSetNP)
+        if self.baseN is None:
+            self.baseN = self.N
+        self.N += 1
+        self.pt = self.pt if newPt is None else newPt
+        self.nA = np.vstack([self.nA, newSign * newA])
+        self.nb = np.vstack([self.nb, newSign * newb])
+        if self.fA is None:
+            self.constraints = np.hstack((-self.nb,self.nA))
+        else:
+            self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
+        self.allConstraints = self.constraints
+        self.allN = self.N
+        self.redundantFlips = np.full(self.N,1,dtype=np.int64)
+        self.nonRedundantHyperplanes = np.arange(self.N)
+        self.wholeBytes = (self.N + 7) // 8
+        self.tailBits = self.N - 8*(self.N // 8)
+        self.wholeBytesAllN = self.wholeBytes
+        self.tailBitsAllN = self.tailBits
+
 
     # This method returns flips of the hyperplanes *as provided* to obtain the region
     # specified by nodeBytes.
@@ -162,6 +203,29 @@ class flipConstraintsReducedMin(flipConstraints):
 
         self.root = tuple()
 
+    def insertHyperplane(self,newA,newb):
+        origNonRedundant = copy(self.redundantFlips)
+        N = self.N
+        if self.baseN is None:
+            self.baseN = len(np.nonzero(self.redundantFlips > 0)[0])
+        super().insertHyperplane(newA,newb)
+        mat = copy(self.constraints[(self.N-1):,:])
+        self.redundantFlips = np.full(self.N,1,dtype=np.float64)
+        self.redundantFlips[:(self.N-1)] = origNonRedundant
+        for k in [self.N-1]:
+            mat[0,:] = self.constraints[k,:]
+            if len(lpMinHRep(mat,None,[0])) == 0:
+                self.redundantFlips[k] = -1
+        self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+
+        self.constraints = np.vstack( ( np.hstack((-1*self.nb[self.nonRedundantHyperplanes,],self.nA[self.nonRedundantHyperplanes,:])), \
+                                       np.hstack((-1*self.fb,self.fA)) ) )
+        self.N = len(self.nonRedundantHyperplanes)
+        self.wholeBytes = (self.N + 7) // 8
+        self.tailBits = self.N - 8*(self.N // 8)
+        self.wholeBytesAllN = (self.allN + 7) // 8
+        self.tailBitsAllN = self.allN - 8*(self.allN // 8)
+
     def translateRegion(self,nodeBytes, allN=True):
         regSet = np.full(self.allN, True, dtype=bool)
         regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
@@ -186,6 +250,28 @@ class flipConstraintsReducedMin(flipConstraints):
 
 def byteLenFromN(N):
     return (  (N + 7) // 8  ), (  N - 8*(N // 8)  )
+
+def recodeRegNewN(strip, reg, N):
+    if isinstance(reg,tuple):
+        reg = tupToBytes( reg, *byteLenFromN(N) )
+    if strip == 0:
+        return reg, tuple(bytesToList(reg,*byteLenFromN(N))), N
+    elif strip < 0:
+        newN = N + strip
+        assert newN > 0, f'Can\'t remove {strip} hyperplane from a list of {N}'
+        newWholeBytes, newTailBits = byteLenFromN(newN)
+        newReg = reg[:(newWholeBytes + (1 if newTailBits > 0 else 0))]
+        if newTailBits > 0:
+            newReg[-1] = newReg[-1] & (2**newTailBits - 1)
+    elif strip > 0:
+        newN = N + strip
+        newWholeBytes, newTailBits = byteLenFromN(newN)
+        newReg = bytearray(b'\x00') *  (newWholeBytes + (1 if newTailBits != 0 else 0))
+        newReg[:len(reg)] = reg[:]
+    else:
+        print(f'Error...')
+        return None, None, None
+    return newReg, tuple(bytesToList(newReg,newWholeBytes,newTailBits)), newN
 
 # H2 is a CDD-style matrix specifying inequality constraints, and intIdx is a list of indices of inequalities to check for redundancy
 # The return value is a list of indices into the list intIdx specifying which of those constraints are non-redundant
@@ -380,7 +466,7 @@ def sampleRegion(H,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,numSamples=10000)
 class DegenerateHyperplane(ValueError): pass
 
 def projectConstraints(H,hyperIn,subIdx=None,tol=1e-8,rTol=1e-8):
-    hyper = hyperIn.flatten()
+    hyper = hyperIn.copy().flatten()
     hyper[1:] = -hyper[1:]
     assert H.shape[1] == hyper.shape[0]
     # assert H.shape[1] > 2, 'Projecting constraints over 1-d results in points'

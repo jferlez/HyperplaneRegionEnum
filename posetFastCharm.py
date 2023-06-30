@@ -40,8 +40,18 @@ class PosetNode(DistributedHash.Node):
 
     # def check(self):
     #     pass
-    def update(self, lsb,msb,nodeBytes,N, originPe, face, witness, *args):
+    def update(self, lsb,msb,nodeBytes,N, originPe, face, witness, adj, *args):
         self.face |= set(face)
+        if adj and isinstance(adj,dict):
+            for ky in adj.keys():
+                self.adj[ky] = adj[ky]
+
+    def checkForInsert(self):
+        return True
+
+    def updateForInsert(self, lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args):
+        self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
+
 
 class localVar(Chare):
     def init(self,succGroupProxy,posetPElist):
@@ -79,6 +89,9 @@ class localVar(Chare):
     @coro
     def checkNodeRS(self,*args):
         return True
+    @coro
+    def checkForInsert(self):
+        pass
 
 class Poset(Chare):
 
@@ -149,6 +162,7 @@ class Poset(Chare):
         charm.awaitCreation(self.distHashTable)
         self.migrationInfo = {'poset':[(self.posetPElist,self.thisProxy), (self.posetPElist, self.rsPeScheduler)], 'hash':[(self.hashPElist,self.distHashTable)] + self.distHashTable.getMigrationInfo(ret=True).get()}
         # print('Initialized distHashTable group')
+        self.oldFlippedConstraints = None
     @coro
     def init(self):
         initFut = self.distHashTable.initialize(awaitable=True)
@@ -211,7 +225,7 @@ class Poset(Chare):
             self.localVarGroup.setConstraintsOnly(self.flippedConstraints,awaitable=True).get()
 
         self.populated = False
-        self.augmentedFlippedConstraints = None
+        self.oldFlippedConstraints = None
 
         return 1
 
@@ -272,7 +286,8 @@ class Poset(Chare):
         self.retrieveFaces = False
         self.verbose = True
         self.sendFaces = False
-        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces']
+        self.queryReturnInfo = False
+        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces','queryReturnInfo']
         for ky in defaultSettings:
             if ky in opts:
                 setattr(self,ky,opts[ky])
@@ -306,7 +321,7 @@ class Poset(Chare):
 
         # Send this node into the distributed hash table and check it
         initFut = Future()
-        self.distHashTable.initListening(initFut,awaitable=True).get()
+        self.distHashTable.initListening(initFut,queryReturnInfo=self.queryReturnInfo,awaitable=True).get()
         initFut.get()
         self.succGroupFull.startListening(awaitable=True).get()
 
@@ -321,9 +336,18 @@ class Poset(Chare):
                                         self.flippedConstraints.pt if witness is None else witness \
                                     ], \
                                     adjUpdate=(False if not adjUpdate else adjUpdate), \
-                                    payload=(None if payload is None else payload), \
+                                    payload=(tuple() if payload is None else payload), \
                                     vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())), \
                                 ret=True).get()
+        thisLevel = [( \
+                      boolIdxNoFlip if self.hashStoreMode == 1 else thisLevel[0][0], \
+                      self.flippedConstraints.N, \
+                      0, \
+                      tuple() if face is None else face, \
+                      self.flippedConstraints.pt if witness is None else witness, \
+                      False if not adjUpdate else adjUpdate, \
+                      tuple() if payload is None else payload
+                    )]
 
         self.distHashTable.awaitPending(usePosetChecking=self.usePosetChecking, awaitable=True).get()
         # Send a final termination signal:
@@ -367,7 +391,7 @@ class Poset(Chare):
             #     cnt += fut.get()
 
             initFut = Future()
-            self.distHashTable.initListening(initFut,awaitable=True).get()
+            self.distHashTable.initListening(initFut,queryReturnInfo=self.queryReturnInfo,awaitable=True).get()
             initFut.get()
             self.succGroupFull.startListening(awaitable=True).get()
 
@@ -439,6 +463,122 @@ class Poset(Chare):
         # return [i.iINT for i in self.hashTable.keys()]
         self.populated = True
         return checkVal
+
+    @coro
+    def insertHyperplane(self,newA, newb, normalize=1.0, opts={}):
+        nrm = np.linalg.norm(np.hstack([-newA.flatten(), newb.flatten()])) / normalize
+        newA = -newA.copy().flatten() / nrm
+        newb = copy(newb).flatten() / nrm
+        self.oldFlippedConstraints = deepcopy(self.flippedConstraints)
+
+        self.flippedConstraints.insertHyperplane(newA, newb)
+        aug = self.flippedConstraints
+        if aug.N == self.oldFlippedConstraints.N:
+            self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
+            self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
+            return True
+
+        localOpts = deepcopy(opts)
+        localOpts['method'] = 'insertHyperplane'
+        localOpts['clearTable'] = False
+        localOpts['sendWitness'] = True
+        localOpts['sendFaces'] = True
+        localOpts['queryReturnInfo'] = True
+        tol = opts['tol'] if 'tol' in opts else 1e-9
+        rTol = opts['rTol'] if 'rTol' in opts else 1e-9
+        solver = localOpts['solver'] if 'solver' in localOpts else 'glpk'
+        lpopts = localOpts['lpopts'] if 'lpopts' in localOpts else None
+
+        # From now on, we are going to work in CDD format...
+        hyper = np.hstack([-newb, newA])
+
+        projWb, subIdx = region_helpers.projectConstraints(aug.constraints[:aug.N,:],hyper,tol=tol,rTol=rTol)
+        projFixed, _ = region_helpers.projectConstraints(aug.constraints[aug.N:,:],hyper,subIdx=subIdx,tol=tol,rTol=rTol)
+
+        if projWb.shape[1] > 1: # Should be equivalent to self.tll.n >= 2
+            pt = region_helpers.findInteriorPoint(projFixed,solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
+            hyperSlice = np.hstack([-hyper[1:(subIdx+1)],-hyper[(subIdx+2):]]).reshape(-1,1)
+            is1d = False
+        else:
+            pt = np.array([[hyper[0]/-hyper[1]]],dtype=np.float64)
+            if not np.all(projFixed[:,0] >= -self.tol):
+                pt = None
+            hyperSlice = np.array([[0]],dtype=np.float64)
+            is1d = True
+
+        if pt is None:
+            print(f'Inserted hyperplane doesn\'t intersect constraint set...')
+            return False
+
+        print(hyper[1:].shape)
+        print(pt.shape)
+
+        ptLift = np.zeros((hyper.shape[0]-1,1),dtype=np.float64)
+        ptLift[:subIdx,0] = pt[:subIdx,0]
+        ptLift[(subIdx+1):,0] = pt[subIdx:,0]
+        ptLift[subIdx,0] = (-1/hyper[subIdx+1]) * (-(hyperSlice.reshape(1,-1) @ pt)[0,0] + hyper[0])
+
+        print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
+
+        newBaseRegFullTup = tuple(np.nonzero((-aug.constraints[:(aug.N-1),1:] @ ptLift - aug.constraints[:(aug.N-1),0].reshape(-1,1)).flatten() >= tol)[0])
+        newBaseRegFull = region_helpers.tupToBytes(newBaseRegFullTup, *region_helpers.byteLenFromN(aug.N))
+        rebasePt = region_helpers.findInteriorPoint(aug.getRegionConstraints(newBaseRegFullTup),solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
+        if rebasePt is None:
+            rebasePt = region_helpers.findInteriorPoint(aug.getRegionConstraints(newBaseRegFullTup + (aug.N-1,)),solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
+            newBaseRegFullTup = newBaseRegFullTup + (aug.N-1,)
+        if rebasePt is None:
+            print(f'Couldn\'t find a new rebase point')
+            self.flippedConstraints = self.oldFlippedConstraints
+            self.oldFlippedConstraints = None
+            return False
+
+        print(newBaseRegFullTup)
+        print(rebasePt)
+
+        print(np.allclose(aug.getRegionConstraints(tuple()) , aug.constraints))
+
+        # Now we query the poset to find the correct encoding for the region we care about
+        # This will be sent with adjUpdate[-1] to bootstrap the process of removing the old node encodings
+        f = Future()
+        self.distHashTable.initListening(f,queryReturnInfo=True,awaitable=True).get()
+        f.get()
+        self.succGroup.startListening(awaitable=True).get()
+
+        print(f' base N = {aug.baseN} aug.N = {aug.N}')
+
+        # Identify the correct encoding of the first region split by the inserted hyperplane (that identified
+        # by the point ptLift). That is, determine how many hyperplanes were used to encode this region in the
+        # hash table.
+        for idx in range(1,aug.N - aug.baseN + 1):
+            newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, newBaseRegFull, aug.N)
+            print((newBaseReg, newBaseRegTup, newBaseRegN))
+            retVal = self.succGroup[0].query([newBaseReg, newBaseRegTup, newBaseRegN],awaitable=True).get()
+            print(retVal)
+            if retVal[0] > 0:
+                stripNum = idx
+                break
+
+        self.distHashTable.awaitPending(usePosetChecking=False,awaitable=True).get()
+        self.succGroup.sendAll(-2,awaitable=True).get()
+        self.succGroup.closeQueryChannels(awaitable=True).get()
+        self.succGroup.flushMessages(ret=True).get()
+
+        aug.root = tuple(newBaseRegFullTup)
+        aug.setRebase(rebasePt)
+        self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
+        self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
+
+        self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
+
+        newAdj = deepcopy(retVal[3])
+        newAdj[-1] = (newBaseRegFull,newBaseRegFullTup,aug.N)
+        print(newAdj)
+
+        self.populated = False
+        self.thisProxy.populatePoset(face=set(),witness=rebasePt,adjUpdate=newAdj,payload=retVal[4],opts=localOpts,awaitable=True).get()
+
+        # Now that we're all done, restore default dispatch for check/update
+        self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
 
     @coro
     def getLPCount(self):
@@ -636,6 +776,9 @@ class successorWorker(Chare):
             self.processNodesArgs = {'solver':solver}
             if self.hashStoreMode == 2:
                 print(f'WARNING: vertex region encodings are not supported for method {method}. Defaulting to bit region encodings...')
+        elif method=='insertHyperplane':
+            self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsInsertHyperplane
+            self.processNodesArgs = {'solver':solver}
         if len(lpopts) == 0:
             self.lpopts = {}
         else:
@@ -747,7 +890,7 @@ class successorWorker(Chare):
         for ch in self.hashChannels:
             ch.send(-100)
 
-    def hashNode(self,toHash,payload=None,vertex=None):
+    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=False):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
         # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         hashInt = hashNodeBytes(toHash[0])
@@ -770,14 +913,14 @@ class successorWorker(Chare):
         else:
             witness = None
         if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, payload)
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate, payload)
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness )
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate )
 
     @coro
-    def hashAndSend(self,toHash,payload=None,vertex=None):
+    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=False):
         self.hashedNodeCount += 1
-        val = self.hashNode(toHash,payload=payload,vertex=vertex)
+        val = self.hashNode(toHash,payload=payload,vertex=vertex,adjUpdate=adjUpdate)
         self.hashChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(nodeInt))
         # retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
@@ -920,9 +1063,9 @@ class successorWorker(Chare):
     def computeSuccessorsNew(self):
         term = False
         if len(self.workInts) > 0:
-            successorList = [[None,None] for k in range(len(self.workInts))]
+            successorList = [[None,None,None,None,None,None,None] for k in range(len(self.workInts))]
             for ii in range(len(successorList)):
-                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.N,self.constraints,**self.processNodesArgs,witness=self.sendWitness, payload=self.workInts[ii][1],awaitable=True).get()
+                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.N,self.constraints,**self.processNodesArgs,witness=self.workInts[ii][4], payload=self.workInts[ii][6],xN=self.workInts[ii][1],face=self.workInts[ii][3],adj=self.workInts[ii][5], awaitable=True).get()
                 self.timedOut = (time.time() > self.clockTimeout) if self.clockTimeout is not None else False
                 # print('Working on ' + str(self.workInts[ii]) + 'on PE ' + str(charm.myPe()) + '; with timeout ' + str(self.timedOut))
                 if type(successorList[ii][1]) is int or self.timedOut:
@@ -1007,9 +1150,9 @@ class successorWorker(Chare):
                     if self.rsPeFree and not self.rsDone:
                         peToUse = self.rsScheduler.schedNextFreePE(ret=True).get()
                     if peToUse >= 0:
-                        self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][4],witness=interiorPoint)
+                        self.thisProxy[peToUse].reverseSearch(successorList[ii][1],payload=successorList[ii][6],witness=interiorPoint)
                     else:
-                        self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][4],witness=interiorPoint,awaitable=True).get()
+                        self.thisProxy[self.thisIndex].reverseSearch(successorList[ii][1],payload=successorList[ii][6],witness=interiorPoint,awaitable=True).get()
         if self.doRSCleanup:
             self.thisProxy[self.thisIndex].cleanupRS(successorList,witnessList,awaitable=True).get()
         self.rsDepth -= 1
@@ -1157,7 +1300,7 @@ class successorWorker(Chare):
             return to_keep, witnessList
 
     @coro
-    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None):
+    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
         # INTrep = INTrep[0]
         # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
         # t = time.time()
@@ -1191,7 +1334,7 @@ class successorWorker(Chare):
                 temp = copy(intIdxNoFlip)
                 temp.insert(insertIdx,intIdx[i])
                 successors.append( \
-                        [ copy(boolIdxNoFlip), tuple(temp), self.flippedConstraints.N, (intIdx[i],) if self.sendFaces else tuple() , None if witness is None else witnessList[idx], None ]
+                        [ copy(boolIdxNoFlip), tuple(temp), self.flippedConstraints.N, (intIdx[i],) if self.sendFaces else tuple() , None if witness is None else witnessList[idx], None, None ]
                     )
                 boolIdxNoFlip[intIdx[i]//8] = boolIdxNoFlip[intIdx[i]//8] ^ 1<<(intIdx[i] % 8)
                 # self.conversionTime += time.time() - t
@@ -1219,6 +1362,42 @@ class successorWorker(Chare):
             return [], sel, witnessList
         else:
             return successors, sel, witnessList
+
+    @coro
+    def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+        witnessList = []
+        # Note the N passed here includes the inserted hyperplane, and INTrep will always be of the same length
+        boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, INTrep, N)
+        boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(-1, INTrep, N)
+        # INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
+
+        # We have to retrieve the information from the node in the table that is going to be split
+        q = self.thisProxy[self.thisIndex].query( [boolIdxNoFlip, INTrep, N-1], ret=True).get()
+        if q[0] > 0:
+            oldFace = q[1]
+            oldWitness = q[2]
+            oldAdj = q[3]
+            oldPayload = q[4]
+        else:
+            raise ValueError
+        print(f'()()()    q = {q}')
+        rebasedINTrep = set(region_helper.recodeRegNewN(-1,self.flippedConstraints.rebaseRegion(INTrepFull),N))
+        validFlips = oldFace - rebasedINTrep
+
+
+        # Flip the un-flippable hyperplanes; this must be undone later
+        # Again note that H contains the inserted hyperplane
+        H[INTrep,:] = -H[INTrep,:]
+
+
+        d = H.shape[1]-1
+
+
+
+        constraint_list = None
+
+
+        H[INTrep,:] = -H[INTrep,:]
 
 
 
