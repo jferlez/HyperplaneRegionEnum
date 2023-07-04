@@ -571,11 +571,14 @@ class Poset(Chare):
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
 
         newAdj = deepcopy(retVal[3])
-        newAdj[-1] = (newBaseRegFull,newBaseRegFullTup,aug.N)
+        newAdj[-1] = aug.N - stripNum
+        for f in retVal[1]:
+            if not f in newAdj:
+                newAdj[f] = self.flippedConstraints.baseN
         print(newAdj)
 
         self.populated = False
-        self.thisProxy.populatePoset(face=set(),witness=rebasePt,adjUpdate=newAdj,payload=retVal[4],opts=localOpts,awaitable=True).get()
+        self.thisProxy.populatePoset(face=copy(retVal[1]),witness=rebasePt,adjUpdate=newAdj,payload=deepcopy(retVal[4]),opts=localOpts,awaitable=True).get()
 
         # Now that we're all done, restore default dispatch for check/update
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
@@ -1365,39 +1368,155 @@ class successorWorker(Chare):
 
     @coro
     def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+        # *****
+        # This function takes as input the regions newly split by the inserted hyperplane.
+        #
+        # It then has _____ main functions:
+        #   1) It should compute the successors of the split region (in the form of newly split regions
+        #      from the successor of the currently split region)
+        #   2) These new successor should be seeded with the correct face information, computed by
+        #      querying the poset
+        #   3) The hashAndSend calls should correctly update the adjacency encoding information for the
+        #      regions in the new level, as stored in the adj property of the node
+        #
+        # This function takes as input one of the regions on the current level that is to be split
+        # in the form of a canonical choice of one of its new subregions specified by N hyperplanes.
+        # This region will contain in its face attribute ALL of the faces of the region to be replaced!
+        #
+        # It then has four tasks:
+        #     1) edit the face information of this canoncial region to reflect the split
+        #     2) create the other split subregion (if required), with correct face information from 1)
+        #     3) delete the old region that these (two) split region(s) replace
+        #     4) Hash a canonical region (in N hyperplanes) for each of the replaced region's successors
+        # *****
+        d = H.shape[1]-1
         witnessList = []
+        Ntab = adj[-1]
         # Note the N passed here includes the inserted hyperplane, and INTrep will always be of the same length
         boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, INTrep, N)
-        boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(-1, INTrep, N)
+        boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(N - Ntab, INTrep, N)
         # INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
 
+        rebasedINTrep = region_helpers.recodeRegNewN(N-Ntab,self.flippedConstraints.rebaseRegion(INTrepFull)[0],N)[1]
+        rebasedINTrepSet = set(rebasedINTrep)
+        print(f'///// rebasedINTrep = {rebasedINTrep}')
+
+        if len(rebasedINTrep) == 0 and Ntab < N:
+            initialRegion = True
+            newBaseRegFullTup = tuple(np.nonzero((-self.flippedConstraints.constraints[:(self.flippedConstraints.N-1),1:] @ witness - self.flippedConstraints.constraints[:(self.flippedConstraints.N-1),0].reshape(-1,1)).flatten() >= self.tol)[0])
+            boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, newBaseRegFullTup, N)
+            boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(N - Ntab, INTrepFull, N)
+            rebasedINTrep = region_helpers.recodeRegNewN(N-Ntab,self.flippedConstraints.rebaseRegion(INTrepFull)[0],N)[1]
+            rebasedINTrepSet = set(rebasedINTrep)
+        else:
+            initialRegion = False
+
+        validFlips = face - rebasedINTrepSet
+
         # We have to retrieve the information from the node in the table that is going to be split
-        q = self.thisProxy[self.thisIndex].query( [boolIdxNoFlip, INTrep, N-1], ret=True).get()
+        q = self.thisProxy[self.thisIndex].query( [boolIdxNoFlip, INTrep, Ntab], op=DistributedHash.QUERYOP_DELETE, ret=True).get()
         if q[0] > 0:
             oldFace = q[1]
             oldWitness = q[2]
             oldAdj = q[3]
             oldPayload = q[4]
-        else:
-            raise ValueError
         print(f'()()()    q = {q}')
-        rebasedINTrep = set(region_helper.recodeRegNewN(-1,self.flippedConstraints.rebaseRegion(INTrepFull),N))
-        validFlips = oldFace - rebasedINTrep
 
 
         # Flip the un-flippable hyperplanes; this must be undone later
         # Again note that H contains the inserted hyperplane
-        H[INTrep,:] = -H[INTrep,:]
+        H[INTrepFull,:] = -H[INTrepFull,:]
 
 
-        d = H.shape[1]-1
+        # Find all of the adjacent regions that touch the inserted hyperplane
+        splitRegions = []
 
 
+        for h in validFlips:
+            faceWitnesses = None
+            INTrepSet = set(INTrepFull)
+            if initialRegion:
+                oldFace = face
+                oldWitness = witness
+                oldAdj = adj
+                oldPayload = payload
+                h = -1
+                print(f'    """""""" Setting initial region properties oldFace = {oldFace}; oldAdj = {oldAdj}')
+            else:
+                H[h,:] = -H[h,:]
+                INTrepSet = INTrepSet | {h} if not h in INTrepSet else INTrepSet - {h}
+                q = self.thisProxy[self.thisIndex].query( region_helpers.recodeRegNewN(N-adj[h], sorted(tuple(INTrepSet)), N) , ret=True).get()
+                if q[0] > 0:
+                    oldFace = q[1]
+                    oldWitness = q[2]
+                    oldAdj = q[3]
+                    oldPayload = q[4]
+            for sgn in [1, -1]:
+                H[N-1,:] = sgn * H[N-1,:]
+                intPt = region_helpers.findInteriorPoint( \
+                                            H, \
+                                            solver=self.solver, \
+                                            lpObj=self.lp, \
+                                            tol=self.tol, \
+                                            rTol=self.rTol, \
+                                            lpopts=lpopts \
+                                        )
+                print(f'    """""""" Received interior point {intPt}')
+                H[N-1,:] = sgn * H[N-1,:]
+                if not intPt is None:
+                    # We have a full dimensional region that is split by the inserted hyperplane, so hash it
+                    # We have to calculate the new face information first
+                    if faceWitnesses is None:
+                        faceWitnesses = {}
+                        holder = {}
+                        qs = []
+                        for f in oldFace - {h}:
+                            if f == N-1: continue
+                            s = sorted(tuple(INTrepSet | {f})) if not f in INTrepSet else sorted(tuple(INTrepSet - {f}))
+                            print(f'    """""""" computed adjacency region {s}')
+                            qs.append( \
+                                self.thisProxy[self.thisIndex].query(region_helpers.recodeRegNewN(N - oldAdj[f], s, N ),ret=True) \
+                            )
+                            holder[id(qs[-1])] = f
+                        for fut in charm.iwait(qs):
+                            faceWitnesses[holder[id(fut)]] = fut.get()
+                    faceWitnesses[h] = intPt
+                    print(f'    """""""" faceWitnesses = {faceWitnesses}')
+                    newFaces = [N-1]
+                    for f in faceWitnesses.keys():
+                        # Now check the witness for f to see which side of the inserted hyperplane it's on
+                        wit = sgn * faceWitnesses[f][2]
+                        if -H[N-1,1:].reshape(-1,1) @ wit >= sgn * H[N-1,0] + self.tol:
+                            # Face witness is on the same side of inserted hyperplane as intPt
+                            newFaces.append(f)
+
+                    INTrepSet = set(INTrepFull)
+                    if sgn < 0:
+                        s = sorted(INTrepFull + tuple(N-1) + (tuple(h) if not initialRegion else tuple()))
+                    else:
+                        s = sorted(INTrepFull + (tuple(h) if not initialRegion else tuple()))
+                    oldAdj[h] = N
+                    cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                                                        region_helpers.recodeRegNewN( \
+                                                            0, \
+                                                            s, \
+                                                            N \
+                                                         ) + ( \
+                                                            newFaces, \
+                                                            intPt, \
+                                                            oldAdj, \
+                                                            oldPayload \
+                                                         ), \
+                                                        ret=True \
+                                                    ).get()
+            if not initialRegion:
+                H[h,:] = -H[h,:]
+            faceWitnesses = None
 
         constraint_list = None
 
 
-        H[INTrep,:] = -H[INTrep,:]
+        H[INTrepFull,:] = -H[INTrepFull,:]
 
 
 
