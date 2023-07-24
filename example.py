@@ -70,12 +70,13 @@ def main(args):
     enumerator.setConstraint(0, prefilter=True, awaitable=True).get()
 
     # Return whether the enumeration completed without the region test failing on any region:
-    retVal = enumerator.populatePoset(ret=True).get()
+    retVal = enumerator.populatePoset(opts={'verbose':False},ret=True).get()
 
     # Collect the stats from the enumeration:
     stats = enumerator.getStats(ret=True).get()
+    cnt = stats['RegionCount']
 
-    print(stats)
+    print(f'\nTotal number of regions: {cnt}\n')
 
     charm.exit()
 
