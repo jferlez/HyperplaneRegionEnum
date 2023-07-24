@@ -167,7 +167,14 @@ class Poset(Chare):
     def init(self):
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
-
+    @coro
+    def getStats(self):
+        statsFut = Future()
+        self.succGroupFull.getStats(statsFut)
+        stats = statsFut.get()
+        stats['RegionCount'] = sum(self.levelSizes) + stats['RSRegionCount']
+        stats['LevelSizes'] = self.levelSizes
+        return stats
     @coro
     def getMigrationInfo(self):
         return self.migrationInfo
@@ -226,6 +233,7 @@ class Poset(Chare):
 
         self.populated = False
         self.oldFlippedConstraints = None
+        self.levelSizes = [0]
 
         return 1
 
@@ -316,7 +324,7 @@ class Poset(Chare):
         level = 0
         thisLevel = [(self.flippedConstraints.root,tuple())]
         posetLen = 1
-        levelSizes = [1]
+        self.levelSizes = [1]
         timedOut = False
 
         # Send this node into the distributed hash table and check it
@@ -429,7 +437,7 @@ class Poset(Chare):
             # nextLevel = self.distHashTable.getLevelList(ret=True).get()
 
             nextLevelSize = self.distHashTable.scheduleNextLevel(clearTable=(self.clearTable == 'memory'),ret=True).get()
-            levelSizes.append(nextLevelSize)
+            self.levelSizes.append(nextLevelSize)
 
             listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
@@ -450,7 +458,7 @@ class Poset(Chare):
         self.succGroupFull.getStats(statsFut)
         stats = statsFut.get()
         if self.verbose:
-            stats['levelSizes'] = levelSizes
+            stats['levelSizes'] = self.levelSizes
             print('Total LPs used: ' + str(stats))
 
             print('Checker returned value: ' + str(checkVal))
@@ -811,9 +819,9 @@ class successorWorker(Chare):
     @coro
     def getStats(self, statsFut):
         if charm.myPe() in self.posetPElist:
-            self.stats['LPSolverCount'] += self.lp.lpCount + self.lpIntPoint.lpCount
-            self.stats['RSRegionCount'] += self.rsRegionCount
-            self.stats['RSLPCount'] += self.rsLP.lpCount + self.rsLPIntPoint.lpCount
+            self.stats['LPSolverCount'] = self.lp.lpCount + self.lpIntPoint.lpCount
+            self.stats['RSRegionCount'] = self.rsRegionCount
+            self.stats['RSLPCount'] = self.rsLP.lpCount + self.rsLPIntPoint.lpCount
         retVal = defaultdict(int) if not charm.myPe() in self.posetPElist else self.stats
         self.reduce(statsFut,retVal,DictAccum)
 
