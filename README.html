@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>HyperplaneRegionEnum</title>
+        <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+<link href="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.css" rel="stylesheet" type="text/css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+        
+    </head>
+    <body class="vscode-body vscode-light">
+        <h1 id="hyperplaneregionenum">HyperplaneRegionEnum</h1>
+<p>The <code>HyperplaneRegionEnum</code> Python package implements a (growing) number of algorithms to enumerate the regions in a hyperplane arrangement. Additionally, this package has the following key features:</p>
+<ul>
+<li><strong>Per Region Testing and Early Termination:</strong> During enumeration, user-specified code can be evaluated to test each region, and terminate the enumeration early. This feature makes it useful for a number of applications in Neural Network (NN) verification (see e.g. <a href="https://github.com/jferlez/FastBATLLNN">FastBATLLNN</a>).</li>
+<li><strong>Parallelism:</strong> This package contains parallel implementations of all algorithms, implemented using the <a href="https://charm4py.readthedocs.io/en/latest/">charm4py</a> parallelism abstraction framework. Since <a href="https://charm4py.readthedocs.io/en/latest/">charm4py</a> runs on top of MPI, these algorithms can be scaled up to multi-computer clusters with ease.</li>
+</ul>
+<p><em>Please contact <a href="mailto:jferlez@uci.edu">jferlez@uci.edu</a> with any questions/bug reports.</em></p>
+<h2 id="1-prerequisites">1) Prerequisites</h2>
+<p>This package is in Python, and it depends on the following packages/libraries (and their dependencies):</p>
+<ul>
+<li><a href="https://charm4py.readthedocs.io/en/latest/">charm4py</a> (Python/Library)</li>
+<li><a href="https://www.gnu.org/software/glpk/">glpk</a> (Library)</li>
+<li><a href="https://github.com/mckib2/scikit-glpk">scikit-glpk</a> (Python)</li>
+<li><a href="https://github.com/coin-or/CyLP">cylp</a> (Python) / <a href="https://github.com/coin-or/Clp">Clp</a> (Library)</li>
+<li><a href="https://cvxopt.org">cvxopt</a> (Python)</li>
+<li><a href="https://numba.pydata.org">numba</a> (Python)</li>
+<li><a href="https://pycddlib.readthedocs.io/en/latest/">pycddlib</a> (Python/Library)</li>
+</ul>
+<p>These dependencies can be burdensome to install, but they are pre-installed and configured in the Docker image associated with <a href="https://github.com/jferlez/FastBATLLNN">FastBATLLNN</a>; please see that repository for Docker instructions.</p>
+<blockquote>
+<p><strong>Note:</strong> <a href="https://charm4py.readthedocs.io/en/latest/">charm4py</a> is required, so this package must be used within an appropriately invoked Python interpreter: see the <a href="https://charm4py.readthedocs.io/en/latest/">charm4py documentation</a> for more instructions. You can test your configuration by running the included example from a shell as follows:</p>
+<pre><code class="language-Bash">charmrun +p1 example.py
+</code></pre>
+<p>which should produce output that looks roughly like this:</p>
+<pre><code>Running as 4 OS processes: /opt/local/bin/python3.11 example.py
+charmrun&gt; mpirun -np 4 /opt/local/bin/python3.11 example.py
+Charm++&gt; Running on MPI library: Open MPI v4.1.4, package: Open MPI root@ Distribution, ident: 4.1.4, repo rev: v4.1.4, May 26, 2022 (MPI standard: 3.1)
+Charm++&gt; Level of thread support used: MPI_THREAD_SINGLE (desired: MPI_THREAD_SINGLE)
+Charm++&gt; Running in non-SMP mode: 4 processes (PEs)
+Converse/Charm++ Commit ID: v7.1.0-devel-196-gf9f1f096f
+Isomalloc&gt; Synchronized global address space.
+CharmLB&gt; Load balancer assumes all CPUs are same.
+Charm4py&gt; Running Charm4py version 1.0 on Python 3.11.4 (CPython). Using 'cython' interface to access Charm++
+Charm++&gt; Running on 1 hosts (1 sockets x 4 cores x 2 PUs = 8-way SMP)
+Charm++&gt; cpu topology info is gathered in 0.004 seconds.
+CharmLB&gt; Load balancing instrumentation for communication is off.
+
+Total number of regions: 4
+
+[Partition 0][Node 0] End of program
+</code></pre>
+<p>That is, <code>example.py</code> enumerates an arrangement in <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi mathvariant="double-struck">R</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">\mathbb{R}^2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span></span> with 4 regions.</p>
+</blockquote>
+<h2 id="2-basic-usage">2) Basic Usage</h2>
+<p>This section describes code that must be run in a Python interpreter invoked by <code>charmrun</code> or similar; see Section <a href="#1-prerequisites">1) Prerequisites</a>. Note that the following sections closely follow the code in the included <code>example.py</code>.</p>
+<h3 id="initialization-of-an-enumerator">Initialization of an Enumerator</h3>
+<p>The user-facing interface to the enumerator is a <a href="https://charm4py.readthedocs.io/en/latest/">Chare</a> abstraction called <code>posetFastCharm.Poset</code>. It can be created according the syntax of <a href="https://charm4py.readthedocs.io/en/latest/">Chare</a> creation as in the following example from <code>example.py</code>:</p>
+<pre><code class="language-Python">enumerator = Chare(posetFastCharm.Poset, \
+                    args=[ \
+                            <span class="hljs-comment"># PE Specification \</span>
+                            <span class="hljs-comment"># (None =&gt; use all PEs)</span>
+                            <span class="hljs-literal">None</span>, \
+                            <span class="hljs-comment"># Constructor for individual region storage instances \</span>
+                            <span class="hljs-comment"># (None =&gt; posetFastCharm.PosetNode)</span>
+                            <span class="hljs-literal">None</span>, \
+                            <span class="hljs-comment"># localVarGroup for evaluating region tests \</span>
+                            <span class="hljs-comment"># (None =&gt; posetFastCharm.localVar)</span>
+                            <span class="hljs-literal">None</span>, \
+                            <span class="hljs-comment"># Chare to obtain region successors in poset \</span>
+                            <span class="hljs-comment"># (None =&gt; posetFastCharm.successorWorker) \</span>
+                            <span class="hljs-literal">None</span>, \
+                            <span class="hljs-comment"># Execute region tests on poset workers (True) or hash workers (False)</span>
+                            <span class="hljs-literal">False</span>, \
+                            <span class="hljs-comment"># Specification for chaining DistributedHash Chares</span>
+                            []
+                        ], \
+                    onPE=<span class="hljs-number">0</span> \
+                )
+charm.awaitCreation(enumerator)
+<span class="hljs-comment"># Perform initialization outside the constructor:</span>
+enumerator.init(awaitable=<span class="hljs-literal">True</span>).get()
+</code></pre>
+<blockquote>
+<p><strong>NOTE:</strong> As required by charm4py, arguments are passed to the Chare constructor via the argument <code>args</code>, and specified with a fixed-length list. <strong><em>The list above is the &quot;minimal&quot; list of arguments, which invokes default values for all parameters.</em></strong></p>
+</blockquote>
+<blockquote>
+<p><strong>NOTE:</strong> The <code>Chare</code> constructor returns immediately, so the call to <code>charm.awaitCreation</code> is necessary to block until the Chare is actually initialized/created.</p>
+</blockquote>
+<blockquote>
+<p><strong>NOTE:</strong> The <code>init</code> method must be called, and its execution completed via <code>awaitable=True</code>, before further interaction with the enumerator.</p>
+</blockquote>
+<p>Non-default options to the Chare constructor are covered in Section <a href="#3-advanced-usage">3) Advanced Usage</a>.</p>
+<h3 id="specifying-a-hyperplane-arrangement">Specifying a Hyperplane Arrangement</h3>
+<p><code>HyperplaneRegionEnum</code> enumerates all of the regions in a hyperplane arrangement of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi mathvariant="double-struck">R</mi><mi>d</mi></msup></mrow><annotation encoding="application/x-tex">\mathbb{R}^d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span></span></span></span></span></span></span></span></span> that intersect a closed, convex polytope region, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="script">R</mi></mrow><annotation encoding="application/x-tex">\mathcal{R}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal">R</span></span></span></span>. To enumerate these regions, three quantities are required:</p>
+<p><strong><em>(i)</em> Hyperplanes:</strong> The hyperplanes themselves are specified according to matrix equation with each row specifying a hyperplane, i.e.:</p>
+<p class="katex-block"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>A</mi><mi>x</mi><mo>=</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">A x = b
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span></span></p>
+<p>where <code>A</code> is a Numpy array of shape <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>N</mi><mo separator="true">,</mo><mi>d</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(N, d)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">d</span><span class="mclose">)</span></span></span></span> and <code>b</code> is a Numpy array of shape <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>N</mi><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(N, 1)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">)</span></span></span></span>.</p>
+<p><strong><em>(ii)</em> Constraint Region:</strong> The region to search, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="script">R</mi></mrow><annotation encoding="application/x-tex">\mathcal{R}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal">R</span></span></span></span>, is specified by a linear matrix inequality:</p>
+<p class="katex-block"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>A</mi><mi>f</mi></msup><mi>x</mi><mo>≥</mo><msup><mi>b</mi><mi>f</mi></msup></mrow><annotation encoding="application/x-tex">A^f x \geq b^f
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0351em;vertical-align:-0.136em;"></span><span class="mord"><span class="mord mathnormal">A</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span></span></span></span></span></span></span></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8991em;"></span><span class="mord"><span class="mord mathnormal">b</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span></span></span></span></span></span></span></span></span></span></span></span></p>
+<p>where <code>fA</code>=<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>A</mi><mi>f</mi></msup></mrow><annotation encoding="application/x-tex">A^f</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathnormal">A</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span></span></span></span></span></span></span></span></span></span></span> is a Numpy array of shape <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>M</mi><mo separator="true">,</mo><mi>d</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(M, d)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">d</span><span class="mclose">)</span></span></span></span> and <code>fb</code>=<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>b</mi><mi>f</mi></msup></mrow><annotation encoding="application/x-tex">b^f</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathnormal">b</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span></span></span></span></span></span></span></span></span></span></span> is a Numpy array of shape <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>M</mi><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(M, 1)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">)</span></span></span></span>.</p>
+<p><strong><em>(iii)</em> Initial, Interior Region Point:</strong> The user must supply a point <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mi>d</mi></msup></mrow><annotation encoding="application/x-tex">p \in \mathbb{R}^d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7335em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">p</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span></span></span></span></span></span></span></span></span> that is <em>interior</em> to one region of the hyperplane arrangement and also contained in <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="script">R</mi></mrow><annotation encoding="application/x-tex">\mathcal{R}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal">R</span></span></span></span>. <code>pt</code>=<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">p</span></span></span></span> should be a Numpy array of size <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>d</mi><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(d, 1)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal">d</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">)</span></span></span></span>.</p>
+<p>With this information, the enumerator is initialized for the corresponding enumeration problem as follows:</p>
+<pre><code class="language-Python"><span class="hljs-comment"># Supply hyperplanes to enumerator (.get() call waits for completion):</span>
+enumerator.initialize(
+        <span class="hljs-comment"># Hyperplane specification:</span>
+        [[A, b]], \
+        <span class="hljs-comment"># Initial region interior point:</span>
+        pt, \
+        <span class="hljs-comment"># Fixed region constraints:</span>
+        fA, \
+        fb, \
+        awaitable=<span class="hljs-literal">True</span> \
+    ).get()
+<span class="hljs-comment"># Shift and pre-filter hyperplanes for intersection with fixed constraints</span>
+enumerator.setConstraint(<span class="hljs-number">0</span>, prefilter=<span class="hljs-literal">True</span>, awaitable=<span class="hljs-literal">True</span>).get()
+</code></pre>
+<blockquote>
+<p><strong>WARNING:</strong> Each <code>initialize</code> call must be followed by a <code>setConstraint</code> call.</p>
+</blockquote>
+<blockquote>
+<p><strong>WARNING:</strong> The <code>awaitable=True</code> and <code>.get()</code> block the main code execution until each corresponding method call completes. These calls must complete, and in order, before proceeding.</p>
+</blockquote>
+<blockquote>
+<p><strong>NOTE:</strong> Subsequent calls to <code>initialize</code>/<code>setConstraint</code> will replace any enumeration problem configured before.</p>
+</blockquote>
+<p>Further documentation about the <code>setConstraint</code> method and its parameters can be found in Section <a href="#3-advanced-usage">3) Advanced Usage</a>.</p>
+<h3 id="performing-the-enumeration">Performing the Enumeration</h3>
+<p>At this point, the enumerator has been configured with an enumeration problem. So the enumeration can be started by calling:</p>
+<pre><code class="language-Python">retVal = enumerator.populatePoset(ret=<span class="hljs-literal">True</span>).get()
+</code></pre>
+<blockquote>
+<p><strong>NOTE:</strong> <code>populatePoset</code> should be called with <code>ret=True</code> or <code>awaitable=True</code> so that the main code can block until enumeration completes.</p>
+</blockquote>
+<blockquote>
+<p><strong>NOTE:</strong> When called with <code>ret=True</code>, <code>populatePoset</code> returns <code>True</code> if user-configured test code returns <code>True</code> for all enumerated regions, and <code>False</code> if the user-configured test code returns <code>False</code> on at one region. If the test code returns <code>False</code> on a region, then enumeration is terminated early (i.e. short-circuit evaluation).</p>
+</blockquote>
+<blockquote>
+<p><strong>NOTE:</strong> With default settings <code>retVal</code> is always <code>True</code> after enumeration, and hence all regions are enumerated.</p>
+</blockquote>
+<h3 id="collecting-the-results">Collecting the Results</h3>
+<p>The enumerator instance can be queried for a Python <code>defaultdict</code> containing the results of the enumeration, including the number of regions enumerated and the total number of Linear Programs (LPs) used:</p>
+<pre><code class="language-Python">stats = enumerator.getStats(ret=<span class="hljs-literal">True</span>).get()
+</code></pre>
+<h2 id="3-advanced-usage">3) Advanced Usage</h2>
+<p>Under construction...</p>
+
+        <script async src="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.js"></script>
+        
+    </body>
+    </html>
