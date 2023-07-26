@@ -435,6 +435,7 @@ class Poset(Chare):
                     faces[retPe] = facesList
 
             # nextLevel = self.distHashTable.getLevelList(ret=True).get()
+            prevLevelSize = nextLevelSize
 
             nextLevelSize = self.distHashTable.scheduleNextLevel(clearTable=(self.clearTable == 'memory'),ret=True).get()
             self.levelSizes.append(nextLevelSize)
@@ -447,7 +448,8 @@ class Poset(Chare):
 
             posetLen += nextLevelSize
             # print(posetLen)
-
+            if self.verbose:
+                print(f'Finished level {level} of size {prevLevelSize}')
 
 
             # thisLevel = nextLevel
