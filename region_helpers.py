@@ -97,7 +97,7 @@ class flipConstraints:
         regSet = np.full(self.allN, True, dtype=bool)
         regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
         regSet[nodeBytes,] = np.full(len(nodeBytes),False,dtype=bool)
-        unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,list(nodeBytes))
+        unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,list(copy(nodeBytes)))
         regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
         return np.nonzero(regSet)[0]
 
