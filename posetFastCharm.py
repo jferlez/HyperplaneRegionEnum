@@ -756,7 +756,7 @@ class successorWorker(Chare):
     def getTimeout(self):
         return self.timedOut
 
-    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,sendWitness=False,verbose=True):
+    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,clearTable='speed',sendWitness=False,verbose=True):
         self.lp.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
         self.lpIntPoint.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1])})
         self.rsLP.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
@@ -766,6 +766,7 @@ class successorWorker(Chare):
         self.tol = tol
         self.rTol = rTol
         self.sendFaces = sendFaces
+        self.clearTable = clearTable
         self.sendWitness = True if sendWitness else None
         self.verbose = verbose
         if hashStore == 'bits':
