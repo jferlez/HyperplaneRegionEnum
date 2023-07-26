@@ -1358,7 +1358,7 @@ class successorWorker(Chare):
                 if not cont:
                     H[INTrep,:] = -H[INTrep,:]
                     return successors, -1, witnessList
-        if not self.doRS and self.sendFaces:
+        if not self.doRS and self.sendFaces and not self.clearTable:
             self.thisProxy[self.thisIndex].hashAndSend([boolIdxNoFlip,intIdxNoFlip,self.flippedConstraints.N,[ii[3][0] for ii in successors]], ret=True).get()
         # facesInt = np.full(self.N,0,dtype=bool)
         sel = tuple(np.array(intIdx,dtype=np.uint64)[faces].tolist())
