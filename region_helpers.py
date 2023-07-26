@@ -486,8 +486,8 @@ def projectConstraints(H,hyperIn,subIdx=None,tol=1e-8,rTol=1e-8):
     A = -H[:,1:]
     b = H[:,0]
     # A @ x <= b
-    retH[:,1:(subIdx+1)] = -A[:,0:subIdx] + A[:,subIdx].reshape(-1,1) * (1/hyper[subIdx+1]) * hyperSlice
-    retH[:,(subIdx+1):] = -A[:,(subIdx+1):] + A[:,subIdx].reshape(-1,1) * (1/hyper[subIdx+1]) * hyperSlice
+    retH[:,1:(subIdx+1)] = -A[:,0:subIdx] + A[:,subIdx].reshape(-1,1) * (1/hyper[subIdx+1]) * hyperSlice[0:subIdx]
+    retH[:,(subIdx+1):] = -A[:,(subIdx+1):] + A[:,subIdx].reshape(-1,1) * (1/hyper[subIdx+1]) * hyperSlice[subIdx:]
     retH[:,0] = b - A[:,subIdx] * (1/hyper[subIdx+1]) * hyper[0]
     return retH, subIdx
 
