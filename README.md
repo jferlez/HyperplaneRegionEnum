@@ -92,7 +92,7 @@ Non-default options to the Chare constructor are covered in Section [3) Advanced
 
 **_(i)_ Hyperplanes:** The hyperplanes themselves are specified according to matrix equation with each row specifying a hyperplane, i.e.:
 $$
-A x = b
+A x + b = 0
 $$
 where `A` is a Numpy array of shape $(N, d)$ and `b` is a Numpy array of shape $(N, 1)$.
 
