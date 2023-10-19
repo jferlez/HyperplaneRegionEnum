@@ -93,11 +93,15 @@ class flipConstraints:
     # This is useful when you don't just care about the region specification but the
     # hyperplanes themselves, as in e.g. FastBATLLNN (there the sign of the hyperplanes
     # means something for the output of the TLL).
-    def translateRegion(self,nodeBytes, allN=True):
+    def translateRegion(self,nodeBytesInt, allN=True):
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+        else:
+            nodeBytes = nodeBytesInt
         regSet = np.full(self.allN, True, dtype=bool)
         regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
         regSet[nodeBytes,] = np.full(len(nodeBytes),False,dtype=bool)
-        unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,list(nodeBytes))
+        unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,list(copy(nodeBytes)))
         regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
         return np.nonzero(regSet)[0]
 
@@ -109,14 +113,23 @@ class flipConstraints:
 
     # This method also accepts region specifications relative to the original flipping
     # ** It will produce INCORRECT results if fed with the output of translateRegion!! **
-    def getRegionConstraints(self, nodeBytes, allN=True):
+    def getRegionConstraints(self, nodeBytesInt, allN=True):
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+        else:
+            nodeBytes = nodeBytesInt
         H = self.allConstraints.copy() if allN else self.constraints.copy()
         regSet = self.insertRedundant(nodeBytes) if allN and self.N != self.allN else nodeBytes
         H[regSet,:] = -H[regSet,:]
         return H
 
     # This helper method is only meant to be called in getRegionConstraints above
-    def insertRedundant(self, nodeBytes):
+    def insertRedundant(self, nodeBytesInt):
+        print(nodeBytesInt)
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+        else:
+            nodeBytes = nodeBytesInt
         return tuple(self.nonRedundantHyperplanes[nodeBytes,])
 
     def setRebase(self, rebasePoint):
@@ -126,19 +139,31 @@ class flipConstraints:
         v = self.allConstraints[:self.allN, 1:] @ self.rebasePt + self.allConstraints[:self.allN, 0].reshape(-1,1)
         self.rebaseSetAllN = frozenset(np.nonzero(v.flatten() < -self.tol)[0])
 
-    def rebaseRegion(self, nodeBytes, allN=False):
+    def rebaseRegion(self, nodeBytesInt, allN=False):
         if self.rebasePt is None:
             return None
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+        else:
+            nodeBytes = nodeBytesInt
         regSet = set(nodeBytes)
         rebaseSet = self.rebaseSetAllN if allN else self.rebaseSet
         doubleFlip = rebaseSet & regSet
         retTup = tuple(sorted(list( (rebaseSet - doubleFlip) | (regSet - doubleFlip) )))
         return tupToBytes(retTup, self.wholeBytesAllN if allN else self.wholeBytes, self.tailBitsAllN if allN else self.tailBits), retTup
 
-    def expandRegion(self, nodeBytes):
+    def expandRegion(self, nodeBytesInt):
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+        else:
+            nodeBytes = nodeBytesInt
         return nodeBytes
 
-    def collapseRegion(self, nodeBytes):
+    def collapseRegion(self, nodeBytesInt):
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+        else:
+            nodeBytes = nodeBytesInt
         return nodeBytes
 
     def bytesToList(self, nodeBytes, allN=False):
@@ -226,7 +251,11 @@ class flipConstraintsReducedMin(flipConstraints):
         self.wholeBytesAllN = (self.allN + 7) // 8
         self.tailBitsAllN = self.allN - 8*(self.allN // 8)
 
-    def translateRegion(self,nodeBytes, allN=True):
+    def translateRegion(self,nodeBytesInt, allN=True):
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+        else:
+            nodeBytes = nodeBytesInt
         regSet = np.full(self.allN, True, dtype=bool)
         regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
         sel = self.nonRedundantHyperplanes[nodeBytes,]
@@ -237,13 +266,21 @@ class flipConstraintsReducedMin(flipConstraints):
             regSet = regSet[self.nonRedundantHyperplanes,]
         return np.nonzero(regSet)[0]
 
-    def expandRegion(self,nodeBytes):
+    def expandRegion(self,nodeBytesInt):
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+        else:
+            nodeBytes = nodeBytesInt
         regSet = np.full(self.allN,False,dtype=bool)
         for ii in nodeBytes:
             regSet[self.nonRedundantHyperplanes[ii]] = True
         return tuple(np.nonzero(regSet)[0])
 
-    def collapseRegion(self,nodeBytes):
+    def collapseRegion(self,nodeBytesInt):
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+        else:
+            nodeBytes = nodeBytesInt
         regSet = np.full(self.allN,False, dtype=bool)
         regSet[nodeBytes,] = np.full(len(nodeBytes),True,dtype=bool)
         return tuple(np.nonzero(regSet[self.nonRedundantHyperplanes,])[0])
@@ -486,8 +523,8 @@ def projectConstraints(H,hyperIn,subIdx=None,tol=1e-8,rTol=1e-8):
     A = -H[:,1:]
     b = H[:,0]
     # A @ x <= b
-    retH[:,1:(subIdx+1)] = -A[:,0:subIdx] + A[:,subIdx].reshape(-1,1) * (1/hyper[subIdx+1]) * hyperSlice
-    retH[:,(subIdx+1):] = -A[:,(subIdx+1):] + A[:,subIdx].reshape(-1,1) * (1/hyper[subIdx+1]) * hyperSlice
+    retH[:,1:(subIdx+1)] = -A[:,0:subIdx] + A[:,subIdx].reshape(-1,1) * (1/hyper[subIdx+1]) * hyperSlice[0:subIdx]
+    retH[:,(subIdx+1):] = -A[:,(subIdx+1):] + A[:,subIdx].reshape(-1,1) * (1/hyper[subIdx+1]) * hyperSlice[subIdx:]
     retH[:,0] = b - A[:,subIdx] * (1/hyper[subIdx+1]) * hyper[0]
     return retH, subIdx
 

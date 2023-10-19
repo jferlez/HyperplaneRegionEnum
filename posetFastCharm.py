@@ -167,7 +167,14 @@ class Poset(Chare):
     def init(self):
         initFut = self.distHashTable.initialize(awaitable=True)
         initFut.get()
-
+    @coro
+    def getStats(self):
+        statsFut = Future()
+        self.succGroupFull.getStats(statsFut)
+        stats = statsFut.get()
+        stats['RegionCount'] = sum(self.levelSizes) + stats['RSRegionCount']
+        stats['LevelSizes'] = self.levelSizes
+        return stats
     @coro
     def getMigrationInfo(self):
         return self.migrationInfo
@@ -226,6 +233,7 @@ class Poset(Chare):
 
         self.populated = False
         self.oldFlippedConstraints = None
+        self.levelSizes = [0]
 
         return 1
 
@@ -316,7 +324,7 @@ class Poset(Chare):
         level = 0
         thisLevel = [(self.flippedConstraints.root,tuple())]
         posetLen = 1
-        levelSizes = [1]
+        self.levelSizes = [1]
         timedOut = False
 
         # Send this node into the distributed hash table and check it
@@ -427,9 +435,10 @@ class Poset(Chare):
                     faces[retPe] = facesList
 
             # nextLevel = self.distHashTable.getLevelList(ret=True).get()
+            prevLevelSize = nextLevelSize
 
             nextLevelSize = self.distHashTable.scheduleNextLevel(clearTable=(self.clearTable == 'memory'),ret=True).get()
-            levelSizes.append(nextLevelSize)
+            self.levelSizes.append(nextLevelSize)
 
             listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
@@ -439,7 +448,8 @@ class Poset(Chare):
 
             posetLen += nextLevelSize
             # print(posetLen)
-
+            if self.verbose:
+                print(f'Finished level {level} of size {prevLevelSize}')
 
 
             # thisLevel = nextLevel
@@ -450,7 +460,7 @@ class Poset(Chare):
         self.succGroupFull.getStats(statsFut)
         stats = statsFut.get()
         if self.verbose:
-            stats['levelSizes'] = levelSizes
+            stats['levelSizes'] = self.levelSizes
             print('Total LPs used: ' + str(stats))
 
             print('Checker returned value: ' + str(checkVal))
@@ -749,7 +759,7 @@ class successorWorker(Chare):
     def getTimeout(self):
         return self.timedOut
 
-    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,sendWitness=False,verbose=True):
+    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,clearTable='speed',sendWitness=False,verbose=True):
         self.lp.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
         self.lpIntPoint.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1])})
         self.rsLP.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
@@ -759,6 +769,7 @@ class successorWorker(Chare):
         self.tol = tol
         self.rTol = rTol
         self.sendFaces = sendFaces
+        self.clearTable = clearTable
         self.sendWitness = True if sendWitness else None
         self.verbose = verbose
         if hashStore == 'bits':
@@ -814,9 +825,9 @@ class successorWorker(Chare):
     @coro
     def getStats(self, statsFut):
         if charm.myPe() in self.posetPElist:
-            self.stats['LPSolverCount'] += self.lp.lpCount + self.lpIntPoint.lpCount
-            self.stats['RSRegionCount'] += self.rsRegionCount
-            self.stats['RSLPCount'] += self.rsLP.lpCount + self.rsLPIntPoint.lpCount
+            self.stats['LPSolverCount'] = self.lp.lpCount + self.lpIntPoint.lpCount
+            self.stats['RSRegionCount'] = self.rsRegionCount
+            self.stats['RSLPCount'] = self.rsLP.lpCount + self.rsLPIntPoint.lpCount
         retVal = defaultdict(int) if not charm.myPe() in self.posetPElist else self.stats
         self.reduce(statsFut,retVal,DictAccum)
 
@@ -1351,8 +1362,8 @@ class successorWorker(Chare):
                 if not cont:
                     H[INTrep,:] = -H[INTrep,:]
                     return successors, -1, witnessList
-        if not self.doRS and self.sendFaces:
-            self.thisProxy[self.thisIndex].hashAndSend([boolIdxNoFlip,intIdxNoFlip,self.flippedConstraints.N,[ii[3][0] for ii in successors]], ret=True).get()
+        if not self.doRS and self.sendFaces and not isinstance(self.clearTable,str):
+            self.thisProxy[self.thisIndex].hashAndSend([copy(boolIdxNoFlip),copy(intIdxNoFlip),self.flippedConstraints.N,[copy(ii[3][0]) for ii in successors]], ret=True).get()
         # facesInt = np.full(self.N,0,dtype=bool)
         sel = tuple(np.array(intIdx,dtype=np.uint64)[faces].tolist())
         # facesInt[sel] = np.full(len(sel),1,dtype=bool)
