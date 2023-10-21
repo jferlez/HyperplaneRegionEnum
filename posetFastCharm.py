@@ -186,18 +186,18 @@ class Poset(Chare):
         self.fixedb = fixedb.copy()
         self.normalize = normalize
         self.N = len(self.AbPairs[0][0])
-        self.nrms = []
-        if normalize > 0:
-            for out in range(len(AbPairs)):
-                self.nrms.append(self.normalize / np.linalg.norm(np.hstack([self.AbPairs[out][1].reshape(-1,1),self.AbPairs[out][0]]),axis=1).reshape(-1,1))
-                self.AbPairs[out][0] = self.nrms[out] * self.AbPairs[out][0]
-                self.AbPairs[out][1] = self.nrms[out] * self.AbPairs[out][1]
-            nrms = np.linalg.norm(self.fixedA,axis=1).reshape(-1,1) * self.normalize
-            self.fixedA = (self.normalize/nrms) * self.fixedA
-            self.fixedb = (self.normalize/nrms) * self.fixedb
-        else:
-            for out in range(len(AbPairs)):
-                self.nrms.append(np.ones((self.N,1)))
+        # self.nrms = []
+        # if normalize > 0:
+        #     for out in range(len(AbPairs)):
+        #         self.nrms.append(self.normalize / np.linalg.norm(np.hstack([self.AbPairs[out][1].reshape(-1,1),self.AbPairs[out][0]]),axis=1).reshape(-1,1))
+        #         self.AbPairs[out][0] = self.nrms[out] * self.AbPairs[out][0]
+        #         self.AbPairs[out][1] = self.nrms[out] * self.AbPairs[out][1]
+        #     nrms = np.linalg.norm(self.fixedA,axis=1).reshape(-1,1) * self.normalize
+        #     self.fixedA = (self.normalize/nrms) * self.fixedA
+        #     self.fixedb = (self.normalize/nrms) * self.fixedb
+        # else:
+        #     for out in range(len(AbPairs)):
+        #         self.nrms.append(np.ones((self.N,1)))
 
 
         # self.N = len(self.AbPairs[0][0])
@@ -216,10 +216,11 @@ class Poset(Chare):
             createConstraints = region_helpers.flipConstraints
         self.flippedConstraints = createConstraints( \
                 -1*self.AbPairs[out][0], \
-                self.AbPairs[out][1] - lb*self.nrms[out], \
+                self.AbPairs[out][1] - lb, \
                 self.pt, \
                 self.fixedA, \
-                self.fixedb \
+                self.fixedb, \
+                normalize=1.0 \
             )
         self.N = self.flippedConstraints.N
         if not rebasePt is None:

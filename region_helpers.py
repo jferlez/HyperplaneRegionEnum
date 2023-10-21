@@ -6,7 +6,7 @@ import posetFastCharm_numba
 
 class flipConstraints:
 
-    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9):
+    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9, normalize=None):
         v = nA @ pt
         v = v.flatten() - nb.flatten()
         self.flipMapN = np.where(v<0,-1,1)
@@ -19,6 +19,7 @@ class flipConstraints:
         self.pt = pt
         self.tol = tol
         self.rTol = rTol
+        self.normalize = normalize
 
         if (fA is not None) and (fb is not None):
             v = fA @ pt
@@ -33,6 +34,14 @@ class flipConstraints:
             self.fA = None
             self.fb = None
             self.constraints = np.hstack((-self.nb,self.nA))
+
+        self.allNrms = np.ones((self.constraints.shape[0],1),dtype=np.float64)
+        if not normalize is None and type(self.normalize) is float and self.normalize > 0.0:
+            self.allNrms = self.normalize / np.linalg.norm(self.constraints[:,1:],axis=1).reshape(-1,1)
+            self.constraints = self.allNrms * self.constraints
+        else:
+            self.normalize = None
+        self.nrms = self.allNrms
 
         # self.root = bytearray( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
         # self.root = int.from_bytes(self.root, 'little')
@@ -78,6 +87,15 @@ class flipConstraints:
             self.constraints = np.hstack((-self.nb,self.nA))
         else:
             self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
+
+        self.allNrms = np.ones((self.constraints.shape[0],1),dtype=np.float64)
+        if not self.normalize is None and type(self.normalize) is float and self.normalize > 0.0:
+            self.allNrms = self.normalize / np.linalg.norm(self.constraints[:,1:],axis=1).reshape(-1,1)
+            self.constraints = self.allNrms * self.constraints
+        else:
+            self.normalize = None
+        self.nrms = self.allNrms
+
         self.allConstraints = self.constraints
         self.allN = self.N
         self.redundantFlips = np.full(self.N,1,dtype=np.int64)
@@ -174,8 +192,8 @@ class flipConstraints:
 
 class flipConstraintsReduced(flipConstraints):
 
-    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9):
-        super().__init__(nA, nb, pt, fA=fA, fb=fb, tol=tol, rTol=rTol)
+    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9,normalize=None):
+        super().__init__(nA, nb, pt, fA=fA, fb=fb, tol=tol, rTol=rTol, normalize=normalize)
         if self.fA is None:
             return
 
@@ -204,8 +222,8 @@ class flipConstraintsReduced(flipConstraints):
 
 class flipConstraintsReducedMin(flipConstraints):
 
-    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9):
-        super().__init__(nA, nb, pt, fA=fA, fb=fb, tol=tol, rTol=rTol)
+    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9, normalize=None):
+        super().__init__(nA, nb, pt, fA=fA, fb=fb, tol=tol, rTol=rTol, normalize=normalize)
         if self.fA is None:
             return
 
@@ -219,7 +237,13 @@ class flipConstraintsReducedMin(flipConstraints):
 
         self.allConstraints = copy(self.constraints)
         self.allN = self.N
-        self.constraints = np.vstack( ( np.hstack((-1*self.nb[self.nonRedundantHyperplanes,],self.nA[self.nonRedundantHyperplanes,:])), np.hstack((-1*self.fb,self.fA)) ) )
+        self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,].reshape(-1,1), self.allNrms[self.allN:,].reshape(-1,1) ])
+        self.constraints = self.nrms * np.vstack( \
+                                    ( \
+                                        np.hstack((-1*self.nb[self.nonRedundantHyperplanes,],self.nA[self.nonRedundantHyperplanes,:])), \
+                                        np.hstack((-1*self.fb,self.fA)) \
+                                    ) \
+                                )
         self.N = len(self.nonRedundantHyperplanes)
         self.wholeBytes = (self.N + 7) // 8
         self.tailBits = self.N - 8*(self.N // 8)
@@ -243,8 +267,13 @@ class flipConstraintsReducedMin(flipConstraints):
                 self.redundantFlips[k] = -1
         self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
 
-        self.constraints = np.vstack( ( np.hstack((-1*self.nb[self.nonRedundantHyperplanes,],self.nA[self.nonRedundantHyperplanes,:])), \
-                                       np.hstack((-1*self.fb,self.fA)) ) )
+        self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,].reshape(-1,1), self.allNrms[self.allN:,].reshape(-1,1) ])
+        self.constraints = self.nrms * np.vstack( \
+                                    ( \
+                                        np.hstack((-1*self.nb[self.nonRedundantHyperplanes,],self.nA[self.nonRedundantHyperplanes,:])), \
+                                        np.hstack((-1*self.fb,self.fA)) \
+                                    ) \
+                                )
         self.N = len(self.nonRedundantHyperplanes)
         self.wholeBytes = (self.N + 7) // 8
         self.tailBits = self.N - 8*(self.N // 8)
