@@ -1494,12 +1494,7 @@ class successorWorker(Chare):
                             if f == N-1: continue
                             s = sorted(tuple(INTrepSet | {f})) if not f in INTrepSet else sorted(tuple(INTrepSet - {f}))
                             print(f'    """""""" computed adjacency region {s}')
-                            qs.append( \
-                                self.thisProxy[self.thisIndex].query(region_helpers.recodeRegNewN(N - oldAdj[f], s, N ),ret=True) \
-                            )
-                            holder[id(qs[-1])] = f
-                        for fut in charm.iwait(qs):
-                            faceWitnesses[holder[id(fut)]] = fut.get()
+                            faceWitnesse[f] = self.thisProxy[self.thisIndex].query(region_helpers.recodeRegNewN(N - oldAdj[f], s, N ),ret=True).get()
                     faceWitnesses[h] = intPt
                     print(f'    """""""" faceWitnesses = {faceWitnesses}')
                     newFaces = [N-1]
