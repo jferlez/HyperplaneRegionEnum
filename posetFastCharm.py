@@ -1415,7 +1415,15 @@ class successorWorker(Chare):
 
         if len(rebasedINTrep) == 0 and Ntab < N:
             initialRegion = True
-            newBaseRegFullTup = tuple(np.nonzero((-self.flippedConstraints.constraints[:(self.flippedConstraints.N-1),1:] @ witness - self.flippedConstraints.constraints[:(self.flippedConstraints.N-1),0].reshape(-1,1)).flatten() >= self.tol)[0])
+            newBaseRegFullTup = tuple( \
+                                    np.nonzero( \
+                                        ( \
+                                            -self.flippedConstraints.constraints[:(self.flippedConstraints.N-1),1:] @ witness \
+                                            - self.flippedConstraints.constraints[:(self.flippedConstraints.N-1),0].reshape(-1,1) \
+                                        ).flatten() \
+                                        >= self.tol \
+                                    )[0] \
+                                )
             boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, newBaseRegFullTup, N)
             boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(N - Ntab, INTrepFull, N)
             rebasedINTrep = region_helpers.recodeRegNewN(N-Ntab,self.flippedConstraints.rebaseRegion(INTrepFull)[0],N)[1]
