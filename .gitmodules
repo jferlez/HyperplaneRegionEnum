@@ -1,0 +1,3 @@
+[submodule "vectorSet"]
+	path = vectorSet
+	url = https://github.com/jferlez/vectorSet
