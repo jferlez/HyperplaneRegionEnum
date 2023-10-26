@@ -63,7 +63,7 @@ class flipConstraints:
     def insertHyperplane(self,newA,newb):
         newPt = None
         newSign = None
-        newHyperplane = np.hstack([newA, -newb])
+        newHyperplane = np.hstack([-newb, newA])
         if np.all(np.abs( newA.reshape(1,-1) @ self.pt - newb ) <= self.tol):
             newPt = findInteriorPoint(np.vstack([self.constraints,newHyperplane]))
             newSign = 1
