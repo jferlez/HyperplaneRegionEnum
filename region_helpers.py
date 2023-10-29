@@ -2,11 +2,14 @@ import numpy as np
 import encapsulateLP
 from copy import copy, deepcopy
 import posetFastCharm_numba
-
+from vectorSet.vectorSet import vectorSet
+from itertools import chain
 
 class flipConstraints:
 
     def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9, normalize=None):
+        if not normalize is None and not ( type(normalize) is float and normalize > 0.0 ):
+            raise ValueError('normalize option must be None or a float > 0.0')
         v = nA @ pt
         v = v.flatten() - nb.flatten()
         self.flipMapN = np.where(v<0,-1,1)
@@ -15,6 +18,7 @@ class flipConstraints:
         self.nA = np.diag(self.flipMapN) @ nA
         self.nb = np.diag(self.flipMapN) @ nb
         self.N = len(nA)
+        self.allN = self.N
         self.d = len(nA[0])
         self.pt = pt
         self.tol = tol
@@ -28,28 +32,40 @@ class flipConstraints:
                 raise ValueError('Supplied point must satisfy all specified \'fixed\' constraints -- i.e. fA @ pt >= fb !')
             self.fA = fA
             self.fb = fb
-            self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
+            # create a vector set for the fixed constraints
+            self.fSet = vectorSet( np.hstack((-1*self.fb,self.fA)) )
+            self.allConstraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), self.fSet.getUniqueRows() ) )
 
         else:
             self.fA = None
             self.fb = None
-            self.constraints = np.hstack((-self.nb,self.nA))
+            self.allConstraints = np.hstack((-self.nb,self.nA))
+            self.fSet = None
 
-        self.allNrms = np.ones((self.constraints.shape[0],1),dtype=np.float64)
-        if not normalize is None and type(self.normalize) is float and self.normalize > 0.0:
-            self.allNrms = self.normalize / np.linalg.norm(self.constraints[:,1:],axis=1).reshape(-1,1)
-            self.constraints = self.allNrms * self.constraints
+        self.allNrms = np.ones((self.allConstraints.shape[0],1),dtype=np.float64)
+        if not normalize is None:
+            self.allNrms = self.normalize / np.linalg.norm(self.allConstraints[:,1:],axis=1).reshape(-1,1)
+            self.allConstraints = self.allNrms * self.allConstraints
         else:
             self.normalize = None
         self.nrms = self.allNrms
 
+        # Create a vector set for the main hyperplanes
+        self.hyperSet = vectorSet(self.allConstraints[:self.N,:])
+
         # self.root = bytearray( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
         # self.root = int.from_bytes(self.root, 'little')
         self.root = tuple()
-        self.allConstraints = self.constraints
-        self.allN = self.N
-        self.redundantFlips = np.full(self.N,1,dtype=np.int64)
-        self.nonRedundantHyperplanes = np.arange(self.N)
+        self.constraints = self.allConstraints
+        self.nonRedundantHyperplanes = np.array(self.hyperSet.uniqueRowIdx,dtype=np.int64) if self.fSet is None \
+                                                            else np.array(self.hyperSet.subtractSet(self.fSet),dtype=np.int64)
+        self.N = len(self.nonRedundantHyperplanes)
+        if self.N < self.allN:
+            print(f'WARNING: some hyerplanes corresponded to fixed boundary hyperplanes!')
+        self.constraints = np.vstack([ self.constraints[self.nonRedundantHyperplanes,:], self.constraints[self.allN:,:]])
+        self.nrms = np.vstack([ self.nrms[self.nonRedundantHyperplanes,], self.nrms[self.allN:,] ])
+        self.redundantFlips = np.full(self.allN,-1,dtype=np.int64)
+        self.redundantFlips[self.nonRedundantHyperplanes,] = np.ones_like(self.nonRedundantHyperplanes,dtype=np.int64)
         self.wholeBytes = (self.N + 7) // 8
         self.tailBits = self.N - 8*(self.N // 8)
         self.wholeBytesAllN = self.wholeBytes
@@ -61,49 +77,49 @@ class flipConstraints:
         return deepcopy(self)
 
     def insertHyperplane(self,newA,newb):
-        newPt = None
         newSign = None
         newHyperplane = np.hstack([-newb, newA])
-        if np.all(np.abs( newA.reshape(1,-1) @ self.pt - newb ) <= self.tol):
-            newPt = findInteriorPoint(np.vstack([self.constraints,newHyperplane]))
-            newSign = 1
-            if newPt is None:
-                newPt = findInteriorPoint(np.vstack([self.constraints,-newHyperplane]))
-                newSign = -1
-            if newPt is None:
-                raise ValueError(f'Error: inserted hyperplane doesn\'t split root region associated with point {self.pt}')
-        else:
-            newSign = 1 if newA.reshape(1,-1) @ self.pt > newb + self.tol else -1
+        newSign = 1 if newA.reshape(1,-1) @ self.pt > newb + self.tol else -1
         self.flipMapN = np.hstack([self.flipMapN, np.array([newSign],dtype=np.int64)])
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
         self.flipMapSet = frozenset(self.flipMapSetNP)
+        # self.baseN allows us to track which hyperplanes were added using the insertHyperplane method
         if self.baseN is None:
             self.baseN = self.N
-        self.N += 1
-        self.pt = self.pt if newPt is None else newPt
         self.nA = np.vstack([self.nA, newSign * newA])
         self.nb = np.vstack([self.nb, newSign * newb])
         if self.fA is None:
-            self.constraints = np.hstack((-self.nb,self.nA))
+            self.allConstraints = np.hstack((-self.nb,self.nA))
         else:
-            self.constraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), np.hstack((-1*self.fb,self.fA)) ) )
+            self.allConstraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), self.allConstraints[self.allN:,:] ) )
 
-        self.allNrms = np.ones((self.constraints.shape[0],1),dtype=np.float64)
-        if not self.normalize is None and type(self.normalize) is float and self.normalize > 0.0:
-            self.allNrms = self.normalize / np.linalg.norm(self.constraints[:,1:],axis=1).reshape(-1,1)
-            self.constraints = self.allNrms * self.constraints
+        self.allNrms = np.vstack([ self.allNrms[:self.allN,], np.array([[1]],dtype=np.int64), self.allNrms[self.allN:,] ])
+        if not self.normalize is None:
+            self.allNrms[self.allN,] = self.normalize / np.linalg.norm(self.constraints[self.allN,1:].reshape(1,-1),axis=1).reshape(-1,1)
+            self.allConstraints[self.allN,:] = self.allNrms[self.allN] * self.allConstraints[self.allN,:]
         else:
             self.normalize = None
-        self.nrms = self.allNrms
 
-        self.allConstraints = self.constraints
-        self.allN = self.N
-        self.redundantFlips = np.full(self.N,1,dtype=np.int64)
-        self.nonRedundantHyperplanes = np.arange(self.N)
-        self.wholeBytes = (self.N + 7) // 8
-        self.tailBits = self.N - 8*(self.N // 8)
-        self.wholeBytesAllN = self.wholeBytes
-        self.tailBitsAllN = self.tailBits
+        self.allN += 1
+
+        print(f'newHyperplane = {newHyperplane}; {self.fSet.isElem(newHyperplane)}')
+
+        if (not self.fSet is None and not self.fSet.isElem(newHyperplane)) and self.hyperSet.insertRow(newHyperplane):
+            self.nonRedundantHyperplanes = np.array(self.nonRedundantHyperplanes.tolist() + [self.allN-1], dtype=np.int64)
+            self.N = len(self.nonRedundantHyperplanes)
+
+            self.constraints = np.vstack([ self.constraints[self.nonRedundantHyperplanes,:], self.constraints[self.allN:,:]])
+            self.nrms = np.vstack([ self.nrms[self.nonRedundantHyperplanes,], self.nrms[self.allN:,] ])
+            self.redundantFlips = np.full(self.allN,-1,dtype=np.int64)
+            self.redundantFlips[self.nonRedundantHyperplanes,] = np.ones_like(self.nonRedundantHyperplanes,dtype=np.int64)
+
+            self.wholeBytes = (self.N + 7) // 8
+            self.tailBits = self.N - 8*(self.N // 8)
+            self.wholeBytesAllN = self.wholeBytes
+            self.tailBitsAllN = self.tailBits
+            return True
+        else:
+            return False
 
 
     # This method returns flips of the hyperplanes *as provided* to obtain the region
@@ -118,9 +134,15 @@ class flipConstraints:
             nodeBytes = nodeBytesInt
         regSet = np.full(self.allN, True, dtype=bool)
         regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
-        regSet[nodeBytes,] = np.full(len(nodeBytes),False,dtype=bool)
-        unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,list(copy(nodeBytes)))
+        # sel = self.nonRedundantHyperplanes[nodeBytes,]
+        sel = np.array(sorted(list(chain.from_iterable( \
+                   [ self.hyperSet.expandDuplicates(h) for h in self.nonRedundantHyperplanes[nodeBytes,] ] \
+              ))),dtype=np.int64)
+        regSet[sel,] = np.full(len(sel),False,dtype=bool)
+        unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,sel.tolist())
         regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
+        if not allN:
+            regSet = regSet[self.nonRedundantHyperplanes,]
         return np.nonzero(regSet)[0]
 
     # This method accepts region specifications *relative* to the original flipping
@@ -148,7 +170,10 @@ class flipConstraints:
             nodeBytes = tuple(self.bytesToList(nodeBytesInt))
         else:
             nodeBytes = nodeBytesInt
-        return tuple(self.nonRedundantHyperplanes[nodeBytes,])
+        sel = sorted(list(chain.from_iterable( \
+                   [ self.hyperSet.expandDuplicates(h) for h in self.nonRedundantHyperplanes[nodeBytes,] ] \
+              )))
+        return tuple(sel) #tuple(self.nonRedundantHyperplanes[nodeBytes,])
 
     def setRebase(self, rebasePoint):
         self.rebasePt = rebasePoint
@@ -170,19 +195,40 @@ class flipConstraints:
         retTup = tuple(sorted(list( (rebaseSet - doubleFlip) | (regSet - doubleFlip) )))
         return tupToBytes(retTup, self.wholeBytesAllN if allN else self.wholeBytes, self.tailBitsAllN if allN else self.tailBits), retTup
 
-    def expandRegion(self, nodeBytesInt):
-        if isinstance(nodeBytesInt,bytearray):
-            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
-        else:
-            nodeBytes = nodeBytesInt
-        return nodeBytes
+    # def expandRegion(self, nodeBytesInt):
+    #     if isinstance(nodeBytesInt,bytearray):
+    #         nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+    #     else:
+    #         nodeBytes = nodeBytesInt
+    #     return nodeBytes
 
-    def collapseRegion(self, nodeBytesInt):
+    # def collapseRegion(self, nodeBytesInt):
+    #     if isinstance(nodeBytesInt,bytearray):
+    #         nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+    #     else:
+    #         nodeBytes = nodeBytesInt
+    #     return nodeBytes
+    def expandRegion(self,nodeBytesInt):
         if isinstance(nodeBytesInt,bytearray):
             nodeBytes = tuple(self.bytesToList(nodeBytesInt))
         else:
             nodeBytes = nodeBytesInt
-        return nodeBytes
+        regSet = np.full(self.allN,False,dtype=bool)
+        sel = sorted(list(chain.from_iterable( \
+                   [ self.hyperSet.expandDuplicates(h) for h in self.nonRedundantHyperplanes[nodeBytes,] ] \
+              )))
+        for ii in sel:
+            regSet[sel] = True
+        return tuple(np.nonzero(regSet)[0])
+
+    def collapseRegion(self,nodeBytesInt):
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+        else:
+            nodeBytes = nodeBytesInt
+        regSet = np.full(self.allN,False, dtype=bool)
+        regSet[nodeBytes,] = np.full(len(nodeBytes),True,dtype=bool)
+        return tuple(np.nonzero(regSet[self.nonRedundantHyperplanes,])[0])
 
     def bytesToList(self, nodeBytes, allN=False):
         return bytesToList(nodeBytes, self.wholeBytes if not allN else self.wholeBytesAllN, self.tailBits if not allN else self.tailBitsAllN)
@@ -193,6 +239,7 @@ class flipConstraints:
 class flipConstraintsReduced(flipConstraints):
 
     def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9,normalize=None):
+        print(f'WARNING: The class flipConstraintsReduced is deprecated, and may not work correctly!')
         super().__init__(nA, nb, pt, fA=fA, fb=fb, tol=tol, rTol=rTol, normalize=normalize)
         if self.fA is None:
             return
@@ -228,20 +275,20 @@ class flipConstraintsReducedMin(flipConstraints):
             return
 
         mat = copy(self.constraints[(self.N-1):,:])
-        self.redundantFlips = np.full(self.N,1,dtype=np.float64)
+        # self.redundantFlips = np.full(self.allN,-1,dtype=np.float64)
         for k in range(self.N):
-            mat[0,:] = self.constraints[k,:]
+            mat[0,:] = self.constraints[k,:] # same as self.allConstraints[self.nonRedundantHyperplanes[k],:]
             if len(lpMinHRep(mat,None,[0])) == 0:
-                self.redundantFlips[k] = -1
+                self.redundantFlips[self.nonRedundantHyperplanes[k]] = -1
+            else:
+                self.redundantFlips[self.nonRedundantHyperplanes[k]] = 1
         self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
 
-        self.allConstraints = copy(self.constraints)
-        self.allN = self.N
         self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,].reshape(-1,1), self.allNrms[self.allN:,].reshape(-1,1) ])
         self.constraints = self.nrms * np.vstack( \
                                     ( \
-                                        np.hstack((-1*self.nb[self.nonRedundantHyperplanes,],self.nA[self.nonRedundantHyperplanes,:])), \
-                                        np.hstack((-1*self.fb,self.fA)) \
+                                        self.allConstraints[self.nonRedundantHyperplanes,:], \
+                                        self.allConstraints[self.allN:,:] \
                                     ) \
                                 )
         self.N = len(self.nonRedundantHyperplanes)
@@ -253,66 +300,75 @@ class flipConstraintsReducedMin(flipConstraints):
         self.root = tuple()
 
     def insertHyperplane(self,newA,newb):
-        origNonRedundant = copy(self.redundantFlips)
         N = self.N
         if self.baseN is None:
-            self.baseN = len(np.nonzero(self.redundantFlips > 0)[0])
-        super().insertHyperplane(newA,newb)
-        mat = copy(self.constraints[(self.N-1):,:])
-        self.redundantFlips = np.full(self.N,1,dtype=np.float64)
-        self.redundantFlips[:(self.N-1)] = origNonRedundant
-        for k in [self.N-1]:
-            mat[0,:] = self.constraints[k,:]
-            if len(lpMinHRep(mat,None,[0])) == 0:
-                self.redundantFlips[k] = -1
-        self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+            self.baseN = self.N
+        if super().insertHyperplane(newA,newb):
+            mat = copy(self.constraints[(self.N-1):,:])
+            # self.redundantFlips = np.hstack([self.redundantFlips, np.array([-1],dtype=np.int64)])
+            for k in [self.N-1]:
+                mat[0,:] = self.constraints[k,:]
+                if len(lpMinHRep(mat,None,[0])) == 0:
+                    self.redundantFlips[self.nonRedundantHyperplanes[k]] = -1
+                else:
+                    self.redundantFlips[self.nonRedundantHyperplanes[k]] = 1
+            self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
 
-        self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,].reshape(-1,1), self.allNrms[self.allN:,].reshape(-1,1) ])
-        self.constraints = self.nrms * np.vstack( \
-                                    ( \
-                                        np.hstack((-1*self.nb[self.nonRedundantHyperplanes,],self.nA[self.nonRedundantHyperplanes,:])), \
-                                        np.hstack((-1*self.fb,self.fA)) \
-                                    ) \
-                                )
-        self.N = len(self.nonRedundantHyperplanes)
-        self.wholeBytes = (self.N + 7) // 8
-        self.tailBits = self.N - 8*(self.N // 8)
-        self.wholeBytesAllN = (self.allN + 7) // 8
-        self.tailBitsAllN = self.allN - 8*(self.allN // 8)
-
-    def translateRegion(self,nodeBytesInt, allN=True):
-        if isinstance(nodeBytesInt,bytearray):
-            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+            self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,].reshape(-1,1), self.allNrms[self.allN:,].reshape(-1,1) ])
+            self.constraints = self.nrms * np.vstack( \
+                                        ( \
+                                            self.allConstraints[self.nonRedundantHyperplanes,:], \
+                                            self.allConstraints[self.allN:,:] \
+                                        ) \
+                                    )
+            self.N = len(self.nonRedundantHyperplanes)
+            self.wholeBytes = (self.N + 7) // 8
+            self.tailBits = self.N - 8*(self.N // 8)
+            self.wholeBytesAllN = (self.allN + 7) // 8
+            self.tailBitsAllN = self.allN - 8*(self.allN // 8)
+            return True
         else:
-            nodeBytes = nodeBytesInt
-        regSet = np.full(self.allN, True, dtype=bool)
-        regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
-        sel = self.nonRedundantHyperplanes[nodeBytes,]
-        regSet[sel,] = np.full(len(sel),False,dtype=bool)
-        unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,sel.tolist())
-        regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
-        if not allN:
-            regSet = regSet[self.nonRedundantHyperplanes,]
-        return np.nonzero(regSet)[0]
+            return False
 
-    def expandRegion(self,nodeBytesInt):
-        if isinstance(nodeBytesInt,bytearray):
-            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
-        else:
-            nodeBytes = nodeBytesInt
-        regSet = np.full(self.allN,False,dtype=bool)
-        for ii in nodeBytes:
-            regSet[self.nonRedundantHyperplanes[ii]] = True
-        return tuple(np.nonzero(regSet)[0])
+    # def translateRegion(self,nodeBytesInt, allN=True):
+    #     if isinstance(nodeBytesInt,bytearray):
+    #         nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+    #     else:
+    #         nodeBytes = nodeBytesInt
+    #     regSet = np.full(self.allN, True, dtype=bool)
+    #     regSet[tuple(self.flipMapSet),] = np.full(len(self.flipMapSet),False,dtype=bool)
+    #     # sel = self.nonRedundantHyperplanes[nodeBytes,]
+    #     sel = np.array(sorted(list(chain.from_iterable( \
+    #                [ self.hyperSet.expandDuplicates(h) for h in self.nonRedundantHyperplanes[nodeBytes,] ] \
+    #           ))),dtype=np.int64)
+    #     regSet[sel,] = np.full(len(sel),False,dtype=bool)
+    #     unflipped = posetFastCharm_numba.is_in_set(self.flipMapSetNP,sel.tolist())
+    #     regSet[unflipped,] = np.full(len(unflipped),True,dtype=bool)
+    #     if not allN:
+    #         regSet = regSet[self.nonRedundantHyperplanes,]
+    #     return np.nonzero(regSet)[0]
 
-    def collapseRegion(self,nodeBytesInt):
-        if isinstance(nodeBytesInt,bytearray):
-            nodeBytes = tuple(self.bytesToList(nodeBytesInt))
-        else:
-            nodeBytes = nodeBytesInt
-        regSet = np.full(self.allN,False, dtype=bool)
-        regSet[nodeBytes,] = np.full(len(nodeBytes),True,dtype=bool)
-        return tuple(np.nonzero(regSet[self.nonRedundantHyperplanes,])[0])
+    # def expandRegion(self,nodeBytesInt):
+    #     if isinstance(nodeBytesInt,bytearray):
+    #         nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+    #     else:
+    #         nodeBytes = nodeBytesInt
+    #     regSet = np.full(self.allN,False,dtype=bool)
+    #     sel = sorted(list(chain.from_iterable( \
+    #                [ self.hyperSet.expandDuplicates(h) for h in self.nonRedundantHyperplanes[nodeBytes,] ] \
+    #           )))
+    #     for ii in sel:
+    #         regSet[sel] = True
+    #     return tuple(np.nonzero(regSet)[0])
+
+    # def collapseRegion(self,nodeBytesInt):
+    #     if isinstance(nodeBytesInt,bytearray):
+    #         nodeBytes = tuple(self.bytesToList(nodeBytesInt))
+    #     else:
+    #         nodeBytes = nodeBytesInt
+    #     regSet = np.full(self.allN,False, dtype=bool)
+    #     regSet[nodeBytes,] = np.full(len(nodeBytes),True,dtype=bool)
+    #     return tuple(np.nonzero(regSet[self.nonRedundantHyperplanes,])[0])
 
 def byteLenFromN(N):
     return (  (N + 7) // 8  ), (  N - 8*(N // 8)  )
