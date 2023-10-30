@@ -73,6 +73,17 @@ class flipConstraints:
         self.rebasePt = None
         self.baseN = None
 
+    def serialize(self):
+        self.hyperSet.serialize()
+        if not self.fSet is None:
+            self.fSet.serialize()
+        return self
+    def deserialize(self):
+        self.hyperSet.deserialize()
+        if not self.fSet is None:
+            self.fSet.deserialize()
+        return self
+
     def copy(self):
         return deepcopy(self)
 

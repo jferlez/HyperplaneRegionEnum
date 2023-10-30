@@ -62,11 +62,11 @@ class localVar(Chare):
         self.skip = False
         self.counterExample = None
     def setConstraintsOnly(self,constraints):
-        self.constraints = constraints
+        self.constraints = constraints.deserialize()
         self.schedCount = 0
         self.skip = False
     def getConstraintsOnly(self):
-        return self.constraints
+        return self.constraints.serialize()
     # This method **must** be implemented for DistributedHash to work:
     @coro
     def getSchedCount(self):
@@ -210,10 +210,10 @@ class Poset(Chare):
             self.flippedConstraints.setRebase(copy(rebasePt))
 
 
-        stat = self.succGroup.initialize(self.N,self.flippedConstraints,timeout,awaitable=True)
+        stat = self.succGroup.initialize(self.N,self.flippedConstraints.serialize(),timeout,awaitable=True)
         stat.get()
         if self.useDefaultLocalVarGroup:
-            self.localVarGroup.setConstraintsOnly(self.flippedConstraints,awaitable=True).get()
+            self.localVarGroup.setConstraintsOnly(self.flippedConstraints.serialize(),awaitable=True).get()
 
         self.populated = False
         self.oldFlippedConstraints = None
@@ -721,7 +721,7 @@ class successorWorker(Chare):
     def initialize(self,N,constraints,timeout):
         self.workInts = []
         self.N = N
-        self.flippedConstraints = constraints
+        self.flippedConstraints = constraints.deserialize()
         self.constraints = self.flippedConstraints.constraints
         # self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver='glpk')
         self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP
