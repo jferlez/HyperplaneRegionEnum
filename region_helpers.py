@@ -89,7 +89,7 @@ class flipConstraints:
 
     def insertHyperplane(self,newA,newb):
         newSign = None
-        newHyperplane = np.hstack([-newb, newA])
+        newHyperplane = np.hstack([-newb, -newA])
         newSign = 1 if newA.reshape(1,-1) @ self.pt > newb + self.tol else -1
         self.flipMapN = np.hstack([self.flipMapN, np.array([newSign],dtype=np.int64)])
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
