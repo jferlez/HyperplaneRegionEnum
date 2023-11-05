@@ -223,7 +223,7 @@ class Poset(Chare):
 
     @coro
     def getConstraintsObject(self):
-        return self.flippedConstraints
+        return self.flippedConstraints.serialize()
 
     @coro
     def setSuccessorCommonProperty(self,prop,val):
