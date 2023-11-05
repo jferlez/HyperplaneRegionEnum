@@ -185,6 +185,8 @@ class Poset(Chare):
         self.fixedA = fixedA.copy()
         self.fixedb = fixedb.copy()
         self.normalize = normalize
+        if not self.normalize is None or not ( isinstance(self.normalize,float) and self.normalize > 0.0 ):
+            raise ValueError('ERROR: normalize argument must be \'None\' or a float > 0')
         self.N = len(self.AbPairs[0][0])
 
 
@@ -203,7 +205,7 @@ class Poset(Chare):
                 self.pt, \
                 self.fixedA, \
                 self.fixedb, \
-                normalize=1.0 \
+                normalize=self.normalize \
             )
         self.N = self.flippedConstraints.N
         if not rebasePt is None:
