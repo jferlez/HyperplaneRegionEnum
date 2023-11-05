@@ -178,6 +178,7 @@ class HashWorker(Chare):
             return False
         else:
             self.table = self.tableStore[tableName]
+            self.activeTableName = tableName
             self.levelList = []
             self.level = -1
             return True
