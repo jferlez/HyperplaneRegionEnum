@@ -489,8 +489,11 @@ class Poset(Chare):
 
         # From now on, we are going to work in CDD format...
         hyper = np.hstack([-newb, newA])
+        print(f'Old hyper = {hyper}')
+        hyper = aug.constraints[aug.N-1,:]
+        print(f'New hyper = {hyper}')
 
-        projWb, subIdx = region_helpers.projectConstraints(aug.constraints[:aug.N,:],hyper,tol=tol,rTol=rTol)
+        projWb, subIdx = region_helpers.projectConstraints(aug.constraints[:aug.N-1,:],hyper,tol=tol,rTol=rTol)
         projFixed, _ = region_helpers.projectConstraints(aug.constraints[aug.N:,:],hyper,subIdx=subIdx,tol=tol,rTol=rTol)
 
         if projWb.shape[1] > 1: # Should be equivalent to self.tll.n >= 2
