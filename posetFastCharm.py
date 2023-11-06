@@ -467,9 +467,11 @@ class Poset(Chare):
         newb = copy(newb).flatten() / nrm
         self.oldFlippedConstraints = deepcopy(self.flippedConstraints)
 
-        self.flippedConstraints.insertHyperplane(newA, newb)
-        aug = self.flippedConstraints
-        if aug.N == self.oldFlippedConstraints.N:
+        inserted = self.flippedConstraints.insertHyperplane(newA, newb)
+        # To do?: have each instance insert the hyperplane separately for speed (avoids copying custom object)
+        aug = self.flippedConstraints.deserialize()
+        if not inserted:
+            self.flippedConstraints.serialize()
             self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
             self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
             return True
@@ -507,7 +509,7 @@ class Poset(Chare):
             return False
 
         print(hyper[1:].shape)
-        print(pt.shape)
+        print(pt)
 
         ptLift = np.zeros((hyper.shape[0]-1,1),dtype=np.float64)
         ptLift[:subIdx,0] = pt[:subIdx,0]
@@ -561,8 +563,8 @@ class Poset(Chare):
 
         aug.root = tuple(newBaseRegFullTup)
         aug.setRebase(rebasePt)
-        self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
-        self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
+        self.succGroup.initialize(aug.N, aug.serialize(), None, awaitable=True).get()
+        self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
 
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
 
