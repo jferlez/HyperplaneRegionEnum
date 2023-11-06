@@ -553,7 +553,7 @@ class Poset(Chare):
         for idx in range(1,aug.N - aug.baseN + 1):
             newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, newBaseRegFull, aug.N)
             print((newBaseReg, newBaseRegTup, newBaseRegN))
-            retVal = self.succGroup[0].query([newBaseReg, newBaseRegTup, newBaseRegN],awaitable=True).get()
+            retVal = self.succGroup[0].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
             print(retVal)
             if retVal[0] > 0:
                 stripNum = idx
