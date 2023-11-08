@@ -1487,7 +1487,7 @@ class successorWorker(Chare):
                             if f == N-1: continue
                             s = sorted(tuple(INTrepSet | {f})) if not f in INTrepSet else sorted(tuple(INTrepSet - {f}))
                             print(f'    """""""" computed adjacency region {s}')
-                            faceWitnesses[f] = self.thisProxy[self.thisIndex].query(region_helpers.recodeRegNewN(N - oldAdj[f], s, N ),ret=True).get()
+                            faceWitnesses[f] = self.thisProxy[self.thisIndex].query(region_helpers.recodeRegNewN(-N + oldAdj[f], s, N ),ret=True).get()
                     faceWitnesses[h] = intPt
                     print(f'    """""""" faceWitnesses = {faceWitnesses}')
                     newFaces = [N-1]
