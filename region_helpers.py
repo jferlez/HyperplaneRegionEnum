@@ -385,7 +385,7 @@ def byteLenFromN(N):
     return (  (N + 7) // 8  ), (  N - 8*(N // 8)  )
 
 def recodeRegNewN(strip, reg, N):
-    if isinstance(reg,tuple):
+    if isinstance(reg,tuple) or isinstance(reg,list):
         reg = tupToBytes( reg, *byteLenFromN(N) )
     if strip == 0:
         return reg, tuple(bytesToList(reg,*byteLenFromN(N))), N
