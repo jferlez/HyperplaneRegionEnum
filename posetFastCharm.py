@@ -1403,6 +1403,8 @@ class successorWorker(Chare):
         rebasedINTrepSet = set(rebasedINTrep)
         print(f'///// rebasedINTrep = {rebasedINTrep}')
 
+        # Note for clarity: the if condition is only needed on the first pass, since all subsequently processed nodes
+        # will be encoded using N hyperplanes (old nodes will be deleted and re-inserted)
         if len(rebasedINTrep) == 0 and Ntab < N:
             initialRegion = True
             newBaseRegFullTup = tuple( \
