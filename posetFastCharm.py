@@ -1442,7 +1442,7 @@ class successorWorker(Chare):
         splitRegions = []
 
 
-        for h in validFlips:
+        for hh in validFlips:
             faceWitnesses = None
             INTrepSet = set(INTrepFull)
             if initialRegion:
@@ -1453,6 +1453,7 @@ class successorWorker(Chare):
                 h = -1
                 print(f'    """""""" Setting initial region properties oldFace = {oldFace}; oldAdj = {oldAdj}')
             else:
+                h = hh
                 H[h,:] = -H[h,:]
                 INTrepSet = INTrepSet | {h} if not h in INTrepSet else INTrepSet - {h}
                 q = self.thisProxy[self.thisIndex].query( region_helpers.recodeRegNewN(N-adj[h], sorted(tuple(INTrepSet)), N) , ret=True).get()
