@@ -46,11 +46,16 @@ class PosetNode(DistributedHash.Node):
             for ky in adj.keys():
                 self.adj[ky] = adj[ky]
 
+    # Do not override these methods:
     def checkForInsert(self):
         return True
 
     def updateForInsert(self, lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args):
-        self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
+        self.face |= set(face)
+        if adj and isinstance(adj,dict):
+            for ky in adj.keys():
+                self.adj[ky] = adj[ky]
+        # self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
 
 
 class localVar(Chare):
