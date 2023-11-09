@@ -524,6 +524,25 @@ class Poset(Chare):
         ptLift[(subIdx+1):,0] = pt[subIdx:,0]
         ptLift[subIdx,0] = (-1/hyper[subIdx+1]) * (-(hyperSlice.reshape(1,-1) @ pt)[0,0] + hyper[0])
 
+        # This will create a constraints object for the projected constraints
+        # (Notably: with duplicates hidden by the new functionality)
+        projFlipConstraints = region_helpers.flipConstraintsReducedMin( \
+                                            projWb[:,1:], \
+                                            -projWb[:,0].reshape(-1,1), \
+                                            pt, \
+                                            fA = projFixed[:,1:], \
+                                            fb = -projFixed[:,0].reshape(-1,1), \
+                                            tol = tol, \
+                                            rTol = rTol, \
+                                            normalize = 1.0 \
+                                        )
+
+        self.succGroup.setProperty('iHyper', hyper, awaitable=True).get()
+        self.succGroup.setProperty('iFlipConstraints', projFlipConstraints.serialize(), awaitable=True).get()
+        self.succGroup.setProperty('iSubIdx', subIdx, awaitable=True).get()
+        self.succGroup.setProperty('iIs1d', is1d, awaitable=True).get()
+        self.succGroup.setProperty('iPtLift', ptLift, awaitable=True).get()
+
         print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
 
         newBaseRegFullTup = tuple(np.nonzero((-aug.constraints[:(aug.N-1),1:] @ ptLift - aug.constraints[:(aug.N-1),0].reshape(-1,1)).flatten() >= tol)[0])
@@ -751,6 +770,11 @@ class successorWorker(Chare):
         self.rsDone = False
         self.rsDepth = 0
         self.rsRegionCount = 0
+        self.iHyper = None
+        self.iFlipConstraints = None
+        self.iSubIdx = None
+        self.iIs1d = None
+        self.iPtLift = None
     @coro
     def getTimeout(self):
         return self.timedOut
@@ -803,6 +827,11 @@ class successorWorker(Chare):
 
         self.Hcol0Close = self.tol + self.rTol * np.abs(self.constraints[:,0])
         self.Hcol0CloseVertex = self.constraints[:,0] - self.Hcol0Close
+        self.iHyper = None
+        self.iFlipConstraints = None
+        self.iSubIdx = None
+        self.iIs1d = None
+        self.iPtLift = None
 
     @coro
     def setProperty(self,prop,val):
