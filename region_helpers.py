@@ -408,7 +408,7 @@ def recodeRegNewN(strip, reg, N):
 
 # H2 is a CDD-style matrix specifying inequality constraints, and intIdx is a list of indices of inequalities to check for redundancy
 # The return value is a list of indices into the list intIdx specifying which of those constraints are non-redundant
-def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None):
+def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None,tol=1e-9,rTol=1e-9):
     if len(intIdx) == 0:
         return np.full(0,0,dtype=bool)
 
@@ -453,7 +453,7 @@ def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None):
             print('Infeasible or numerical ill-conditioning detected at node -- RESULTS MAY NOT BE ACCURATE!!')
             return [set([]), 0]
         if (safe and -H2[intIdx[idx],1:]@x < H2[intIdx[idx],0]) \
-            or (not safe and (status == 'primal infeasible' or np.all(-H2[intIdx[idx],1:]@x - H2[intIdx[idx],0] <= 1e-10))):
+            or (not safe and (status == 'primal infeasible' or np.all(-H2[intIdx[idx],1:]@x - H2[intIdx[idx],0] <= tol + rTol * np.abs(H[:,0].reshape(-1,1))))):
             # inequality is redundant, so skip it
             constraint_list[offsetIdx] = False
         else:
