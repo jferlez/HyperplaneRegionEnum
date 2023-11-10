@@ -748,6 +748,11 @@ class successorWorker(Chare):
         self.sendWitness = False
         self.deferLock = False
         self.hashedNodeCount = 0
+        self.iHyper = None
+        self.iFlipConstraints = None
+        self.iSubIdx = None
+        self.iIs1d = None
+        self.iPtLift = None
 
     def initialize(self,N,constraints,timeout):
         self.workInts = []
@@ -827,11 +832,6 @@ class successorWorker(Chare):
 
         self.Hcol0Close = self.tol + self.rTol * np.abs(self.constraints[:,0])
         self.Hcol0CloseVertex = self.constraints[:,0] - self.Hcol0Close
-        self.iHyper = None
-        self.iFlipConstraints = None
-        self.iSubIdx = None
-        self.iIs1d = None
-        self.iPtLift = None
 
     @coro
     def setProperty(self,prop,val):
