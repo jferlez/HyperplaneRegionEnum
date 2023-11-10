@@ -537,12 +537,6 @@ class Poset(Chare):
                                             normalize = 1.0 \
                                         )
 
-        self.succGroup.setProperty('iHyper', hyper, awaitable=True).get()
-        self.succGroup.setProperty('iFlipConstraints', projFlipConstraints.serialize(), awaitable=True).get()
-        self.succGroup.setProperty('iSubIdx', subIdx, awaitable=True).get()
-        self.succGroup.setProperty('iIs1d', is1d, awaitable=True).get()
-        self.succGroup.setProperty('iPtLift', ptLift, awaitable=True).get()
-
         print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
 
         newBaseRegFullTup = tuple(np.nonzero((-aug.constraints[:(aug.N-1),1:] @ ptLift - aug.constraints[:(aug.N-1),0].reshape(-1,1)).flatten() >= tol)[0])
@@ -592,6 +586,12 @@ class Poset(Chare):
         aug.setRebase(rebasePt)
         self.succGroup.initialize(aug.N, aug.serialize(), None, awaitable=True).get()
         self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
+
+        self.succGroup.setProperty('iHyper', hyper, awaitable=True).get()
+        self.succGroup.setProperty('iFlipConstraints', projFlipConstraints.serialize(), awaitable=True).get()
+        self.succGroup.setProperty('iSubIdx', subIdx, awaitable=True).get()
+        self.succGroup.setProperty('iIs1d', is1d, awaitable=True).get()
+        self.succGroup.setProperty('iPtLift', ptLift, awaitable=True).get()
 
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
 
