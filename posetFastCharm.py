@@ -1458,6 +1458,7 @@ class successorWorker(Chare):
             initialRegion = False
 
         validFlips = face - rebasedINTrepSet
+        validFlipsList = sorted(list(validFlips))
 
         # We have to retrieve the information from the node in the table that is going to be split
         q = self.thisProxy[self.thisIndex].query( [boolIdxNoFlip, INTrep, Ntab], op=DistributedHash.QUERYOP_DELETE, ret=True).get()
@@ -1477,6 +1478,35 @@ class successorWorker(Chare):
         # Find all of the adjacent regions that touch the inserted hyperplane
         splitRegions = []
 
+        print(f'----[[[]]]   Valid flips = {validFlips}')
+        print(f'----[[[]]]   rebasePt = {self.flippedConstraints.rebasePt.flatten()}')
+        print(f'----[[[]]]   ptLift   = {self.iPtLift.flatten()}')
+
+        # The rebasedINTrep should be -- by construction -- an 'expanded' region specification
+        # for the projected constraints.
+        # Hence, collapseRegion should give us a valid region specification in the projected
+        # hyperplane arrangement, ignoring degenerate *faces* in that arrangement. Thus, we
+        # can use lpMinHRep, combined with the expand duplicates method of vectorSet (talk
+        # about creating the right abstractions! 😄), to identify all full-dimensional faces of
+        # this region that are split by the inserted hyperplane.
+        projINTrep = self.iFlipConstraints.collapseRegion(rebasedINTrep)
+        print(f'----[[[]]]   temp = {projINTrep}; rebasedINTrepSet = {rebasedINTrep}')
+
+        # Now let's find which of the validFlips (unflipped hyperplanes starting from the
+        # region containing rebasePt of self.flippedConstraints) correspond to faces in the
+        # projected hyperplane arrangement -- these will be the full dimensional faces of
+        # the current region that are split by the inserted hyperplane
+        splitFacesIdx = region_helpers.lpMinHRep( \
+                                            self.iFlipConstraints.getRegionConstraints( projINTrep  ), \
+                                            None, \
+                                            validFlipsList, \
+                                            solver = self.solver, \
+                                            lpObj = self.lp, \
+                                            tol = self.tol, \
+                                            rTol = self.rTol
+                                        )
+        splitFaces = set([validFlipsList[i] for i in splitFacesIdx])
+        print(f'----[[[]]]    splitFaces = {splitFaces}')
 
         for hh in validFlips:
             faceWitnesses = None
