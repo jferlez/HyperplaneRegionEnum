@@ -578,13 +578,69 @@ class Poset(Chare):
                 stripNum = idx
                 break
 
+        aug.root = tuple(newBaseRegFullTup)
+        aug.setRebase(rebasePt)
+
+        newAdj = deepcopy(retVal[3])
+        print(f',,,,,,   newAdj = {newAdj}')
+        newAdj[-1] = aug.N - stripNum
+        for f in retVal[1]:
+            if not f in newAdj:
+                newAdj[f] = self.flippedConstraints.baseN
+        print(newAdj)
+
+        # Insertion
+        newBaseRegFullTup = tuple( \
+                                np.nonzero( \
+                                    ( \
+                                        -self.flippedConstraints.constraints[:(self.flippedConstraints.N-1),1:] @ rebasePt \
+                                        - self.flippedConstraints.constraints[:(self.flippedConstraints.N-1),0].reshape(-1,1) \
+                                    ).flatten() \
+                                    >= tol \
+                                )[0] \
+                            )
+        print(f'    """"" newBaseRegFullTup = {newBaseRegFullTup}')
+        boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, newBaseRegFullTup, aug.N)
+        boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN( -stripNum, INTrepFull, aug.N)
+        print(f'{self.flippedConstraints.rebaseRegion(INTrepFull)}')
+        rebasedINTrep = region_helpers.recodeRegNewN(-stripNum,self.flippedConstraints.rebaseRegion(INTrepFull)[0],aug.N)[1]
+        rebasedINTrepSet = set(rebasedINTrep)
+
+        rebasedINTrep = region_helpers.recodeRegNewN( -stripNum ,self.flippedConstraints.rebaseRegion(INTrepFull)[0],aug.N)[1]
+        rebasedINTrepSet = set(rebasedINTrep)
+        print(f'///// rebasedINTrep = {rebasedINTrep}; boolIdxNoFlip = {boolIdxNoFlip}, boolIdxNoFlipFull = {boolIdxNoFlipFull}')
+
+        # We have to retrieve the information from the node in the table that is going to be split
+        q = self.succGroup[0].query( [boolIdxNoFlip, INTrep, aug.N - stripNum], op=DistributedHash.QUERYOP_DELETE, ret=True).get()
+        if q[0] > 0:
+            oldFace = q[1]
+            oldWitness = q[2]
+            oldAdj = q[3]
+            oldPayload = q[4]
+        else:
+            print(f'Root node not found!')
+            return
+        newAdj[-1] = aug.N
+        print(f'()()()    q = {q}')
+        cont = self.succGroup[0].hashAndSend( \
+                        ( \
+                            boolIdxNoFlipFull, \
+                            INTrepFull, \
+                            aug.N \
+                        ) + ( \
+                            oldFace, \
+                            rebasePt \
+                        ), \
+                        adjUpdate=newAdj, \
+                        payload = oldPayload, \
+                        ret=True \
+                    ).get()
+
         self.distHashTable.awaitPending(usePosetChecking=False,awaitable=True).get()
         self.succGroup.sendAll(-2,awaitable=True).get()
         self.succGroup.closeQueryChannels(awaitable=True).get()
         self.succGroup.flushMessages(ret=True).get()
 
-        aug.root = tuple(newBaseRegFullTup)
-        aug.setRebase(rebasePt)
         self.succGroup.initialize(aug.N, aug.serialize(), None, awaitable=True).get()
         self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
 
@@ -595,13 +651,6 @@ class Poset(Chare):
         self.succGroup.setProperty('iPtLift', ptLift, awaitable=True).get()
 
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
-
-        newAdj = deepcopy(retVal[3])
-        newAdj[-1] = aug.N - stripNum
-        for f in retVal[1]:
-            if not f in newAdj:
-                newAdj[f] = self.flippedConstraints.baseN
-        print(newAdj)
 
         self.populated = False
         self.thisProxy.populatePoset(face=copy(retVal[1]),witness=rebasePt,adjUpdate=newAdj,payload=deepcopy(retVal[4]),opts=localOpts,awaitable=True).get()
@@ -1438,37 +1487,16 @@ class successorWorker(Chare):
         rebasedINTrepSet = set(rebasedINTrep)
         print(f'///// rebasedINTrep = {rebasedINTrep}')
 
-        # Note for clarity: the if condition is only needed on the first pass, since all subsequently processed nodes
-        # will be encoded using N hyperplanes (old nodes will be deleted and re-inserted)
-        if len(rebasedINTrep) == 0 and Ntab < N:
-            initialRegion = True
-            newBaseRegFullTup = tuple( \
-                                    np.nonzero( \
-                                        ( \
-                                            -self.flippedConstraints.constraints[:(self.flippedConstraints.N-1),1:] @ witness \
-                                            - self.flippedConstraints.constraints[:(self.flippedConstraints.N-1),0].reshape(-1,1) \
-                                        ).flatten() \
-                                        >= self.tol \
-                                    )[0] \
-                                )
-            boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, newBaseRegFullTup, N)
-            boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(N - Ntab, INTrepFull, N)
-            rebasedINTrep = region_helpers.recodeRegNewN(N-Ntab,self.flippedConstraints.rebaseRegion(INTrepFull)[0],N)[1]
-            rebasedINTrepSet = set(rebasedINTrep)
-        else:
-            initialRegion = False
+        initialRegion = True
 
+        print(f'Made it here...')
         validFlips = face - rebasedINTrepSet
         validFlipsList = sorted(list(validFlips))
 
-        # We have to retrieve the information from the node in the table that is going to be split
-        q = self.thisProxy[self.thisIndex].query( [boolIdxNoFlip, INTrep, Ntab], op=DistributedHash.QUERYOP_DELETE, ret=True).get()
-        if q[0] > 0:
-            oldFace = q[1]
-            oldWitness = q[2]
-            oldAdj = q[3]
-            oldPayload = q[4]
-        print(f'()()()    q = {q}')
+        # Ignore negative-side inserted regions (inserted hyperplane cannot have a full-dimensional
+        # intersection with an existsing hyperplane -- handled by vectorSet uniqueness)
+        if len(INTrepFull) > 0 and INTrepFull[-1] == N-1:
+            return [[set([]),-1]]
 
 
         # Flip the un-flippable hyperplanes; this must be undone later
