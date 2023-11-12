@@ -543,6 +543,7 @@ class Poset(Chare):
         newBaseRegFull = region_helpers.tupToBytes(newBaseRegFullTup, *region_helpers.byteLenFromN(aug.N))
         rebasePt = region_helpers.findInteriorPoint(aug.getRegionConstraints(newBaseRegFullTup),solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
         if rebasePt is None:
+            print(f'WARNING: Should never happen!!!')
             rebasePt = region_helpers.findInteriorPoint(aug.getRegionConstraints(newBaseRegFullTup + (aug.N-1,)),solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
             newBaseRegFullTup = newBaseRegFullTup + (aug.N-1,)
         if rebasePt is None:
