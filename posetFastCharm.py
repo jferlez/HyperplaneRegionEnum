@@ -52,7 +52,7 @@ class PosetNode(DistributedHash.Node):
 
     def updateForInsert(self, lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args):
         self.face |= set(face)
-        if adj and isinstance(adj,dict):
+        if not adj is None and isinstance(adj,dict):
             for ky in adj.keys():
                 self.adj[ky] = adj[ky]
         # self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
@@ -334,7 +334,7 @@ class Poset(Chare):
                                         tuple() if face is None else face, \
                                         self.flippedConstraints.pt if witness is None else witness \
                                     ], \
-                                    adjUpdate=(False if not adjUpdate else adjUpdate), \
+                                    adjUpdate=adjUpdate, \
                                     payload=(tuple() if payload is None else payload), \
                                     vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())), \
                                 ret=True).get()
@@ -344,7 +344,7 @@ class Poset(Chare):
                       0, \
                       tuple() if face is None else face, \
                       self.flippedConstraints.pt if witness is None else witness, \
-                      False if not adjUpdate else adjUpdate, \
+                      adjUpdate, \
                       tuple() if payload is None else payload
                     )]
 
@@ -929,7 +929,7 @@ class successorWorker(Chare):
         for ch in self.hashChannels:
             ch.send(-100)
 
-    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=False):
+    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=None):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
         # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         hashInt = hashNodeBytes(toHash[0])
@@ -957,7 +957,7 @@ class successorWorker(Chare):
             return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate )
 
     @coro
-    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=False):
+    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=None):
         self.hashedNodeCount += 1
         val = self.hashNode(toHash,payload=payload,vertex=vertex,adjUpdate=adjUpdate)
         self.hashChannels[val[0]].send(val)

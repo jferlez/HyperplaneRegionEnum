@@ -32,7 +32,7 @@ class Node():
         self.face = set(face)
         self.witness = witness
         self.nodeEqualityFn = nodeEqualityFn
-        self.adj = {} if not adj else adj
+        self.adj = {} if adj is None else adj
         self.payload = args[0] if len(args) > 0 else tuple()
 
     def copy(self):
@@ -359,7 +359,7 @@ class HashWorker(Chare):
                 return False
         self.deferLock = False
         return True
-    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=False):
+    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=None):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
         # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         hashInt = hashNodeBytes(toHash[0])
@@ -387,7 +387,7 @@ class HashWorker(Chare):
             return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate )
 
     @coro
-    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=False):
+    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=None):
         self.hashedNodeCount += 1
         val = self.hashNode(toHash,payload=payload,vertex=vertex,adjUpdate=adjUpdate)
         self.hashChannels[val[0]].send(val)
