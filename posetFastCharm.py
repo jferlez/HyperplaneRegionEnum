@@ -1334,6 +1334,10 @@ class successorWorker(Chare):
             if restricted and (not constraint_list_in[intIdx[idx]]):
                 continue
             offsetIdx = intIdx[idx] if not restricted else offsetTab[intIdx[idx]]
+            # Add an extra suspension to allow processing of queries/hashes from other PEs
+            f = Future()
+            f.send(1)
+            f.get()
             if self.useQuery:
                 boolIdxNoFlip[intIdx[idx]//8] = boolIdxNoFlip[intIdx[idx]//8] | (1<<(intIdx[idx]%8))
                 insertIdx = 0
