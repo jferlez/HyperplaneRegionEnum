@@ -139,6 +139,12 @@ class HashWorker(Chare):
         #print(self.thisIndex)
 
     @coro
+    def tableApplyMethod(self,method,*args):
+        for ky in self.table.keys():
+            methodCall = getattr(ky,method)
+            methodCall(*args)
+
+    @coro
     def setCheckDispatch(self,updateDict):
         callIdx = 0
         for checkCall in ['init','update','check']:
@@ -1072,6 +1078,12 @@ class DistHash(Chare):
     def setCheckDispatch(self,updateDict):
         assert isinstance(updateDict,dict), f'New dispatch table must be a dictionary!'
         self.hWorkersFull.setCheckDispatch(updateDict,awaitable=True).get()
+
+    @coro
+    def tableApplyMethod(self,method,*args):
+        if not isinstance(method,str):
+            raise ValueError(f'ERROR: method must be a string')
+        self.hWorkersFull.tableApplyMethod(method,*args,awaitable=True).get()
 
     @coro
     def newTable(self,tableName):
