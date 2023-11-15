@@ -56,6 +56,9 @@ class PosetNode(DistributedHash.Node):
             for ky in adj.keys():
                 self.adj[ky] = adj[ky]
         # self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
+    def adjFaceCreate(self):
+        self.adj = {f:self.N for f in self.face}
+        self.adj[-1] = self.N
 
 
 class localVar(Chare):
@@ -609,6 +612,8 @@ class Poset(Chare):
         rebasedINTrep = region_helpers.recodeRegNewN( -stripNum ,self.flippedConstraints.rebaseRegion(INTrepFull)[0],aug.N)[1]
         rebasedINTrepSet = set(rebasedINTrep)
         print(f'///// rebasedINTrep = {rebasedINTrep}; boolIdxNoFlip = {boolIdxNoFlip}, boolIdxNoFlipFull = {boolIdxNoFlipFull}')
+
+        self.distHashTable.tableApplyMethod('adjFaceCreate',awaitable=True).get()
 
         # We have to retrieve the information from the node in the table that is going to be split
         q = self.succGroup[0].query( [boolIdxNoFlip, INTrep, aug.N - stripNum], op=DistributedHash.QUERYOP_DELETE, ret=True).get()
