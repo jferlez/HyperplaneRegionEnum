@@ -490,6 +490,7 @@ class Poset(Chare):
         localOpts['sendWitness'] = True
         localOpts['sendFaces'] = True
         localOpts['queryReturnInfo'] = True
+        localOpts['useQuery'] = False
         tol = opts['tol'] if 'tol' in opts else 1e-9
         rTol = opts['rTol'] if 'rTol' in opts else 1e-9
         solver = localOpts['solver'] if 'solver' in localOpts else 'glpk'
