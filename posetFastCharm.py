@@ -1499,27 +1499,23 @@ class successorWorker(Chare):
 
         initialRegion = True
 
-        print(f'Made it here...')
         validFlips = face - rebasedINTrepSet
         validFlipsList = sorted(list(validFlips))
 
         # Ignore negative-side inserted regions (inserted hyperplane cannot have a full-dimensional
         # intersection with an existsing hyperplane -- handled by vectorSet uniqueness)
         if len(INTrepFull) > 0 and INTrepFull[-1] == N-1:
+            print(f'----[[[{INTrepFull}]]]    Ignoring negative-side region')
             return [[set([]),-1]]
-
-
-        # Flip the un-flippable hyperplanes; this must be undone later
-        # Again note that H contains the inserted hyperplane
-        H[INTrepFull,:] = -H[INTrepFull,:]
 
 
         # Find all of the adjacent regions that touch the inserted hyperplane
         splitRegions = []
 
-        print(f'----[[[]]]   Valid flips = {validFlips}')
-        print(f'----[[[]]]   rebasePt = {self.flippedConstraints.rebasePt.flatten()}')
-        print(f'----[[[]]]   ptLift   = {self.iPtLift.flatten()}')
+        print(f'----[[[{INTrepFull}]]]   INTrepSetFull = {INTrepFull}')
+        print(f'----[[[{INTrepFull}]]]   Valid flips = {validFlips}')
+        print(f'----[[[{INTrepFull}]]]   rebasePt = {self.flippedConstraints.rebasePt.flatten()}')
+        print(f'----[[[{INTrepFull}]]]   ptLift   = {self.iPtLift.flatten()}')
 
         # The rebasedINTrep should be -- by construction -- an 'expanded' region specification
         # for the projected constraints.
@@ -1529,107 +1525,164 @@ class successorWorker(Chare):
         # about creating the right abstractions! 😄), to identify all full-dimensional faces of
         # this region that are split by the inserted hyperplane.
         projINTrep = self.iFlipConstraints.collapseRegion(rebasedINTrep)
-        print(f'----[[[]]]   temp = {projINTrep}; rebasedINTrepSet = {rebasedINTrep}')
+        print(f'----[[[{INTrepFull}]]]   temp = {projINTrep}; rebasedINTrepSet = {rebasedINTrep}')
 
         # Now let's find which of the validFlips (unflipped hyperplanes starting from the
         # region containing rebasePt of self.flippedConstraints) correspond to faces in the
         # projected hyperplane arrangement -- these will be the full dimensional faces of
         # the current region that are split by the inserted hyperplane
-        splitFacesIdx = region_helpers.lpMinHRep( \
+        splitFacesIdx, _ = self.thisProxy[self.thisIndex].concreteMinHRep( \
                                             self.iFlipConstraints.getRegionConstraints( projINTrep  ), \
                                             None, \
+                                            # These arguments are only used with self.useQuery=True, which is disabled
+                                            # automatically for insertHyperplane mode
+                                            bytearray(b''), \
+                                            tuple(), \
+                                            # This is the only argument that is relevant for the minHRep
                                             validFlipsList, \
                                             solver = self.solver, \
-                                            lpObj = self.lp, \
-                                            tol = self.tol, \
-                                            rTol = self.rTol
-                                        )
-        splitFaces = set([validFlipsList[i] for i in splitFacesIdx])
-        print(f'----[[[]]]    splitFaces = {splitFaces}')
+                                            ret = True \
+                                        ).get()
+        splitFaces = {validFlipsList[i]: [validFlipsList[ii] for ii in self.iFlipConstraints.hyperSet.expandDuplicates(i)] for i in splitFacesIdx}
+        print(f'----[[[{INTrepFull}]]]    splitFaces = {splitFaces}')
+        allSplitFaces = set()
+        for h, dups in splitFaces.items():
+            allSplitFaces |= set(dups)
+        print(f'----[[[{INTrepFull}]]]    allSplitFaces = {allSplitFaces}')
+        nonSplitFaces = validFlips - allSplitFaces
+        print(f'----[[[{INTrepFull}]]]    nonSplitFaces = {nonSplitFaces}')
 
-        for hh in validFlips:
-            faceWitnesses = None
-            INTrepSet = set(INTrepFull)
-            if initialRegion:
-                oldFace = face
-                oldWitness = witness
-                oldAdj = adj
-                oldPayload = payload
-                h = -1
-                print(f'    """""""" Setting initial region properties oldFace = {oldFace}; oldAdj = {oldAdj}')
-            else:
-                h = hh
-                H[h,:] = -H[h,:]
-                INTrepSet = INTrepSet | {h} if not h in INTrepSet else INTrepSet - {h}
-                q = self.thisProxy[self.thisIndex].query( region_helpers.recodeRegNewN(N-adj[h], sorted(tuple(INTrepSet)), N) , ret=True).get()
+        # Ok.... So how do we change this to make it work properly?
+
+        # 1) Each split face will correspond to two new regions, so we need to
+        #   a) Delete the full-dimensional region corresponding to this face
+        #       (if it is duplicated, then flip ALL of the duplicates to get the region)
+        #   b) Replace it with a recoded region using N hyperplanes, and seed it with a hashAndSend call
+        # 2) Replace the adj value for each abutting region to reflect that the current region (and
+        # the to-be-added negative-side region) are encoded using N hyperplanes. This will entail many
+        # redundant hashAndSend calls (i.e. the same regions will be hit more than once)
+        # 3) Calculate the correct faces for the newly inserted regions
+        #   a) Use 2) to update the replaced region in 1)b). This is necessary because the correct
+        #       face information isn't yet computed when the new node is created in 1b)
+
+        for h in validFlips:
+            INTrepSetFull = set(INTrepFull)
+            print(f'    ----[[[{INTrepFull}]]]    Working on face {h}')
+            if h in nonSplitFaces:
+                print(f'    ----[[[{INTrepFull}]]]    INTrepSetFull = {INTrepSetFull}')
+                neighborReg = sorted(list(INTrepSetFull | {h} if not h in INTrepSetFull else INTrepSetFull - {h}))
+                print(f'    ----[[[{INTrepFull}]]]    neighborReg = {neighborReg}')
+                cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                            region_helpers.recodeRegNewN( \
+                                -N + adj[h], \
+                                neighborReg, \
+                                N \
+                            ) + ( \
+                                set(), \
+                                witness \
+                            ), \
+                            adjUpdate = {h:N}, \
+                            ret=True \
+                        ).get()
+            elif h in splitFaces:
+                neighborReg = copy(INTrepSetFull)
+                for hh in splitFaces[h]:
+                    if not hh in neighborReg:
+                        neighborReg |= {hh}
+                    else:
+                        neighborReg = neighborReg - {hh}
+                neighborReg = sorted(list(neighborReg))
+                print(f'    ----[[[{INTrepFull}]]]    neighborReg = {neighborReg}')
+                if len(splitFaces[h]) == 1:
+                    stripNum = N - adj[h]
+                else:
+                    # Iteratively query until we find the right encoding for the target region
+                    for idx in range(1,self.flippedConstraints.N - self.flippedConstraints.baseN + 1):
+                        newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, neighborReg, self.flippedConstraints.N)
+                        print((newBaseReg, newBaseRegTup, newBaseRegN))
+                        retVal = self.succGroup[0].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
+                        print(retVal)
+                        if retVal[0] > 0:
+                            stripNum = idx
+                            break
+                print(f'    ----[[[{INTrepFull}]]]    stripNum = {stripNum}')
+                q = self.thisProxy[self.thisIndex].query( \
+                                    region_helpers.recodeRegNewN( \
+                                        -stripNum, \
+                                        neighborReg, \
+                                        N \
+                                    ), \
+                                    op=DistributedHash.QUERYOP_DELETE, ret=True)
+                H[neighborReg,:] = -H[neighborReg,:]
+                print(f'    ----[[[{INTrepFull}]]]    submittedDeleteQuery = {stripNum}')
+                intPtPos = region_helpers.findInteriorPoint( \
+                                    H, \
+                                    solver=self.solver, \
+                                    lpObj=self.lp, \
+                                    tol=self.tol, \
+                                    rTol=self.rTol, \
+                                    lpopts=lpopts \
+                                )
+                print(f'    ----[[[{INTrepFull}]]]    intPtPos = {intPtPos}')
+                H[neighborReg,:] = -H[neighborReg,:]
+                q = q.get()
                 if q[0] > 0:
                     oldFace = q[1]
                     oldWitness = q[2]
                     oldAdj = q[3]
                     oldPayload = q[4]
-            for sgn in [1, -1]:
-                H[N-1,:] = sgn * H[N-1,:]
-                intPt = region_helpers.findInteriorPoint( \
-                                            H, \
-                                            solver=self.solver, \
-                                            lpObj=self.lp, \
-                                            tol=self.tol, \
-                                            rTol=self.rTol, \
-                                            lpopts=lpopts \
-                                        )
-                print(f'    """""""" Received interior point {intPt}')
-                H[N-1,:] = sgn * H[N-1,:]
-                if not intPt is None:
-                    # We have a full dimensional region that is split by the inserted hyperplane, so hash it
-                    # We have to calculate the new face information first
-                    if faceWitnesses is None:
-                        faceWitnesses = {}
-                        holder = {}
-                        qs = []
-                        for f in (oldFace & validFlips) - {h}:
-                            if f == N-1: continue
-                            s = sorted(tuple(INTrepSet | {f})) if not f in INTrepSet else sorted(tuple(INTrepSet - {f}))
-                            print(f'    """""""" computed adjacency region {s}')
-                            faceWitnesses[f] = self.thisProxy[self.thisIndex].query(region_helpers.recodeRegNewN(-N + oldAdj[f], s, N ),ret=True).get()
-                    # faceWitnesses[h] = intPt
-                    print(f'    """""""" faceWitnesses = {faceWitnesses}')
-                    newFaces = [N-1]
-                    for f in faceWitnesses.keys():
-                        # Now check the witness for f to see which side of the inserted hyperplane it's on
-                        wit = sgn * faceWitnesses[f][2]
-                        if -H[N-1,1:].reshape(-1,1) @ wit >= sgn * H[N-1,0] + self.tol:
-                            # Face witness is on the same side of inserted hyperplane as intPt
-                            newFaces.append(f)
+                else:
+                    print(f'WARNING: Unable to find successor region to delete! {neighborReg}')
+                print(f'    ----[[[{INTrepFull}]]]    query results = {q}')
+                oldAdj[-1] = N
+                cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                                    region_helpers.recodeRegNewN( \
+                                        0, \
+                                        neighborReg, \
+                                        N \
+                                    ) + ( \
+                                        oldFace, \
+                                        intPtPos \
+                                    ), \
+                                    adjUpdate=oldAdj, \
+                                    payload=oldPayload, \
+                                    ret=True \
+                                ).get()
 
-                    INTrepSet = set(INTrepFull)
-                    if sgn < 0:
-                        s = sorted(INTrepFull + tuple(N-1) + (tuple(h) if not initialRegion else tuple()))
-                    else:
-                        s = sorted(INTrepFull + (tuple(h) if not initialRegion else tuple()))
-                    oldAdj[h] = N
-                    cont = self.thisProxy[self.thisIndex].hashAndSend( \
-                                                        region_helpers.recodeRegNewN( \
-                                                            0, \
-                                                            s, \
-                                                            N \
-                                                         ) + ( \
-                                                            newFaces, \
-                                                            intPt, \
-                                                            oldAdj, \
-                                                            oldPayload \
-                                                         ), \
-                                                        ret=True \
-                                                    ).get()
-            if not initialRegion:
-                H[h,:] = -H[h,:]
-            faceWitnesses = None
+        # We are for sure working on a replaced node, enocded using all N hyperplanes (including insertion)
+        # that is also on the positive side of the inserted hyperplane.
+        # Thus, we insert its companion, negative version:
+        H[INTrepFull,:] = -H[INTrepFull,:]
+        H[N-1,:] = -H[N-1,:]
+        intPtNeg = region_helpers.findInteriorPoint( \
+                                    H, \
+                                    solver=self.solver, \
+                                    lpObj=self.lp, \
+                                    tol=self.tol, \
+                                    rTol=self.rTol, \
+                                    lpopts=lpopts \
+                                )
+        H[N-1,:] = -H[N-1,:]
+        H[INTrepFull,:] = -H[INTrepFull,:]
+        print(f'----[[[{INTrepFull}]]]    Sending negative side region intPtNeg = {intPtNeg}; {self.flippedConstraints.N}')
+        cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                                    region_helpers.recodeRegNewN( \
+                                        0, \
+                                        INTrepFull + (N-1,), \
+                                        N \
+                                    ) + ( \
+                                        face, \
+                                        intPtNeg \
+                                    ), \
+                                    adjUpdate=adj, \
+                                    payload=payload, \
+                                    ret=True \
+                                ).get()
 
         constraint_list = None
 
 
-        H[INTrepFull,:] = -H[INTrepFull,:]
-
-
+        return [[set([]),-1]]
 
 
 def Union(contribs):
