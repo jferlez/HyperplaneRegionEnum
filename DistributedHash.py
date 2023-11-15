@@ -851,7 +851,7 @@ class HashWorker(Chare):
         self.table = self.tableStore[tableName]
     @coro
     def getTable(self):
-        return [(ky.nodeBytes, ky.face, ky.witness, ky.payload) for ky in self.table.keys()]
+        return [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.table.keys()]
     @coro
     def resetLevelCount(self):
         self.level=-1
