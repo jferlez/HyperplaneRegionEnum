@@ -52,9 +52,15 @@ class PosetNode(DistributedHash.Node):
 
     def updateForInsert(self, lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args):
         self.face |= set(face)
+        origFace = copy(self.face)
         if not adj is None and isinstance(adj,dict):
             for ky in adj.keys():
-                self.adj[ky] = adj[ky]
+                if adj[ky] is None and ky in self.adj:
+                    del self.adj[ky]
+                else:
+                    self.adj[ky] = adj[ky]
+            self.face = set([ky for ky in self.adj if ky != -1])
+        print(f'    :-:-:-:-:    {charm.myPe()}: Updating original face information {origFace} to {self.face}')
         # self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
     def adjFaceCreate(self):
         self.adj = {f:self.N for f in self.face}
@@ -634,7 +640,7 @@ class Poset(Chare):
                             INTrepFull, \
                             aug.N \
                         ) + ( \
-                            oldFace, \
+                            set(), \
                             rebasePt \
                         ), \
                         adjUpdate=newAdj, \
@@ -659,7 +665,7 @@ class Poset(Chare):
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
 
         self.populated = False
-        self.thisProxy.populatePoset(face=copy(retVal[1]),witness=rebasePt,adjUpdate=newAdj,payload=deepcopy(retVal[4]),opts=localOpts,awaitable=True).get()
+        self.thisProxy.populatePoset(face=set(),witness=rebasePt,adjUpdate=newAdj,payload=deepcopy(retVal[4]),opts=localOpts,awaitable=True).get()
 
         # Now that we're all done, restore default dispatch for check/update
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
@@ -1487,7 +1493,13 @@ class successorWorker(Chare):
         # *****
         d = H.shape[1]-1
         witnessList = []
+        print(f'........... {adj}')
         Ntab = adj[-1]
+        incommingFace = face
+        allFace = set(adj.keys())
+        allFace.remove(-1)
+        face = allFace - incommingFace
+        print(f'........... allFace = {allFace}; incommingFace = {incommingFace}')
         # Note the N passed here includes the inserted hyperplane, and INTrep will always be of the same length
         boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, INTrep, N)
         boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(N - Ntab, INTrep, N)
@@ -1641,7 +1653,7 @@ class successorWorker(Chare):
                                         neighborReg, \
                                         N \
                                     ) + ( \
-                                        oldFace, \
+                                        set(splitFaces[h]), \
                                         intPtPos \
                                     ), \
                                     adjUpdate=oldAdj, \
@@ -1649,7 +1661,61 @@ class successorWorker(Chare):
                                     ret=True \
                                 ).get()
 
-        # We are for sure working on a replaced node, enocded using all N hyperplanes (including insertion)
+
+        # Now fix the face information for the current node
+
+        # calculate faces for new region on positive side of inserted hyperplane
+        H[INTrepFull,:] = -H[INTrepFull,:]
+        posFaces = set()
+        sel = sorted(list(face)) + [N-1]
+        print(f'    ----[[[{INTrepFull}]]]    face = {face}')
+        print(f'    ----[[[{INTrepFull}]]]    witness = {witness}')
+        sel = [ f for f in face if  not f in splitFaces and not f in incommingFace ]
+        print(f'    ----[[[{INTrepFull}]]]    sel = {sel}')
+        posFacesIdx, _ = self.thisProxy[self.thisIndex].concreteMinHRep( \
+                                            H, \
+                                            None, \
+                                            # These arguments are only used with self.useQuery=True, which is disabled
+                                            # automatically for insertHyperplane mode
+                                            bytearray(b''), \
+                                            tuple(), \
+                                            # This is the only argument that is relevant for the minHRep
+                                            sel, \
+                                            solver = self.solver, \
+                                            ret = True \
+                                        ).get()
+        posFaces = set([ sel[f] for f in posFacesIdx ])
+        posFaces.add(N-1)
+        print(f'    ----[[[{INTrepFull}]]]    posFaces = {posFaces}')
+        H[INTrepFull,:] = -H[INTrepFull,:]
+
+        splitFacesSet = set(splitFaces.keys()) | incommingFace
+        posFaces |= splitFacesSet
+        negFaces = (allFace - posFaces) | splitFacesSet
+        negFaces.add(N-1)
+        posFacesUpdate = {i:(adj[i] if i in posFaces else None) for i in allFace}
+        posFacesUpdate[N-1] = N
+        posFacesUpdate[-1] = N
+        print(f'    ----[[[{INTrepFull}]]]    posFaces = {posFaces}')
+        print(f'    ----[[[{INTrepFull}]]]    negFaces = {negFaces}')
+        print(f'    ----[[[{INTrepFull}]]]    splitFacesSet = {splitFacesSet}')
+
+        # Send an update to the CURRENT region, using read/write semantics of adj dictionary
+        cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                                    region_helpers.recodeRegNewN( \
+                                        0, \
+                                        INTrepFull, \
+                                        N \
+                                    ) + ( \
+                                        posFaces, \
+                                        witness \
+                                    ), \
+                                    adjUpdate=posFacesUpdate, \
+                                    payload=payload, \
+                                    ret=True \
+                                ).get()
+
+        # We are for sure working on a replaced node, encoded using all N hyperplanes (including insertion)
         # that is also on the positive side of the inserted hyperplane.
         # Thus, we insert its companion, negative version:
         H[INTrepFull,:] = -H[INTrepFull,:]
@@ -1665,19 +1731,22 @@ class successorWorker(Chare):
         H[N-1,:] = -H[N-1,:]
         H[INTrepFull,:] = -H[INTrepFull,:]
         print(f'----[[[{INTrepFull}]]]    Sending negative side region intPtNeg = {intPtNeg}; {self.flippedConstraints.N}')
+        negAdj = {i:(adj[i] if i in adj else N) for i in negFaces}
+        negAdj[-1] = N
         cont = self.thisProxy[self.thisIndex].hashAndSend( \
                                     region_helpers.recodeRegNewN( \
                                         0, \
                                         INTrepFull + (N-1,), \
                                         N \
                                     ) + ( \
-                                        face, \
+                                        negFaces, \
                                         intPtNeg \
                                     ), \
-                                    adjUpdate=adj, \
+                                    adjUpdate=negAdj, \
                                     payload=payload, \
                                     ret=True \
                                 ).get()
+        print(f'----[[[{INTrepFull}]]]    DONE sending negative side region intPtNeg = {intPtNeg}; {self.flippedConstraints.N}')
 
         constraint_list = None
 
