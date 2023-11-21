@@ -66,8 +66,8 @@ class flipConstraints:
         self.nrms = np.vstack([ self.nrms[self.nonRedundantHyperplanes,], self.nrms[self.allN:,] ])
         self.redundantFlips = np.full(self.allN,-1,dtype=np.int64)
         self.redundantFlips[self.nonRedundantHyperplanes,] = np.ones_like(self.nonRedundantHyperplanes,dtype=np.int64)
-        self.wholeBytes = (self.N + 7) // 8
-        self.tailBits = self.N - 8*(self.N // 8)
+        self.wholeBytes = self.N // 8
+        self.tailBits = self.N % 8
         self.wholeBytesAllN = self.wholeBytes
         self.tailBitsAllN = self.tailBits
         self.rebasePt = None
@@ -124,10 +124,10 @@ class flipConstraints:
             self.redundantFlips = np.full(self.allN,-1,dtype=np.int64)
             self.redundantFlips[self.nonRedundantHyperplanes,] = np.ones_like(self.nonRedundantHyperplanes,dtype=np.int64)
 
-            self.wholeBytes = (self.N + 7) // 8
-            self.tailBits = self.N - 8*(self.N // 8)
-            self.wholeBytesAllN = self.wholeBytes
-            self.tailBitsAllN = self.tailBits
+            self.wholeBytes = self.N // 8
+            self.tailBits = self.N % 8
+            self.wholeBytesAllN = self.allN // 8
+            self.tailBitsAllN = self.allN % 8
             return True
         else:
             return False
@@ -274,8 +274,8 @@ class flipConstraintsReduced(flipConstraints):
         self.allConstraints = self.constraints
         self.allN = self.N
         self.nonRedundantHyperplanes = np.arange(self.N)
-        self.wholeBytes = (self.N + 7) // 8
-        self.tailBits = self.N - 8*(self.N // 8)
+        self.wholeBytes = self.N // 8
+        self.tailBits = self.N % 8
 
 
 class flipConstraintsReducedMin(flipConstraints):
@@ -303,10 +303,10 @@ class flipConstraintsReducedMin(flipConstraints):
                                     ) \
                                 )
         self.N = len(self.nonRedundantHyperplanes)
-        self.wholeBytes = (self.N + 7) // 8
-        self.tailBits = self.N - 8*(self.N // 8)
-        self.wholeBytesAllN = (self.allN + 7) // 8
-        self.tailBitsAllN = self.allN - 8*(self.allN // 8)
+        self.wholeBytes = self.N // 8
+        self.tailBits = self.N % 8
+        self.wholeBytesAllN = self.allN // 8
+        self.tailBitsAllN = self.allN % 8
 
         self.root = tuple()
 
@@ -333,10 +333,10 @@ class flipConstraintsReducedMin(flipConstraints):
                                         ) \
                                     )
             self.N = len(self.nonRedundantHyperplanes)
-            self.wholeBytes = (self.N + 7) // 8
-            self.tailBits = self.N - 8*(self.N // 8)
-            self.wholeBytesAllN = (self.allN + 7) // 8
-            self.tailBitsAllN = self.allN - 8*(self.allN // 8)
+            self.wholeBytes = self.N // 8
+            self.tailBits = self.N % 8
+            self.wholeBytesAllN = self.allN // 8
+            self.tailBitsAllN = self.allN % 8
             return True
         else:
             return False
@@ -382,7 +382,7 @@ class flipConstraintsReducedMin(flipConstraints):
     #     return tuple(np.nonzero(regSet[self.nonRedundantHyperplanes,])[0])
 
 def byteLenFromN(N):
-    return (  (N + 7) // 8  ), (  N - 8*(N // 8)  )
+    return  N // 8  ,   N % 8
 
 def recodeRegNewN(strip, reg, N):
     if isinstance(reg,tuple) or isinstance(reg,list):
