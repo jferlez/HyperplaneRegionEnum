@@ -60,11 +60,12 @@ class PosetNode(DistributedHash.Node):
                 else:
                     self.adj[ky] = adj[ky]
             self.face = set([ky for ky in self.adj if ky != -1])
-        print(f'    :-:-:-:-:    {charm.myPe()}: Updating original face information {origFace} to {self.face}')
+        print(f'    :-:-:-:-:    {charm.myPe()}: Updating original face information {origFace} to {self.face} {self.adj}')
         # self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
     def adjFaceCreate(self):
-        self.adj = {f:self.N for f in self.face}
-        self.adj[-1] = self.N
+        if not isinstance(self.adj,dict) or len(self.adj) == 0:
+            self.adj = {f:self.N for f in self.face}
+            self.adj[-1] = self.N
 
 
 class localVar(Chare):
@@ -618,9 +619,11 @@ class Poset(Chare):
 
         rebasedINTrep = region_helpers.recodeRegNewN( -stripNum ,self.flippedConstraints.rebaseRegion(INTrepFull)[0],aug.N)[1]
         rebasedINTrepSet = set(rebasedINTrep)
-        print(f'///// rebasedINTrep = {rebasedINTrep}; boolIdxNoFlip = {boolIdxNoFlip}, boolIdxNoFlipFull = {boolIdxNoFlipFull}')
+        print(f'///// rebasedINTrep = {rebasedINTrep}; INTrep = {INTrep}; boolIdxNoFlip = {boolIdxNoFlip}, boolIdxNoFlipFull = {boolIdxNoFlipFull}')
 
-        self.distHashTable.tableApplyMethod('adjFaceCreate',awaitable=True).get()
+        # Initialize the adj dict's of nodes if this is the first inserted hyperplane
+        if aug.N == aug.baseN + 1:
+            self.distHashTable.tableApplyMethod('adjFaceCreate',awaitable=True).get()
 
         # We have to retrieve the information from the node in the table that is going to be split
         q = self.succGroup[0].query( [boolIdxNoFlip, INTrep, aug.N - stripNum], op=DistributedHash.QUERYOP_DELETE, ret=True).get()
