@@ -349,7 +349,7 @@ class Poset(Chare):
                                     vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())), \
                                 ret=True).get()
         thisLevel = [( \
-                      boolIdxNoFlip if self.hashStoreMode == 1 else thisLevel[0][0], \
+                      boolIdxNoFlip if self.hashStoreMode == 0 else thisLevel[0][0], \
                       self.flippedConstraints.N, \
                       0, \
                       tuple() if face is None else face, \
