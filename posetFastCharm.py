@@ -1497,16 +1497,21 @@ class successorWorker(Chare):
         # *****
         d = H.shape[1]-1
         witnessList = []
-        print(f'........... {adj}')
+        print(f'........... N={N} {adj}')
         Ntab = adj[-1]
         incommingFace = face
         allFace = set(adj.keys())
         allFace.remove(-1)
         face = allFace - incommingFace
-        print(f'........... allFace = {allFace}; incommingFace = {incommingFace}')
+        print(f'........... allFace = {allFace}; incommingFace = {incommingFace}; incomming adj = {adj}')
         # Note the N passed here includes the inserted hyperplane, and INTrep will always be of the same length
-        boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, INTrep, N)
-        boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(N - Ntab, INTrep, N)
+        print(f'///// extrasINTrep0 {charm.myPe()}  INTrep = {INTrep}')
+        boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(-N + Ntab, INTrep , N) # should be identity for INTrep
+        extrasINTrep = tuple( np.nonzero( -H[Ntab:(N-1),1:] @ witness >= (1 + self.rTol) * H[Ntab:(N-1),0].reshape(-1,1) + self.tol )[0] + Ntab )
+        print(f'///// extrasINTrep1 {charm.myPe()} = {extrasINTrep}; INTrep = {INTrep}')
+        boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, INTrep + extrasINTrep , N)
+        print(f'///// extrasINTrep2 {charm.myPe()} = {extrasINTrep}; INTrepFull = {INTrepFull} boolIdxNoFlip = {boolIdxNoFlipFull}')
+        print(f'///// extrasINTrep3 {charm.myPe()} = {extrasINTrep}; INTrep = {INTrep} boolIdxNoFlip = {boolIdxNoFlip}')
         # INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
 
         rebasedINTrep = region_helpers.recodeRegNewN(N-Ntab,self.flippedConstraints.rebaseRegion(INTrepFull)[0],N)[1]
