@@ -581,6 +581,7 @@ class Poset(Chare):
         # by the point ptLift). That is, determine how many hyperplanes were used to encode this region in the
         # hash table.
         for idx in range(1,aug.N - aug.baseN + 1):
+            print(f'    <><><><>    Trying  to recode {newBaseRegFull} to length {region_helpers.byteLenFromN(aug.N-idx)}')
             newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, newBaseRegFull, aug.N)
             print((newBaseReg, newBaseRegTup, newBaseRegN))
             retVal = self.succGroup[0].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
@@ -1599,6 +1600,8 @@ class successorWorker(Chare):
                             adjUpdate = {h:N}, \
                             ret=True \
                         ).get()
+                testStripNum = -N + adj[h]
+                print(f'    ----[[[{INTrepFull}]]]    submitted update = {testStripNum} {region_helpers.recodeRegNewN(testStripNum, neighborReg, N)}')
             elif h in splitFaces:
                 neighborReg = copy(INTrepSetFull)
                 for hh in splitFaces[h]:
@@ -1629,7 +1632,7 @@ class successorWorker(Chare):
                                     ), \
                                     op=DistributedHash.QUERYOP_DELETE, ret=True)
                 H[neighborReg,:] = -H[neighborReg,:]
-                print(f'    ----[[[{INTrepFull}]]]    submittedDeleteQuery = {stripNum}')
+                print(f'    ----[[[{INTrepFull}]]]    submittedDeleteQuery = {stripNum} {region_helpers.recodeRegNewN(-stripNum, neighborReg, N)}')
                 intPtPos = region_helpers.findInteriorPoint( \
                                     H, \
                                     solver=self.solver, \
@@ -1647,9 +1650,11 @@ class successorWorker(Chare):
                     oldAdj = q[3]
                     oldPayload = q[4]
                 else:
-                    print(f'WARNING: Unable to find successor region to delete! {neighborReg}')
-                print(f'    ----[[[{INTrepFull}]]]    query results = {q}')
+                    oldAdj = None
+                    print(f'    ----[[[{INTrepFull}]]]    WARNING {charm.myPe()}: Unable to find successor region to delete! {neighborReg} {adj}')
+                print(f'    ----[[[{INTrepFull}]]]    query results = {q}; adjUpdate = {oldAdj}')
                 oldAdj[-1] = N
+                oldAdj[h] = N
                 cont = self.thisProxy[self.thisIndex].hashAndSend( \
                                     region_helpers.recodeRegNewN( \
                                         0, \
@@ -1702,6 +1707,7 @@ class successorWorker(Chare):
         print(f'    ----[[[{INTrepFull}]]]    posFaces = {posFaces}')
         print(f'    ----[[[{INTrepFull}]]]    negFaces = {negFaces}')
         print(f'    ----[[[{INTrepFull}]]]    splitFacesSet = {splitFacesSet}')
+        print(f'    ----[[[{INTrepFull}]]]    posFacesUpdate = {posFacesUpdate}')
 
         # Send an update to the CURRENT region, using read/write semantics of adj dictionary
         cont = self.thisProxy[self.thisIndex].hashAndSend( \
