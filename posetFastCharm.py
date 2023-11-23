@@ -1618,75 +1618,74 @@ class successorWorker(Chare):
         #   a) Use 2) to update the replaced region in 1)b). This is necessary because the correct
         #       face information isn't yet computed when the new node is created in 1b)
 
-        for h in validFlips:
+        for h in allFace - {N-1}:
             INTrepSetFull = set(INTrepFull)
             print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    Working on face {h}')
-            if h in nonSplitFaces:
-                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    INTrepSetFull = {INTrepSetFull}')
-                neighborReg = sorted(list(INTrepSetFull | {h} if not h in INTrepSetFull else INTrepSetFull - {h}))
-                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    neighborReg = {neighborReg}')
-                cont = self.thisProxy[self.thisIndex].hashAndSend( \
-                            region_helpers.recodeRegNewN( \
-                                -N + adj[h], \
-                                neighborReg, \
-                                N \
-                            ) + ( \
-                                set(), \
-                                witness \
-                            ), \
-                            adjUpdate = {h:N}, \
-                            ret=True \
-                        ).get()
-                testStripNum = -N + adj[h]
-                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    submitted update = {testStripNum} {region_helpers.recodeRegNewN(testStripNum, neighborReg, N)}')
-            elif h in splitFaces:
-                neighborReg = copy(INTrepSetFull)
-                for hh in splitFaces[h]:
-                    if not hh in neighborReg:
-                        neighborReg |= {hh}
-                    else:
-                        neighborReg = neighborReg - {hh}
-                neighborReg = sorted(list(neighborReg))
-                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    neighborReg = {neighborReg}')
-                if len(splitFaces[h]) == 1:
-                    stripNum = N - adj[h]
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    INTrepSetFull = {INTrepSetFull}')
+            neighborReg = sorted(list(INTrepSetFull | {h} if not h in INTrepSetFull else INTrepSetFull - {h}))
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    neighborReg = {neighborReg} {adj[h]}')
+            cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                        region_helpers.recodeRegNewN( \
+                            -N + (adj[h]), \
+                            neighborReg, \
+                            N \
+                        ) + ( \
+                            set(), \
+                            witness \
+                        ), \
+                        adjUpdate = {h:N}, \
+                        ret=True \
+                    ).get()
+            testStripNum = -N + adj[h]
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    submitted update = {testStripNum} {region_helpers.recodeRegNewN(testStripNum, neighborReg, N)}')
+        for h in splitFaces:
+            neighborReg = copy(INTrepSetFull)
+            for hh in splitFaces[h]:
+                if not hh in neighborReg:
+                    neighborReg |= {hh}
                 else:
-                    # Iteratively query until we find the right encoding for the target region
-                    for idx in range(1,self.flippedConstraints.N - self.flippedConstraints.baseN + 1):
-                        newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, neighborReg, self.flippedConstraints.N)
-                        print((newBaseReg, newBaseRegTup, newBaseRegN))
-                        retVal = self.succGroup[0].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
-                        print(retVal)
-                        if retVal[0] > 0:
-                            stripNum = idx
-                            break
-                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    stripNum = {stripNum}')
+                    neighborReg = neighborReg - {hh}
+            neighborReg = sorted(list(neighborReg))
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    neighborReg = {neighborReg}')
+            if len(splitFaces[h]) == 1:
+                stripNum = N - adj[h]
+            else:
+                # Iteratively query until we find the right encoding for the target region
+                for idx in range(1,self.flippedConstraints.N - self.flippedConstraints.baseN + 1):
+                    newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, neighborReg, self.flippedConstraints.N)
+                    print((newBaseReg, newBaseRegTup, newBaseRegN))
+                    retVal = self.succGroup[0].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
+                    print(retVal)
+                    if retVal[0] > 0:
+                        stripNum = idx
+                        break
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    stripNum = {stripNum}')
 
-                H[neighborReg,:] = -H[neighborReg,:]
-                intPtPos = region_helpers.findInteriorPoint( \
-                                    H, \
-                                    solver=self.solver, \
-                                    lpObj=self.lp, \
-                                    tol=self.tol, \
-                                    rTol=self.rTol, \
-                                    lpopts=lpopts \
-                                )
-                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    intPtPos = {intPtPos}')
-                H[neighborReg,:] = -H[neighborReg,:]
-
-                cont = self.thisProxy[self.thisIndex].hashAndSend( \
-                                    region_helpers.recodeRegNewN( \
-                                        0, \
-                                        neighborReg, \
-                                        N \
-                                    ) + ( \
-                                        set(splitFaces[h]), \
-                                        intPtPos \
-                                    ), \
-                                    adjUpdate={-1:N-stripNum}, \
-                                    payload=None, \
-                                    ret=True \
-                                ).get()
+            H[neighborReg,:] = -H[neighborReg,:]
+            intPtPos = region_helpers.findInteriorPoint( \
+                                H, \
+                                solver=self.solver, \
+                                lpObj=self.lp, \
+                                tol=self.tol, \
+                                rTol=self.rTol, \
+                                lpopts=lpopts \
+                            )
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    intPtPos = {intPtPos}')
+            H[neighborReg,:] = -H[neighborReg,:]
+            # Create the new split region (positive-side of inserted hyperplane)
+            cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                                region_helpers.recodeRegNewN( \
+                                    0, \
+                                    neighborReg, \
+                                    N \
+                                ) + ( \
+                                    set(splitFaces[h]), \
+                                    intPtPos \
+                                ), \
+                                adjUpdate={-1:N-stripNum}, \
+                                payload=None, \
+                                ret=True \
+                            ).get()
 
 
         # Now fix the face information for the current node
@@ -1760,9 +1759,11 @@ class successorWorker(Chare):
                                 )
         H[N-1,:] = -H[N-1,:]
         H[INTrepFull,:] = -H[INTrepFull,:]
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    Sending negative side region intPtNeg = {intPtNeg}; {self.flippedConstraints.N}')
         negAdj = {i:(adj[i] if i in adj else N) for i in negFaces}
+        for i in splitFacesSet:
+            negAdj[i] = N
         negAdj[-1] = N
+        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    Sending negative side region intPtNeg = {intPtNeg}; {self.flippedConstraints.N} {negAdj}')
         cont = self.thisProxy[self.thisIndex].hashAndSend( \
                                     region_helpers.recodeRegNewN( \
                                         0, \
