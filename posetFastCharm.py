@@ -55,8 +55,9 @@ class PosetNode(DistributedHash.Node):
         origFace = copy(self.face)
         if not adj is None and isinstance(adj,dict):
             for ky in adj.keys():
-                if adj[ky] is None and ky in self.adj:
-                    del self.adj[ky]
+                if adj[ky] is None:
+                    if ky in self.adj:
+                        del self.adj[ky]
                 else:
                     self.adj[ky] = adj[ky]
             self.face = set([ky for ky in self.adj if ky != -1])
