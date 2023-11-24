@@ -297,7 +297,8 @@ class Poset(Chare):
         self.verbose = True
         self.sendFaces = False
         self.queryReturnInfo = False
-        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces','queryReturnInfo']
+        self.maxLevels = self.N + 1
+        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces','queryReturnInfo','maxLevels']
         for ky in defaultSettings:
             if ky in opts:
                 setattr(self,ky,opts[ky])
@@ -389,7 +390,7 @@ class Poset(Chare):
         nextLevelSize = 1
 
         # print('Waiting for level done')
-        while level < self.N+1 and nextLevelSize > 0:
+        while level < self.maxLevels and nextLevelSize > 0:
             # successorProxies = self.succGroup.getProxies(ret=True).get()
             # doneFuts = [Future() for k in range(len(self.successorProxies))]
             # for k in range(len(self.successorProxies)):
