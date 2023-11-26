@@ -61,7 +61,7 @@ class flipConstraints:
                                                             else np.array(self.hyperSet.subtractSet(self.fSet),dtype=np.int64)
         self.N = len(self.nonRedundantHyperplanes)
         if self.N < self.allN:
-            print(f'WARNING: some hyerplanes corresponded to fixed boundary hyperplanes!')
+            print(f'WARNING: some hyperplanes are duplicates or correspond to fixed boundary hyperplanes!')
         self.constraints = np.vstack([ self.constraints[self.nonRedundantHyperplanes,:], self.constraints[self.allN:,:]])
         self.nrms = np.vstack([ self.nrms[self.nonRedundantHyperplanes,], self.nrms[self.allN:,] ])
         self.redundantFlips = np.full(self.allN,-1,dtype=np.int64)
