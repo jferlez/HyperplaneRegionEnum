@@ -1653,6 +1653,7 @@ class successorWorker(Chare):
                 stripNum = N - adj[h]
             else:
                 # Iteratively query until we find the right encoding for the target region
+                stripNum = None
                 for idx in range(1,self.flippedConstraints.N - self.flippedConstraints.baseN + 1):
                     newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, neighborReg, self.flippedConstraints.N)
                     print((newBaseReg, newBaseRegTup, newBaseRegN))
@@ -1661,6 +1662,9 @@ class successorWorker(Chare):
                     if retVal[0] > 0:
                         stripNum = idx
                         break
+                if stripNum is None:
+                    print(f'ERROR finding desired region!')
+                    return [[set([]),-1]]
             print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    stripNum = {stripNum}')
 
             H[neighborReg,:] = -H[neighborReg,:]
