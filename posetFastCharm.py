@@ -491,7 +491,7 @@ class Poset(Chare):
         if not inserted:
             self.flippedConstraints.serialize()
             self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
-            self.localVarGroup.setConstraintsOnly(aug,awaitable=True).get()
+            self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
             return True
 
         localOpts = deepcopy(opts)
