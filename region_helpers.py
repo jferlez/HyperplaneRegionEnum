@@ -2,7 +2,7 @@ import numpy as np
 import encapsulateLP
 from copy import copy, deepcopy
 import posetFastCharm_numba
-from vectorSet.vectorSet import vectorSet
+import vectorSet.vectorSet as vectorSet
 from itertools import chain
 
 class flipConstraints:
@@ -33,7 +33,7 @@ class flipConstraints:
             self.fA = fA
             self.fb = fb
             # create a vector set for the fixed constraints
-            self.fSet = vectorSet( np.hstack((-1*self.fb,self.fA)) )
+            self.fSet = vectorSet.vectorSet( np.hstack((-1*self.fb,self.fA)) )
             self.allConstraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), self.fSet.getUniqueRows() ) )
 
         else:
@@ -51,7 +51,7 @@ class flipConstraints:
         self.nrms = self.allNrms
 
         # Create a vector set for the main hyperplanes
-        self.hyperSet = vectorSet(self.allConstraints[:self.N,:])
+        self.hyperSet = vectorSet.vectorSet(self.allConstraints[:self.N,:])
 
         # self.root = bytearray( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
         # self.root = int.from_bytes(self.root, 'little')
