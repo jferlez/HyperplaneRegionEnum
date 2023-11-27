@@ -1585,19 +1585,26 @@ class successorWorker(Chare):
         # region containing rebasePt of self.flippedConstraints) correspond to faces in the
         # projected hyperplane arrangement -- these will be the full dimensional faces of
         # the current region that are split by the inserted hyperplane
+        validFlipsListExpand = list(itertools.chain.from_iterable([self.iFlipConstraints.hyperSet.expandDuplicates(i) for i in validFlipsList]))
+        collapsedFaces = self.iFlipConstraints.collapseRegion( validFlipsListExpand )
+        print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   validFlipsList = {validFlipsList}; validFlipsListExpand = {validFlipsListExpand}; collapseRegion = {self.iFlipConstraints.collapseRegion( validFlipsList )} {self.iFlipConstraints.nonRedundantHyperplanes}')
+        print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   collapsedFaces = {collapsedFaces}')
         splitFacesIdx, _ = self.thisProxy[self.thisIndex].concreteMinHRep( \
-                                            self.iFlipConstraints.getRegionConstraints( projINTrep  ), \
+                                            self.iFlipConstraints.getRegionConstraints( projINTrep, allN=False  ), \
                                             None, \
                                             # These arguments are only used with self.useQuery=True, which is disabled
                                             # automatically for insertHyperplane mode
                                             bytearray(b''), \
                                             tuple(), \
                                             # This is the only argument that is relevant for the minHRep
-                                            validFlipsList, \
+                                            collapsedFaces, \
                                             solver = self.solver, \
                                             ret = True \
                                         ).get()
-        splitFaces = {validFlipsList[i]: [validFlipsList[ii] for ii in self.iFlipConstraints.hyperSet.expandDuplicates(i)] for i in splitFacesIdx}
+        print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   {[(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[collapsedFaces[i]],self.iFlipConstraints.hyperSet.expandDuplicates(iexp)) for i in splitFacesIdx]}')
+        splitFaces = {(self.iFlipConstraints.nonRedundantHyperplanes[(iexp:=collapsedFaces[i])]): \
+                      self.iFlipConstraints.hyperSet.expandDuplicates(iexp) for i in splitFacesIdx}
+                      # [validFlipsList[ii] for ii in self.iFlipConstraints.hyperSet.expandDuplicates(iexp)] for i in splitFacesIdx}
         print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    splitFaces = {splitFaces}')
         allSplitFaces = set()
         for h, dups in splitFaces.items():
