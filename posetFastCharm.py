@@ -1526,7 +1526,7 @@ class successorWorker(Chare):
         # intersection with an existsing hyperplane -- handled by vectorSet uniqueness)
         if len(INTrepFull) > 0 and INTrepFull[-1] == N-1:
             print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    Ignoring negative-side region')
-            return [[set([]),-1]]
+            return [set([]),None]
 
         assert len(adj) == 1, f'Incorrect incomming adj parameter'
         print(f'adj = {adj}')
@@ -1671,7 +1671,7 @@ class successorWorker(Chare):
                         break
                 if stripNum is None:
                     print(f'ERROR finding desired region!')
-                    return [[set([]),-1]]
+                    return [set([]),None]
             print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    stripNum = {stripNum}')
 
             H[neighborReg,:] = -H[neighborReg,:]
@@ -1795,7 +1795,7 @@ class successorWorker(Chare):
         constraint_list = None
 
 
-        return [[set([]),-1]]
+        return [set([]),None]
 
 
 def Union(contribs):
