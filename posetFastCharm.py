@@ -61,7 +61,7 @@ class PosetNode(DistributedHash.Node):
                 else:
                     self.adj[ky] = adj[ky]
             self.face = set([ky for ky in self.adj if ky != -1])
-        print(f'    :-:-:-:-:    {charm.myPe()}: Updating original face information {origFace} to {self.face} {self.adj}')
+        print(f'    :-:-:-:-:    {charm.myPe()} {nodeBytes}: Updating original face information {origFace} to {self.face} {self.adj}')
         # self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
     def adjFaceCreate(self):
         if not isinstance(self.adj,dict) or len(self.adj) == 0:
