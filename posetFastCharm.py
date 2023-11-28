@@ -60,7 +60,14 @@ class PosetNode(DistributedHash.Node):
                         del self.adj[ky]
                 else:
                     self.adj[ky] = adj[ky]
-            self.face = set([ky for ky in self.adj if ky != -1])
+            # Use incomming adj to update face information
+            # (But ONLY IF it contains at least one key that is not -1; that structure is used for
+            # newly seeded nodes, where we DON'T wish to overwrite face info -- in that case the face
+            # corresponds to the incomming faces.)
+            # NB: sending an empty adj={} will not alter faces. Faces must be deleted by sending
+            # adj[face]=None
+            if len(self.adj) >= 1 and tuple(self.adj.keys()) != (-1,):
+                self.face = set([ky for ky in self.adj if ky != -1])
         print(f'    :-:-:-:-:    {charm.myPe()} {nodeBytes}: Updating original face information {origFace} to {self.face} {self.adj}')
         # self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
     def adjFaceCreate(self):
