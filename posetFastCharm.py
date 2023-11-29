@@ -1699,7 +1699,7 @@ class successorWorker(Chare):
                                     neighborReg, \
                                     N \
                                 ) + ( \
-                                    set(splitFaces[h]), \
+                                    set(splitFaces[h]) if len(splitFaces[h]) == 1 else set(), \
                                     intPtPos \
                                 ), \
                                 adjUpdate={-1:N-stripNum}, \
@@ -1713,10 +1713,14 @@ class successorWorker(Chare):
         # calculate faces for new region on positive side of inserted hyperplane
         H[INTrepFull,:] = -H[INTrepFull,:]
         posFaces = set()
-        sel = sorted(list(face)) + [N-1]
+        splitFacesUnique = set( itertools.chain.from_iterable([splitFaces[h] for h in splitFaces if len(splitFaces[h]) == 1]) ) & allFace
+        # splitFacesRedundant = set( itertools.chain.from_iterable([splitFaces[h] for h in splitFaces if len(splitFaces[h]) != 1]) ) & allFace
+        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    splitFacesUnique = {splitFacesUnique}')
+        # print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    splitFacesRedundant = {splitFacesRedundant}')
         print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    face = {face}')
         print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    witness = {witness}')
-        sel = [ f for f in face if  not f in splitFaces and not f in incommingFace ]
+        splitFacesSet = incommingFace | splitFacesUnique
+        sel = sorted([ f for f in face if not f in splitFacesSet ])
         print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    sel = {sel}')
         posFacesIdx, _ = self.thisProxy[self.thisIndex].concreteMinHRep( \
                                             H, \
@@ -1735,7 +1739,8 @@ class successorWorker(Chare):
         print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    posFaces = {posFaces}')
         H[INTrepFull,:] = -H[INTrepFull,:]
 
-        splitFacesSet = set(splitFaces.keys()) | incommingFace
+        # NB: splitFacesSet contains ALL faces that are for sure split into full-dimensional faces by the
+        # inserted hyperplane, i.e. are faces to BOTH the positive and negative inserted region
         posFaces |= splitFacesSet
         negFaces = (allFace - posFaces) | splitFacesSet
         negFaces.add(N-1)
