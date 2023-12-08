@@ -814,6 +814,8 @@ class HashWorker(Chare):
         retVal = all([self.workerDone[ch].get() for ch in self.hashChannelsHashEnd])
         self.levelDone = True
         return retVal
+    def getLevelDone(self):
+        return self.levelDone
     @coro
     def awaitQueries(self):
         return all([self.queryDone[ch].get() for ch in self.queryChannelsHashEnd])
@@ -1183,6 +1185,10 @@ class DistHash(Chare):
     @coro
     def levelDone(self):
         res = all(self.hWorkers.awaitLevel(ret=True).get())
+        return res
+    @coro
+    def levelClosed(self):
+        res = all(self.hWorkers.getLevelDone(ret=True).get())
         return res
     @coro
     def levelDoneSecondary(self):
