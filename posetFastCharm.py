@@ -493,6 +493,7 @@ class Poset(Chare):
         self.oldFlippedConstraints = deepcopy(self.flippedConstraints)
 
         inserted = self.flippedConstraints.insertHyperplane(newA, newb)
+        self.pt = self.flippedConstraints.pt
         # To do?: have each instance insert the hyperplane separately for speed (avoids copying custom object)
         aug = self.flippedConstraints.deserialize()
         if not inserted:

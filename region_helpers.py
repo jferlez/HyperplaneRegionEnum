@@ -12,11 +12,15 @@ class flipConstraints:
             raise ValueError('normalize option must be None or a float > 0.0')
         v = nA @ pt
         v = v.flatten() - nb.flatten()
-        self.flipMapN = np.where(v<0,-1,1)
+        self.flipMapN = np.where(v<tol,-1,1)
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
         self.flipMapSet = frozenset(self.flipMapSetNP)
         self.nA = np.diag(self.flipMapN) @ nA
         self.nb = np.diag(self.flipMapN) @ nb
+        if np.any( np.abs(v) <= tol ):
+            updatePoint = True
+        else:
+            updatePoint = False
         self.N = len(nA)
         self.allN = self.N
         self.d = len(nA[0])
@@ -63,6 +67,10 @@ class flipConstraints:
         if self.N < self.allN:
             print(f'WARNING: some hyperplanes are duplicates or correspond to fixed boundary hyperplanes!')
         self.constraints = np.vstack([ self.constraints[self.nonRedundantHyperplanes,:], self.constraints[self.allN:,:]])
+        if updatePoint:
+            self.pt = findInteriorPoint( self.constraints, tol=self.tol, rTol=self.rTol )
+            print(f'\n\nWARNING: Perturbing provided initial point to {self.pt}\n\n')
+            assert not self.pt is None, f'Unable to update anchor point to interior of root region!'
         self.nrms = np.vstack([ self.nrms[self.nonRedundantHyperplanes,], self.nrms[self.allN:,] ])
         self.redundantFlips = np.full(self.allN,-1,dtype=np.int64)
         self.redundantFlips[self.nonRedundantHyperplanes,] = np.ones_like(self.nonRedundantHyperplanes,dtype=np.int64)
@@ -91,6 +99,10 @@ class flipConstraints:
         newSign = None
         newHyperplane = np.hstack([-newb, newA])
         newSign = 1 if newA.reshape(1,-1) @ self.pt >= newb - self.tol else -1
+        if np.abs(newA.reshape(1,-1) @ self.pt - newb) <= self.tol:
+            updatePoint = True
+        else:
+            updatePoint = False
         self.flipMapN = np.hstack([self.flipMapN, np.array([newSign],dtype=np.int64)])
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
         self.flipMapSet = frozenset(self.flipMapSetNP)
@@ -120,6 +132,10 @@ class flipConstraints:
             self.N = len(self.nonRedundantHyperplanes)
 
             self.constraints = np.vstack([ self.constraints[self.nonRedundantHyperplanes,:], self.constraints[self.allN:,:]])
+            if updatePoint:
+                self.pt = findInteriorPoint( self.constraints, tol=self.tol, rTol=self.rTol )
+                print(f'\n\nWARNING: Perturbing provided initial point to {self.pt} after insertion!\n\n')
+                assert not self.pt is None, f'Unable to update anchor point to interior of root region!'
             self.nrms = np.vstack([ self.nrms[self.nonRedundantHyperplanes,], self.nrms[self.allN:,] ])
             self.redundantFlips = np.full(self.allN,-1,dtype=np.int64)
             self.redundantFlips[self.nonRedundantHyperplanes,] = np.ones_like(self.nonRedundantHyperplanes,dtype=np.int64)
