@@ -68,7 +68,7 @@ class PosetNode(DistributedHash.Node):
             # adj[face]=None
             if len(self.adj) >= 1 and tuple(self.adj.keys()) != (-1,):
                 self.face = set([ky for ky in self.adj if ky != -1])
-        print(f'    :-:-:-:-:    {charm.myPe()} {nodeBytes}: Updating original face information {origFace} to {self.face} {self.adj}')
+        # print(f'    :-:-:-:-:    {charm.myPe()} {nodeBytes}: Updating original face information {origFace} to {self.face} {self.adj}')
         # self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
     def adjFaceCreate(self):
         if not isinstance(self.adj,dict) or len(self.adj) == 0:
@@ -1507,25 +1507,30 @@ class successorWorker(Chare):
         #     3) delete the old region that these (two) split region(s) replace
         #     4) Hash a canonical region (in N hyperplanes) for each of the replaced region's successors
         # *****
+        debug = False
         d = H.shape[1]-1
         witnessList = []
         Ntab = N
 
         # Note the N passed here includes the inserted hyperplane, and INTrep will always be of the same length
-        print(f'///// extrasINTrep0 {charm.myPe()}  INTrep = {INTrep}; {adj}')
+        if debug:
+            print(f'///// extrasINTrep0 {charm.myPe()}  INTrep = {INTrep}; {adj}')
         boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(-N + Ntab, INTrep , N) # should be identity for INTrep
         # Wrong! we should only ever process nodes encoded using N... That is INTrep == INTrepFull should ALWAYS HOLD
         # extrasINTrep = tuple( np.nonzero( -H[Ntab:(N-1),1:] @ witness >= (1 + self.rTol) * H[Ntab:(N-1),0].reshape(-1,1) + self.tol )[0] + Ntab )
         extrasINTrep = tuple()
-        print(f'///// extrasINTrep1 {charm.myPe()} = {extrasINTrep}; INTrep = {INTrep}')
+        if debug:
+            print(f'///// extrasINTrep1 {charm.myPe()} = {extrasINTrep}; INTrep = {INTrep}')
         boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, INTrep + extrasINTrep , N)
-        print(f'///// extrasINTrep2 {charm.myPe()} = {extrasINTrep}; INTrepFull = {INTrepFull} boolIdxNoFlip = {boolIdxNoFlipFull}')
-        print(f'///// extrasINTrep3 {charm.myPe()} = {extrasINTrep}; INTrep = {INTrep} boolIdxNoFlip = {boolIdxNoFlip}')
+        if debug:
+            print(f'///// extrasINTrep2 {charm.myPe()} = {extrasINTrep}; INTrepFull = {INTrepFull} boolIdxNoFlip = {boolIdxNoFlipFull}')
+            print(f'///// extrasINTrep3 {charm.myPe()} = {extrasINTrep}; INTrep = {INTrep} boolIdxNoFlip = {boolIdxNoFlip}')
         # INTrep, boolIdxNoFlip, intIdx, intIdxNoFlip = self.decodeRegionStore(INTrep)
 
         rebasedINTrep = region_helpers.recodeRegNewN(N-Ntab,self.flippedConstraints.rebaseRegion(INTrepFull)[0],N)[1]
         rebasedINTrepSet = set(rebasedINTrep)
-        print(f'///// rebasedINTrep = {rebasedINTrep}')
+        if debug:
+            print(f'///// rebasedINTrep = {rebasedINTrep}')
 
         initialRegion = True
 
@@ -1533,12 +1538,14 @@ class successorWorker(Chare):
         # Ignore negative-side inserted regions (inserted hyperplane cannot have a full-dimensional
         # intersection with an existsing hyperplane -- handled by vectorSet uniqueness)
         if len(INTrepFull) > 0 and INTrepFull[-1] == N-1:
-            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    Ignoring negative-side region')
+            if debug:
+                print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    Ignoring negative-side region')
             return [set([]),None]
 
         assert len(adj) == 1, f'Incorrect incomming adj parameter'
-        print(f'adj = {adj}')
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    submittedDeleteQuery = {-N + adj[-1]} {region_helpers.recodeRegNewN(-N + adj[-1], INTrep, N)}')
+        if debug:
+            print(f'adj = {adj}')
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    submittedDeleteQuery = {-N + adj[-1]} {region_helpers.recodeRegNewN(-N + adj[-1], INTrep, N)}')
         q = self.thisProxy[self.thisIndex].query( \
                                     region_helpers.recodeRegNewN( \
                                         -N + adj[-1], \
@@ -1555,18 +1562,21 @@ class successorWorker(Chare):
             oldPayload = q[4]
         else:
             adj = None
-            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    WARNING {charm.myPe()}: Unable to find successor region to delete! {neighborReg} {adj}')
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    query results = {q}; adjUpdate = {adj}')
+            if debug:
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    WARNING {charm.myPe()}: Unable to find successor region to delete! {neighborReg} {adj}')
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    query results = {q}; adjUpdate = {adj}')
         adj[-1] = N
-        print(f' %%%%%%%% MADE IT HERE! %%%%%%%%')
+        if debug:
+            print(f' %%%%%%%% MADE IT HERE! %%%%%%%%')
+            print(f'........... N={N} {adj}')
 
-        print(f'........... N={N} {adj}')
         Ntab = adj[-1]
         incommingFace = face
         allFace = set(adj.keys())
         allFace.remove(-1)
         face = allFace - incommingFace
-        print(f'........... allFace = {allFace}; incommingFace = {incommingFace}; incomming adj = {adj}')
+        if debug:
+            print(f'........... allFace = {allFace}; incommingFace = {incommingFace}; incomming adj = {adj}')
 
         validFlips = face - rebasedINTrepSet
         validFlipsList = sorted(list(validFlips))
@@ -1574,10 +1584,11 @@ class successorWorker(Chare):
         # Find all of the adjacent regions that touch the inserted hyperplane
         splitRegions = []
 
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   INTrepSetFull = {INTrepFull}')
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   Valid flips = {validFlips}')
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   rebasePt = {self.flippedConstraints.rebasePt.flatten()}')
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   ptLift   = {self.iPtLift.flatten()}')
+        if debug:
+            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   INTrepSetFull = {INTrepFull}')
+            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   Valid flips = {validFlips}')
+            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   rebasePt = {self.flippedConstraints.rebasePt.flatten()}')
+            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   ptLift   = {self.iPtLift.flatten()}')
 
         # The rebasedINTrep should be -- by construction -- an 'expanded' region specification
         # for the projected constraints.
@@ -1587,7 +1598,8 @@ class successorWorker(Chare):
         # about creating the right abstractions! 😄), to identify all full-dimensional faces of
         # this region that are split by the inserted hyperplane.
         projINTrep = self.iFlipConstraints.collapseRegion(rebasedINTrep)
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   temp = {projINTrep}; rebasedINTrepSet = {rebasedINTrep}')
+        if debug:
+            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   temp = {projINTrep}; rebasedINTrepSet = {rebasedINTrep}')
 
         # Now let's find which of the validFlips (unflipped hyperplanes starting from the
         # region containing rebasePt of self.flippedConstraints) correspond to faces in the
@@ -1595,8 +1607,9 @@ class successorWorker(Chare):
         # the current region that are split by the inserted hyperplane
         validFlipsListExpand = list(itertools.chain.from_iterable([self.iFlipConstraints.hyperSet.expandDuplicates(i) for i in validFlipsList]))
         collapsedFaces = self.iFlipConstraints.collapseRegion( validFlipsListExpand )
-        print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   validFlipsList = {validFlipsList}; validFlipsListExpand = {validFlipsListExpand}; collapseRegion = {self.iFlipConstraints.collapseRegion( validFlipsList )} {self.iFlipConstraints.nonRedundantHyperplanes}')
-        print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   collapsedFaces = {collapsedFaces}')
+        if debug:
+            print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   validFlipsList = {validFlipsList}; validFlipsListExpand = {validFlipsListExpand}; collapseRegion = {self.iFlipConstraints.collapseRegion( validFlipsList )} {self.iFlipConstraints.nonRedundantHyperplanes}')
+            print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   collapsedFaces = {collapsedFaces}')
         splitFacesIdx, _ = self.thisProxy[self.thisIndex].concreteMinHRep( \
                                             self.iFlipConstraints.getRegionConstraints( projINTrep, allN=False  ), \
                                             None, \
@@ -1609,17 +1622,21 @@ class successorWorker(Chare):
                                             solver = self.solver, \
                                             ret = True \
                                         ).get()
-        print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   {[(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[collapsedFaces[i]],self.iFlipConstraints.hyperSet.expandDuplicates(iexp)) for i in splitFacesIdx]}')
+        if debug:
+            print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   {[(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[collapsedFaces[i]],self.iFlipConstraints.hyperSet.expandDuplicates(iexp)) for i in splitFacesIdx]}')
         splitFaces = {(self.iFlipConstraints.nonRedundantHyperplanes[(iexp:=collapsedFaces[i])]): \
                       self.iFlipConstraints.hyperSet.expandDuplicates(iexp) for i in splitFacesIdx}
                       # [validFlipsList[ii] for ii in self.iFlipConstraints.hyperSet.expandDuplicates(iexp)] for i in splitFacesIdx}
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    splitFaces = {splitFaces}')
+        if debug:
+            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    splitFaces = {splitFaces}')
         allSplitFaces = set()
         for h, dups in splitFaces.items():
             allSplitFaces |= set(dups)
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    allSplitFaces = {allSplitFaces}')
+        if debug:
+            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    allSplitFaces = {allSplitFaces}')
         nonSplitFaces = validFlips - allSplitFaces
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    nonSplitFaces = {nonSplitFaces}')
+        if debug:
+            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    nonSplitFaces = {nonSplitFaces}')
 
 
         # Ok.... So how do we change this to make it work properly?
@@ -1637,10 +1654,12 @@ class successorWorker(Chare):
 
         for h in allFace - {N-1}:
             INTrepSetFull = set(INTrepFull)
-            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    Working on face {h}')
-            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    INTrepSetFull = {INTrepSetFull}')
+            if debug:
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    Working on face {h}')
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    INTrepSetFull = {INTrepSetFull}')
             neighborReg = sorted(list(INTrepSetFull | {h} if not h in INTrepSetFull else INTrepSetFull - {h}))
-            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    neighborReg = {neighborReg} {adj[h]}')
+            if debug:
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    neighborReg = {neighborReg} {adj[h]}')
             cont = self.thisProxy[self.thisIndex].hashAndSend( \
                         region_helpers.recodeRegNewN( \
                             -N + (adj[h]), \
@@ -1654,7 +1673,8 @@ class successorWorker(Chare):
                         ret=True \
                     ).get()
             testStripNum = -N + adj[h]
-            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    submitted update = {testStripNum} {region_helpers.recodeRegNewN(testStripNum, neighborReg, N)}')
+            if debug:
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    submitted update = {testStripNum} {region_helpers.recodeRegNewN(testStripNum, neighborReg, N)}')
         for h in splitFaces:
             neighborReg = copy(INTrepSetFull)
             for hh in splitFaces[h]:
@@ -1663,7 +1683,8 @@ class successorWorker(Chare):
                 else:
                     neighborReg = neighborReg - {hh}
             neighborReg = sorted(list(neighborReg))
-            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    neighborReg = {neighborReg}')
+            if debug:
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    neighborReg = {neighborReg}')
             if len(splitFaces[h]) == 1:
                 stripNum = N - adj[h]
             else:
@@ -1680,7 +1701,8 @@ class successorWorker(Chare):
                 if stripNum is None:
                     print(f'ERROR finding desired region!')
                     return [set([]),None]
-            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    stripNum = {stripNum}')
+            if debug:
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    stripNum = {stripNum}')
 
             H[neighborReg,:] = -H[neighborReg,:]
             intPtPos = region_helpers.findInteriorPoint( \
@@ -1691,7 +1713,8 @@ class successorWorker(Chare):
                                 rTol=self.rTol, \
                                 lpopts=lpopts \
                             )
-            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    intPtPos = {intPtPos}')
+            if debug:
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    intPtPos = {intPtPos}')
             H[neighborReg,:] = -H[neighborReg,:]
             # Create the new split region (positive-side of inserted hyperplane)
             cont = self.thisProxy[self.thisIndex].hashAndSend( \
@@ -1716,13 +1739,15 @@ class successorWorker(Chare):
         posFaces = set()
         splitFacesUnique = set( itertools.chain.from_iterable([splitFaces[h] for h in splitFaces if len(splitFaces[h]) == 1]) ) & allFace
         # splitFacesRedundant = set( itertools.chain.from_iterable([splitFaces[h] for h in splitFaces if len(splitFaces[h]) != 1]) ) & allFace
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    splitFacesUnique = {splitFacesUnique}')
-        # print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    splitFacesRedundant = {splitFacesRedundant}')
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    face = {face}')
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    witness = {witness}')
+        if debug:
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    splitFacesUnique = {splitFacesUnique}')
+            # print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    splitFacesRedundant = {splitFacesRedundant}')
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    face = {face}')
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    witness = {witness}')
         splitFacesSet = incommingFace | splitFacesUnique
         sel = sorted([ f for f in face if not f in splitFacesSet ])
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    sel = {sel}')
+        if debug:
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    sel = {sel}')
         posFacesIdx, _ = self.thisProxy[self.thisIndex].concreteMinHRep( \
                                             H, \
                                             None, \
@@ -1737,7 +1762,8 @@ class successorWorker(Chare):
                                         ).get()
         posFaces = set([ sel[f] for f in posFacesIdx ])
         posFaces.add(N-1)
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    posFaces = {posFaces}')
+        if debug:
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    posFaces = {posFaces}')
         H[INTrepFull,:] = -H[INTrepFull,:]
 
         # NB: splitFacesSet contains ALL faces that are for sure split into full-dimensional faces by the
@@ -1750,10 +1776,11 @@ class successorWorker(Chare):
             posFacesUpdate[i] = N
         posFacesUpdate[N-1] = N
         posFacesUpdate[-1] = N
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    posFaces = {posFaces}')
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    negFaces = {negFaces}')
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    splitFacesSet = {splitFacesSet}')
-        print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    posFacesUpdate = {posFacesUpdate}')
+        if debug:
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    posFaces = {posFaces}')
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    negFaces = {negFaces}')
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    splitFacesSet = {splitFacesSet}')
+            print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    posFacesUpdate = {posFacesUpdate}')
 
         # Send an update to the CURRENT region, using read/write semantics of adj dictionary
         cont = self.thisProxy[self.thisIndex].hashAndSend( \
@@ -1789,7 +1816,8 @@ class successorWorker(Chare):
         for i in splitFacesSet:
             negAdj[i] = N
         negAdj[-1] = N
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    Sending negative side region intPtNeg = {intPtNeg}; {self.flippedConstraints.N} {negAdj}')
+        if debug:
+            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    Sending negative side region intPtNeg = {intPtNeg}; {self.flippedConstraints.N} {negAdj}')
         cont = self.thisProxy[self.thisIndex].hashAndSend( \
                                     region_helpers.recodeRegNewN( \
                                         0, \
@@ -1803,7 +1831,8 @@ class successorWorker(Chare):
                                     payload=payload, \
                                     ret=True \
                                 ).get()
-        print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    DONE sending negative side region intPtNeg = {intPtNeg}; {self.flippedConstraints.N}')
+        if debug:
+            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    DONE sending negative side region intPtNeg = {intPtNeg}; {self.flippedConstraints.N}')
 
         constraint_list = None
 
