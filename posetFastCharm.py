@@ -817,6 +817,7 @@ class successorWorker(Chare):
             self.doRSCleanup = True
         self.localVarGroup = localVarGroup
         self.timedOut = False
+        self.method = None
         self.rsScheduler = rsScheduler
         self.rsPeFree = True
         self.rsDone = False
@@ -840,6 +841,7 @@ class successorWorker(Chare):
         # self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver='glpk')
         self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP
         self.processNodesArgs = {'solver':'glpk','ret':True}
+        self.method = None
         # Defaults to glpk, so this empty call is ok:
         self.lp = encapsulateLP.encapsulateLP()
         self.lpIntPoint = encapsulateLP.encapsulateLP()
@@ -875,6 +877,7 @@ class successorWorker(Chare):
         self.clearTable = clearTable
         self.sendWitness = True if sendWitness else None
         self.verbose = verbose
+        self.method = method
         if hashStore == 'bits':
             self.hashStoreMode = 0
         elif hashStore == 'list':
