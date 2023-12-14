@@ -1182,7 +1182,7 @@ class successorWorker(Chare):
         if len(self.workInts) > 0:
             successorList = [[None,None,None,None,None,None,None] for k in range(len(self.workInts))]
             for ii in range(len(successorList)):
-                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.flippedConstraints.N,self.flippedConstraints.constraints,**self.processNodesArgs,witness=self.workInts[ii][4], payload=self.workInts[ii][6],xN=self.workInts[ii][1],face=self.workInts[ii][3],adj=self.workInts[ii][5], awaitable=True).get()
+                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.workInts[ii][1],self.flippedConstraints.constraints,**self.processNodesArgs,witness=self.workInts[ii][4], payload=self.workInts[ii][6],xN=self.workInts[ii][1],face=self.workInts[ii][3],adj=self.workInts[ii][5], awaitable=True).get()
                 self.timedOut = (time.time() > self.clockTimeout) if self.clockTimeout is not None else False
                 # print('Working on ' + str(self.workInts[ii]) + 'on PE ' + str(charm.myPe()) + '; with timeout ' + str(self.timedOut))
                 if type(successorList[ii][1]) is int or self.timedOut:
