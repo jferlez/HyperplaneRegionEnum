@@ -687,6 +687,42 @@ class Poset(Chare):
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
 
     @coro
+    def canonicalizeTable(self,opts={}):
+
+        localOpts = deepcopy(opts)
+        localOpts['method'] = 'canonicalizeTable'
+        localOpts['clearTable'] = False
+        localOpts['sendWitness'] = True
+        localOpts['sendFaces'] = True
+        localOpts['queryReturnInfo'] = True
+        localOpts['useQuery'] = False
+        tol = opts['tol'] if 'tol' in opts else 1e-9
+        rTol = opts['rTol'] if 'rTol' in opts else 1e-9
+        solver = localOpts['solver'] if 'solver' in localOpts else 'glpk'
+        lpopts = localOpts['lpopts'] if 'lpopts' in localOpts else None
+
+        self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
+
+        tval = self.distHashTable.seedLevelFullTable(clearTable=True,ret=True).get()
+
+        self.succGroup.setMethod(**localOpts)
+
+        ##### Now test the canonicalization features...
+        f = Future()
+        self.distHashTable.initListening(f,queryReturnInfo=True,awaitable=True).get()
+        f.get()
+        self.succGroup.startListening(awaitable=True).get()
+
+        self.succGroup.computeSuccessorsNew(ret=True).get()
+
+        self.distHashTable.awaitPending(usePosetChecking=False,awaitable=True).get()
+        self.succGroup.sendAll(-2,awaitable=True).get()
+        self.succGroup.closeQueryChannels(awaitable=True).get()
+        self.succGroup.flushMessages(ret=True).get()
+        #####
+        self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
+
+    @coro
     def getLPCount(self):
         statsFut = Future()
         self.succGroupFull.getStats(statsFut)
@@ -898,6 +934,9 @@ class successorWorker(Chare):
                 print(f'WARNING: vertex region encodings are not supported for method {method}. Defaulting to bit region encodings...')
         elif method=='insertHyperplane':
             self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsInsertHyperplane
+            self.processNodesArgs = {'solver':solver}
+        elif method=='canonicalizeTable':
+            self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsCanonicalizeTable
             self.processNodesArgs = {'solver':solver}
         if len(lpopts) == 0:
             self.lpopts = {}
@@ -1841,6 +1880,59 @@ class successorWorker(Chare):
 
 
         return [set([]),None]
+
+    @coro
+    def processNodeSuccessorsCanonicalizeTable(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+        debug = False
+        d = H.shape[1]-1
+        witnessList = []
+
+        boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(0, INTrep , N) # should be identity for INTrep
+
+        if witness is None:
+            idx = np.zeros(H.shape[0], dtype=np.bool_)
+            idx[self.flippedConstraints.N:] = np.ones_like(idx[self.flippedConstraints.N:],dtype=np.bool_)
+            idx[:N] = np.ones_like(idx[:N],dtype=np.bool_)
+
+            Hlocal = H[idx,:]
+            Hlocal[INTrep,:] = -Hlocal[INTrep,:]
+
+            if not face is None:
+                Hlocal = np.vstack([Hlocal[sorted(list(face)),:], Hlocal[N:,:]])
+
+            witness = region_helpers.findInteriorPoint( \
+                            Hlocal, \
+                            solver=self.solver, \
+                            lpObj=self.lp, \
+                            tol=self.tol, \
+                            rTol=self.rTol, \
+                            lpopts=lpopts \
+                        )
+            if witness is None:
+                print(f'ERROR finding interior point!')
+                return [set([]),None]
+
+        # This is a region encoded with fewer than the final number of hyperplanes, self.flippedConstraints.N,
+        # so we have to figure out which side of the un-encoded hyperplanes this region lies on
+        if self.flippedConstraints.N - N > 0:
+            newBaseRegFullTup = INTrep + tuple( \
+                                np.nonzero( \
+                                    ( \
+                                        -self.flippedConstraints.constraints[N:self.flippedConstraints.N,1:] @ witness \
+                                        - self.flippedConstraints.constraints[N:self.flippedConstraints.N,0].reshape(-1,1) \
+                                    ).flatten() \
+                                    >= self.tol \
+                                )[0] \
+                            )
+        else:
+            newBaseRegFullTup = INTrep
+
+        boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, newBaseRegFullTup , self.flippedConstraints.N)
+
+        print(f'________    PE {charm.myPe()} --> {N} {self.flippedConstraints.N} {boolIdxNoFlip}; {boolIdxNoFlipFull}; {INTrep}; {INTrepFull}')
+
+        return [set([]),None]
+
 
 
 def Union(contribs):
