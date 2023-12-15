@@ -866,6 +866,10 @@ class HashWorker(Chare):
     #         count += 1
     #     return count
     @coro
+    def seedLevelListFullTable(self):
+        self.levelList = [nd['ptr'] for nd in self.table.values()]
+        self.level = 0
+    @coro
     def distributeTableChunk(self,feederPEoffset,retFut,clearTable=True):
         self.disableTableChanges = True
         while len(self.levelList) > 0:
@@ -1190,6 +1194,15 @@ class DistHash(Chare):
     def levelClosed(self):
         res = all(self.hWorkers.getLevelDone(ret=True).get())
         return res
+    @coro
+    def seedLevelFullTable(self,clearTable=True):
+        status = self.hWorkers.getLevelDone(ret=True).get()
+        if any(status) and not all(status):
+            print(f'ERROR: cannot reset level because level enumeration is in progress')
+            return False
+        self.hWorkers.seedLevelListFullTable(awaitable=True).get()
+        self.thisProxy.scheduleNextLevel(clearTable=clearTable,awaitable=True).get()
+        return True
     @coro
     def levelDoneSecondary(self):
         checkVal = None
