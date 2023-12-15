@@ -210,14 +210,14 @@ class Poset(Chare):
         self.normalize = normalize
         if not self.normalize is None and not ( isinstance(self.normalize,float) and self.normalize > 0.0 ):
             raise ValueError('ERROR: normalize argument must be \'None\' or a float > 0')
-        self.N = len(self.AbPairs[0][0])
+        # self.N = len(self.AbPairs[0][0])
 
 
     @coro
     def setConstraint(self,lb=0,out=0,timeout=None,prefilter=True,rebasePt=None):
         self.populated = False
         self.incomplete = True
-        self.N = len(self.AbPairs[0][0])
+        # self.N = len(self.AbPairs[0][0])
         if prefilter:
             createConstraints = region_helpers.flipConstraintsReducedMin
         else:
