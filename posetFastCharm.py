@@ -247,6 +247,38 @@ class Poset(Chare):
         return 1
 
     @coro
+    def initAndSetFromConstraints(self,constraintsObj,timeout=None,rebasePt=None):
+        if not isinstance(constraintsObj,region_helpers.flipConstraints):
+            print(f'ERROR: must provide a region_helpers.flipConstraints object!')
+            return 0
+        self.populated = False
+        self.incomplete = True
+        self.flippedConstraints = deepcopy(constraintsObj)
+        allConstraints = self.flippedConstraints.allConstraints
+        allN = self.flippedConstraints.allN
+        self.AbPairs = [[-allConstraints[:allN,1:].copy(), -allConstraints[:allN,0].reshape(-1,1).copy()]]
+        self.fixedA = allConstraints[allN:,1:]
+        self.fixedb = -allConstraints[allN:,0].reshape(-1,1)
+        self.pt = self.flippedConstraints.pt
+
+        self.normalize = self.flippedConstraints.normalize
+        self.N = self.flippedConstraints.N
+        if not rebasePt is None and self.flippedConstraints.rebasePt is None:
+            self.flippedConstraints.setRebase(copy(rebasePt))
+
+
+        stat = self.succGroup.initialize(self.N,self.flippedConstraints.serialize(),timeout,awaitable=True)
+        stat.get()
+        if self.useDefaultLocalVarGroup:
+            self.localVarGroup.setConstraintsOnly(self.flippedConstraints.serialize(),awaitable=True).get()
+
+        self.populated = False
+        self.oldFlippedConstraints = None
+        self.levelSizes = [0]
+
+        return 1
+
+    @coro
     def getConstraintsObject(self):
         return self.flippedConstraints.serialize()
 
