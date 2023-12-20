@@ -110,6 +110,15 @@ class HashWorker(Chare):
         self.table = self.tableStore['default']
         self.localListenerActive = False
         self.localQueryListenterActive = False
+        # Use to track the number of ready messages/status
+        self.negStatusCnt = 0
+        self.termStatusCnt = 0
+        self.msgBufCnt = 0
+        self.msgDoneCnt = self.msgBufCnt
+        self.negQueryStatusCnt = 0
+        self.queryBufCnt = 0
+        self.queryDoneCnt = self.queryBufCnt
+
         self.enumListenerActive = False
         self.disableTableChanges = False
         self.mainListenerActive = False
@@ -449,6 +458,10 @@ class HashWorker(Chare):
     def localListener(self,ch,chIdx):
         self.localListenerActive = True
         self.initiatedNodeProc = False
+        self.negStatusCnt = 0
+        self.termStatusCnt = 0
+        self.msgBufCnt = len(self.hashChannelsHashEnd)
+        self.msgDoneCnt = self.msgBufCnt
         validInput = False
         while True:
             # print('Listener started')
@@ -467,6 +480,7 @@ class HashWorker(Chare):
             self.messages[ch]['msg'] = val
             ackFut = Future()
             self.messages[ch]['fut'] = ackFut
+            self.msgDoneCnt -= 1
             # print(f'PE{charm.myPe()} MSG:{self.msgCounter-1}: {self.messages}')
             self.loopback.send(chIdx)
             # if not self.initiatedNodeProc:
@@ -490,6 +504,9 @@ class HashWorker(Chare):
     def localQueryListener(self,ch,chIdx):
         self.localQueryListenterActive = True
         self.initiatedQueryProc = False
+        self.negQueryStatusCnt = 0
+        self.queryBufCnt = len(self.queryChannelsHashEnd)
+        self.queryDoneCnt = self.queryBufCnt
         while True:
             # print('Listener started')
             # charm.wait([ch])
@@ -500,6 +517,7 @@ class HashWorker(Chare):
             self.queryMessages[ch]['msg'] = val
             ackFut = Future()
             self.queryMessages[ch]['fut'] = ackFut
+            self.queryDoneCnt -= 1
             self.queryLoopback.send(chIdx)
             # if not self.initiatedNodeProc:
                 # print('===='*(charm.myPe()+1) + '>>  PE'+str(charm.myPe())+'QUERYLocalListener ' + sig + ' -- Signaling to listen()' )
@@ -535,6 +553,9 @@ class HashWorker(Chare):
             self.status[ch] = 0
             self.messages[ch] = {'msg':None, 'fut':None}
             self.workerDone[ch] = None
+        self.negStatusCnt = 0
+        self.msgBufCnt = len(self.hashChannelsHashEnd)
+        self.msgDoneCnt = self.msgDoneCnt
         self.listenerStatus = []
         for k in range(len(self.hashChannelsHashEnd)):
             self.listenerStatus.append( self.thisProxy[self.thisIndex].localListener(self.hashChannelsHashEnd[k],k, ret=True) )
@@ -544,6 +565,9 @@ class HashWorker(Chare):
             self.queryStatus[ch] = 0
             self.queryMessages[ch] = {'msg':None, 'fut':None}
             self.queryDone[ch] = None
+        self.negQueryStatusCnt = 0
+        self.queryBufCnt = len(self.queryChannelsHashEnd)
+        self.queryDoneCnt = self.queryBufCnt
         for k in range(len(self.queryChannelsHashEnd)):
             self.listenerStatus.append( self.thisProxy[self.thisIndex].localQueryListener(self.queryChannelsHashEnd[k],k,ret=True) )
             self.queryDone[self.queryChannelsHashEnd[k]] = Future()
@@ -572,8 +596,10 @@ class HashWorker(Chare):
         msgCount = {}
         for ch in self.hashChannelsHashEnd:
             msgCount[ch] = 0
-        while any([self.queryStatus[ch] > -2 for ch in self.queryChannelsHashEnd]) or \
-            any([self.status[ch] > -2 for ch in self.hashChannelsHashEnd]): # or not free:
+        # while any([self.queryStatus[ch] > -2 for ch in self.queryChannelsHashEnd]) or \
+        #     any([self.status[ch] > -2 for ch in self.hashChannelsHashEnd]): # or not free:
+        while self.negStatusCnt < self.msgBufCnt or \
+            self.negQueryStatusCnt < self.queryBufCnt: # or not free:
             # traceSig = random.random()
             # peSig = 2*charm.myPe()*'    ' + 'PE_' + str(charm.myPe()) + 2*(charm.numPes()+4 - charm.myPe())*' ' + '  '
             # indent = cnt*8*' '
@@ -611,16 +637,21 @@ class HashWorker(Chare):
                     queryOnly = True
                     selfQuery = True
                     processOnly = False
-                if all([self.status[ch] <= -2 for ch in self.hashChannelsHashEnd]) and \
-                        all([self.queryStatus[ch] <= -2 for ch in self.queryChannelsHashEnd]):
+                # if all([self.status[ch] <= -2 for ch in self.hashChannelsHashEnd]) and \
+                #         all([self.queryStatus[ch] <= -2 for ch in self.queryChannelsHashEnd]):
+                if self.negStatusCnt == self.msgBufCnt and \
+                        self.negQueryStatusCnt == self.queryBufCnt:
                     self.rateChannelHashEnd.send(min([self.status[ch] for ch in self.hashChannelsHashEnd]))
                     break
                 # print('Received control of ' + str(control) + ' on PE ' + str(charm.myPe()))
-                if all([self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd]) and \
-                    all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd]):
+                # if all([self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd]) and \
+                #     all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd]):
+                if self.msgDoneCnt == self.msgBufCnt and \
+                    self.queryDoneCnt == self.queryBufCnt:
                     self.rateChannelHashEnd.send(-1)
                     continue
-                if queryOnly and not selfQuery and all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd]):
+                # if queryOnly and not selfQuery and all([self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd]):
+                if queryOnly and not selfQuery and self.queryDoneCnt == self.queryBufCnt:
                     self.rateChannelHashEnd.send(-1)
                     continue
 
@@ -628,8 +659,10 @@ class HashWorker(Chare):
             pendingWork = [3,3]
             if not processOnly:
                 pendingWork[0] = self.controlLoopback.recv()
-                if ((not pendingChecks and pendingWork[0] > 1) and any([not self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd])) or \
-                        pendingWork[0] == 1 and any([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd]):
+                # if ((not pendingChecks and pendingWork[0] > 1) and any([not self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd])) or \
+                #         pendingWork[0] == 1 and any([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd]):
+                if ((not pendingChecks and pendingWork[0] > 1) and self.msgDoneCnt < self.msgBufCnt) or \
+                        pendingWork[0] == 1 and self.queryDoneCnt < self.queryBufCnt:
                     pendingWork[1] = self.controlLoopback.recv()
                 if 1 in pendingWork:
                     pendingChecks = True
@@ -647,7 +680,8 @@ class HashWorker(Chare):
 
 
             # Count the number of times we execute when there are queries pending:
-            if pendingChecks or not pendingQueries or all([self.queryStatus[chIt] == -2 for chIt in self.queryChannelsHashEnd]):
+            # if pendingChecks or not pendingQueries or all([self.queryStatus[chIt] == -2 for chIt in self.queryChannelsHashEnd]):
+            if pendingChecks or not pendingQueries or self.negQueryStatusCnt == self.queryBufCnt:
                 yieldCount += 1
 
             # print(prefix + ' Hash worker on PE ' + str(charm.myPe()) + ' pendingWork=' + str(pendingWork) + ' ' + \
@@ -657,7 +691,8 @@ class HashWorker(Chare):
             chList = []
             answeredSelf = False
             if pendingQueries:
-                numPending = sum([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd])
+                # numPending = sum([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd])
+                numPending = self.queryBufCnt - self.queryDoneCnt
                 # print('numPending on PE ' + str(charm.myPe()) + ' is ' + str(numPending))
                 i = 0
                 while i < numPending:
@@ -686,12 +721,14 @@ class HashWorker(Chare):
                         answeredSelf = True
                         # for chIt in self.queryChannelsHashEnd:
                         self.queryStatus[ch] = -2
+                        self.negQueryStatusCnt += 1
                         self.queryDone[ch].send(True)
                     else:
                         print('PE' + str(charm.myPe()) + ' : Unexpected query received. Query was ' + str(val))
                     i += 1
                     # Ensure we catch any messages arriving at the local listener while we were receiving on the queryLoopback channel
-                    numPending = sum([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd])
+                    # numPending = sum([not self.queryMessages[ch]['fut'] is None for ch in self.queryChannelsHashEnd])
+                    numPending = self.queryBufCnt - self.queryDoneCnt
                     # If this is a self query and it hasn't been answered yet, repeat the loop until it is
                     if selfQuery and not answeredSelf and i == numPending:
                         numPending += 1
@@ -700,6 +737,7 @@ class HashWorker(Chare):
                     # We're all done with this message, so report back
                     localFut = self.queryMessages[ch]['fut']
                     self.queryMessages[ch]['fut'] = None
+                    self.queryDoneCnt += 1
                     if not localFut is None:
                         localFut.send(1)
 
@@ -714,7 +752,8 @@ class HashWorker(Chare):
             # print(prefix + ' PendingChecks is ' + str(pendingChecks) + ' and pendingQueries is ' + str(pendingQueries))
             if pendingChecks and (not queryOnly or free) and yieldCount >= self.maxNodeYields:
                 # print(prefix + ' Pending messages on PE ' + str(charm.myPe()) + ' are ' + str(self.messages))
-                numPending = sum([not self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd])
+                # numPending = sum([not self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd])
+                numPending = self.msgBufCnt - self.msgDoneCnt
                 # print(prefix + 'numPending nodes is ' + str(numPending) + 'on PE ' + str(charm.myPe()))
                 i = 0
                 while i < numPending:
@@ -731,6 +770,8 @@ class HashWorker(Chare):
                         if self.status[ch] != -2 and self.status[ch] != -3:
                             self.workerDone[ch].send(True)
                         self.status[ch] = -3
+                        self.termStatusCnt += 1
+                        self.negStatusCnt += 1
                         self.localVarGroup.setSkip(True)
                     elif val == -4:
                         # msgFalseSet = False
@@ -739,6 +780,8 @@ class HashWorker(Chare):
                             self.workerDone[ch].send(False)
                             msgFalseSet = True
                         self.status[ch] = -3
+                        self.termStatusCnt += 1
+                        self.negStatusCnt += 1
                         # if not msgFalseSet:
                         #     pass
                         #     # print('**WARNING**: \'False\' early termination signal was received, but didn\'t set any return values. Possible synchronization issue!')
@@ -746,8 +789,10 @@ class HashWorker(Chare):
                         if self.status[ch] != -2 and self.status[ch] != -3:
                             self.workerDone[ch].send(True)
                             self.status[ch] = -2
+                            self.negStatusCnt += 1
                         # self.workerDone[ch].send(True)
-                        if all([self.status[chIt] <= -2 for chIt in self.hashChannelsHashEnd]):
+                        # if all([self.status[chIt] <= -2 for chIt in self.hashChannelsHashEnd]):
+                        if self.negStatusCnt == self.msgBufCnt:
                             self.levelDone = True
                     elif type(val) == tuple and len(val) >= 3:
                         newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
@@ -762,6 +807,8 @@ class HashWorker(Chare):
                                     if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
                                         self.workerDone[ch].send(False)
                                     self.status[ch] = -3
+                                    self.negStatusCnt += 1
+                                    self.termStatusCnt += 1
                                     # self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
                                     self.levelDone = True
                         elif self.nodeCalls & 2:
@@ -779,7 +826,8 @@ class HashWorker(Chare):
                     #     break
                     # print('Hash table on PE ' + str(charm.myPe()) + str(self.table))
                     i += 1
-                    numPending = sum([not self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd])
+                    # numPending = sum([not self.messages[ch]['fut'] is None for ch in self.hashChannelsHashEnd])
+                    numPending = self.msgBufCnt - self.msgDoneCnt
                     yieldCount = 0
                     pendingChecks = False
 
@@ -787,6 +835,7 @@ class HashWorker(Chare):
                     # We're all done with this message, so report back
                     localFut = self.messages[ch]['fut']
                     self.messages[ch]['fut'] = None
+                    self.msgDoneCnt += 1
                     if not localFut is None:
                         localFut.send(1)
 
@@ -794,7 +843,7 @@ class HashWorker(Chare):
 
             # Release the feeder to get back to work:
             processOnly = False
-            retControl = -3 if any([self.status[ch] == -3 for ch in self.hashChannelsHashEnd]) else -1
+            retControl = -3 if self.termStatusCnt > 0 else -1
             if not self.rateChannelHashEnd is None and not free:
                 self.rateChannelHashEnd.send(retControl)
             elif not self.termProxy is None and retControl == -3:
