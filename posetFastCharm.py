@@ -719,7 +719,7 @@ class Poset(Chare):
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
 
     @coro
-    def canonicalizeTable(self,opts={}):
+    def canonicalizeTable(self,opts={},rebasePt=None):
 
         localOpts = deepcopy(opts)
         localOpts['method'] = 'canonicalizeTable'
@@ -738,6 +738,9 @@ class Poset(Chare):
         tval = self.distHashTable.seedLevelFullTable(clearTable=True,ret=True).get()
 
         self.succGroup.setMethod(**localOpts)
+
+        self.succGroup.setProperty('iPtLift', rebasePt, awaitable=True).get()
+        self.succGroup.setProperty('useRebase', False if rebasePt is None else True, awaitable=True).get()
 
         ##### Now test the canonicalization features...
         f = Future()
@@ -1919,6 +1922,11 @@ class successorWorker(Chare):
         d = H.shape[1]-1
         witnessList = []
 
+        if not self.iPtLift is None and isinstance(self.iPtLift,np.ndarray) and self.iPtLift.shape == (d,1):
+            self.flippedConstraints.setRebase(self.iPtLift)
+            self.iPtLift = None
+            self.useRebase = True
+
         boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(0, INTrep , N) # should be identity for INTrep
 
         if witness is None:
@@ -1948,10 +1956,10 @@ class successorWorker(Chare):
         # so we have to figure out which side of the un-encoded hyperplanes this region lies on
         if self.flippedConstraints.N - N > 0:
             newBaseRegFullTup = INTrep + tuple( \
-                                np.nonzero( \
+                                N + np.nonzero( \
                                     ( \
-                                        -self.flippedConstraints.constraints[N:self.flippedConstraints.N,1:] @ witness \
-                                        - self.flippedConstraints.constraints[N:self.flippedConstraints.N,0].reshape(-1,1) \
+                                        -H[N:self.flippedConstraints.N,1:] @ witness \
+                                        - H[N:self.flippedConstraints.N,0].reshape(-1,1) \
                                     ).flatten() \
                                     >= self.tol \
                                 )[0] \
@@ -1959,9 +1967,22 @@ class successorWorker(Chare):
         else:
             newBaseRegFullTup = INTrep
 
-        boolIdxNoFlipFull, INTrepFull, _ = region_helpers.recodeRegNewN(0, newBaseRegFullTup , self.flippedConstraints.N)
+        if self.useRebase:
+            _, newBaseRegFullTup = self.flippedConstraints.rebaseRegion(newBaseRegFullTup)
 
-        print(f'________    PE {charm.myPe()} --> {N} {self.flippedConstraints.N} {boolIdxNoFlip}; {boolIdxNoFlipFull}; {INTrep}; {INTrepFull}')
+        cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                                    region_helpers.recodeRegNewN( \
+                                        0, \
+                                        newBaseRegFullTup, \
+                                        self.flippedConstraints.N \
+                                    ) + ( \
+                                        face, \
+                                        witness \
+                                    ), \
+                                    adjUpdate={ky:self.flippedConstraints.N for ky in adj.keys()} if isinstance(adj,dict) else None, \
+                                    payload=payload, \
+                                    ret=True \
+                                ).get()
 
         return [set([]),None]
 
