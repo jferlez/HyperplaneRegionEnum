@@ -194,6 +194,11 @@ class HashWorker(Chare):
     def getActiveTable(self):
         return self.activeTableName
     @coro
+    def getTabIdx(self,tableName=None):
+        if tableName is None:
+            tableName = self.activeTableName
+        return self.tableNameRevLUT[tableName]
+    @coro
     def activateTable(self,tableName):
         if self.localListenerActive or self.localQueryListenterActive or self.mainListenerActive or self.disableTableChanges or self.enumListenerActive:
             print(f'Table operations are in progress. Changing tables is not supported')
@@ -1189,6 +1194,12 @@ class DistHash(Chare):
         retVal = self.hWorkersFull.getActiveTable(ret=True).get()
         assert len(retVal) > 0, f'Error'
         assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent active table names'
+        return retVal[0]
+    @coro
+    def getTabIdx(self,tableName=None):
+        retVal = self.hWorkersFull.getTabIdx(tableName=tableName,ret=True).get()
+        assert len(retVal) > 0, f'Error'
+        assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent table idx'
         return retVal[0]
     @coro
     def activateTable(self,tableName):
