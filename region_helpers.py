@@ -262,6 +262,29 @@ class flipConstraints:
     def tupToBytes(self, nodeBytes, allN=False):
         return tupToBytes(nodeBytes, self.wholeBytes if not allN else self.wholeBytesAllN, self.tailBits if not allN else self.tailBitsAllN)
 
+    def computeRelativeRegion(self, nodeBytes, flips, allN=False):
+        # Warning: will not check for multiple flips of the same hyperplane!
+        N = self.N if not allN else self.allN
+        for fl in flips:
+            if fl >= N:
+                raise ValueError(f'Index of hyperplane to flip must be less than {N} (invoked with allN = {allN})')
+        if type(nodeBytes) == bytearray or type(nodeBytes) == bytes:
+            boolIdxNoFlip = bytearray(nodeBytes)
+            for fl in flips:
+                boolIdxNoFlip[fl//8] = boolIdxNoFlip[fl//8] ^ 1<<(fl % 8)
+            return type(nodeBytes)(boolIdxNoFlip)
+        else:
+            INTrep = set(nodeBytes)
+            for fl in flips:
+                if fl in INTrep:
+                    INTrep.remove(fl)
+                else:
+                    INTrep.add(fl)
+            if type(nodeBytes) == np.ndarray:
+                return np.array(sorted(list(nodeBytes)),dtype=x.dtype)
+            else:
+                return type(nodeBytes)(INTrep)
+
 
 class flipConstraintsReduced(flipConstraints):
 
