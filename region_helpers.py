@@ -148,6 +148,30 @@ class flipConstraints:
         else:
             return False
 
+    def filterParallel(self, vec):
+        if not isinstance(vec, np.ndarray) or vec.size != self.d + 1:
+            raise ValueError(f'Query vector must be a numpy array with {self.d} elements!')
+        vec = vec.copy().flatten()
+        pars = self.hyperSet.listParallel(vec)
+        if pars is None:
+            return None
+        idenHypers = set(pars[0])
+        parHypers = set(pars[1])
+        retIdenHypers = []
+        retParHypers = []
+        retVal = np.ones((self.N,),dtype=np.bool_)
+        for idx, i in enumerate(self.nonRedundantHyperplanes):
+            if i in idenHypers:
+                retIdenHypers.append(idx)
+                retVal[idx] = False
+                # There should only be on instance of any given hyperplane represented in
+                # self.nonRedundantHyperplanes, since we're using a vectorSet there
+                break
+        for idx, i in enumerate(self.nonRedundantHyperplanes):
+            if i in parHypers:
+                retParHypers.append(idx)
+                retVal[idx] = False
+        return retIdenHypers, retParHypers, np.nonzero(retVal)[0]
 
     # This method returns flips of the hyperplanes *as provided* to obtain the region
     # specified by nodeBytes.

@@ -110,6 +110,10 @@ class HashWorker(Chare):
         self.table = self.tableStore['default']
         self.localListenerActive = False
         self.localQueryListenterActive = False
+        self.tableNameLUT = {0:'default'}
+        self.tableNameRevLUT = {'default':0}
+        self.tableNameMapMax = 1
+        self.tableNameMapFree = [1]
         # Use to track the number of ready messages/status
         self.negStatusCnt = 0
         self.termStatusCnt = 0
@@ -173,6 +177,12 @@ class HashWorker(Chare):
             return False
         else:
             self.tableStore[tableName] = {}
+            newIdx = self.tableNameMapFree.pop()
+            self.tableNameLUT[newIdx] = tableName
+            self.tableNameRevLUT[tableName] = newIdx
+            if len(self.tableNameMapFree) == 0:
+                self.tableNameMapMax += 1
+                self.tableNameMapFree.append(self.tableNameMapMax)
             return True
     @coro
     def isTable(self,tableName):
@@ -183,6 +193,11 @@ class HashWorker(Chare):
     @coro
     def getActiveTable(self):
         return self.activeTableName
+    @coro
+    def getTabIdx(self,tableName=None):
+        if tableName is None:
+            tableName = self.activeTableName
+        return self.tableNameRevLUT[tableName]
     @coro
     def activateTable(self,tableName):
         if self.localListenerActive or self.localQueryListenterActive or self.mainListenerActive or self.disableTableChanges or self.enumListenerActive:
@@ -213,6 +228,13 @@ class HashWorker(Chare):
             print(f'Table operations are in progress, and either the source or destination is the active table. Changing tables is not permitted at this time')
             return False
         else:
+            if not dest in self.tableStore:
+                newIdx = self.tableNameMapFree.pop()
+                self.tableNameLUT[newIdx] = tableName
+                self.tableNameRevLUT[tableName] = newIdx
+                if len(self.tableNameMapFree) == 0:
+                    self.tableNameMapMax += 1
+                    self.tableNameMapFree.append(self.tableNameMapMax)
             self.tableStore[dest] = { \
                                      (nTab:=val['ptr'].copy()) : {'checked':val['checked'],'ptr':nTab} \
                                      for ky,val in self.tableStore[src].items()
@@ -231,8 +253,16 @@ class HashWorker(Chare):
             return False
         else:
             del self.tableStore[tableName]
+            newIdx = self.tableNameRevLUT[tableName]
+            del self.tableNameLUT[newIdx]
+            del self.tableNameRevLUT[tableName]
+            self.tableNameMapFree.append(newIdx)
             if len(self.tableStore) == 0:
                 self.tableStore['default'] = {}
+                self.tableNameLUT = {0:'default'}
+                self.tableNameRevLUT = {'default':0}
+                self.tableNameMapFree = [1]
+                self.tableNameMapMax = 1
             if tableName == self.activeTableName:
                 for ky in self.tableStore.keys():
                     self.activeTableName = ky
@@ -702,20 +732,31 @@ class HashWorker(Chare):
                     chList.append(ch)
                     val = msg['msg']
                     # print(prefix + ' Processing QUERY message ' + str(val) + ' on PE ' + str(charm.myPe()))
-                    if type(val) is tuple and len(val) >= 4:
+                    if type(val) is tuple and len(val) >= 5:
                         qOp = val[0]
+                        tabIdx = val[1]
+                        # print(f' [ + ][ + ][ + ]     Received tabIdx = {tabIdx}')
+                        if tabIdx == -1:
+                            tabIdx = self.tableNameRevLUT[self.activeTableName]
+                            # print(f' [ + ][ + ][ + ]     Received tabIdx = {tabIdx}')
+                            # print(f' [ + ][ + ][ + ]     tabname = {self.tableNameLUT[tabIdx]} {self.tableNameLUT}')
+                        if tabIdx in self.tableNameLUT:
+                            table = self.tableStore[self.tableNameLUT[tabIdx]]
                         if (not charm.myPe() in self.overlapPElist) or (not selfQuery or charm.myPe() == chIdx):
                             answeredSelf = True
-                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val[1:])
-                        if newNode in self.table:
+                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val[2:])
+                        if not tabIdx in self.tableNameLUT:
+                            print(f'||||||   ERROR: table index not found {self.tableNameLUT}')
+                            self.queryChannelsHashEnd[chIdx].send((-1,))
+                        elif newNode in table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
-                            nd = self.table[newNode]['ptr']
+                            nd = table[newNode]['ptr']
                             self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness, nd.adj, nd.payload))
                             if qOp == QUERYOP_DELETE:
-                                self.table[newNode]['ptr'] = None
-                                del self.table[newNode]
+                                table[newNode]['ptr'] = None
+                                del table[newNode]
                         else:
-                            # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
+                            print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             self.queryChannelsHashEnd[chIdx].send((-1,))
                     elif isinstance(val,int) and val < 0:
                         answeredSelf = True
@@ -1153,6 +1194,12 @@ class DistHash(Chare):
         retVal = self.hWorkersFull.getActiveTable(ret=True).get()
         assert len(retVal) > 0, f'Error'
         assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent active table names'
+        return retVal[0]
+    @coro
+    def getTabIdx(self,tableName=None):
+        retVal = self.hWorkersFull.getTabIdx(tableName=tableName,ret=True).get()
+        assert len(retVal) > 0, f'Error'
+        assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent table idx'
         return retVal[0]
     @coro
     def activateTable(self,tableName):
