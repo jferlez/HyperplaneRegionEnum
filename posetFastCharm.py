@@ -1009,7 +1009,7 @@ class successorWorker(Chare):
     @coro
     def getStats(self, statsFut):
         if charm.myPe() in self.posetPElist:
-            self.stats['LPSolverCount'] = self.lp.lpCount + self.lpIntPoint.lpCount
+            self.stats['LPSolverCount'] = sum([self.lpObjs[di].lpCount for di in self.lpObjs.keys()])
             self.stats['RSRegionCount'] = self.rsRegionCount
             self.stats['RSLPCount'] = self.rsLP.lpCount + self.rsLPIntPoint.lpCount
         retVal = defaultdict(int) if not charm.myPe() in self.posetPElist else self.stats
