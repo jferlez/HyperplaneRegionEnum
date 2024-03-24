@@ -185,7 +185,7 @@ class flipConstraints:
                         # There should only be on instance of any given hyperplane represented in
                         # self.nonRedundantHyperplanes, since we're using a vectorSet there
                         break
-                for idx in range(self.Nunique):
+                for idx in range(self.fSet.Nunique):
                     if idx in parFHypers:
                         retParFHypers.append(idx)
                         retFVal[idx] = False
