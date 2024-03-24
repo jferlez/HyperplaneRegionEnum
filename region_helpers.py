@@ -180,14 +180,14 @@ class flipConstraints:
                 parFHypers = set(pars[1])
                 for idx in range(self.fSet.Nunique):
                     if idx in idenFHypers:
-                        retIdenFHypers.append(idx)
+                        retIdenFHypers.append(idx + self.N)
                         retFVal[idx] = False
                         # There should only be on instance of any given hyperplane represented in
                         # self.nonRedundantHyperplanes, since we're using a vectorSet there
                         break
                 for idx in range(self.fSet.Nunique):
                     if idx in parFHypers:
-                        retParFHypers.append(idx)
+                        retParFHypers.append(idx + self.N)
                         retFVal[idx] = False
         return retIdenHypers + retIdenFHypers, retParHypers + retParFHypers, list(np.nonzero(retVal)[0]) + list(self.N + np.nonzero(retFVal)[0])
 
