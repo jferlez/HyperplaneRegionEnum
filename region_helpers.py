@@ -291,7 +291,7 @@ class flipConstraints:
         N = self.N if not allN else self.allN
         for fl in flips:
             if fl >= N:
-                raise ValueError(f'Index of hyperplane to flip must be less than {N} (invoked with allN = {allN})')
+                raise ValueError(f'Index of hyperplane to flip must be less than {N} (invoked with allN = {self.allN})')
         if type(nodeBytes) == bytearray or type(nodeBytes) == bytes:
             boolIdxNoFlip = bytearray(nodeBytes)
             for fl in flips:
