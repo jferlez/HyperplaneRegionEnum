@@ -178,7 +178,7 @@ class flipConstraints:
             if pars is not None:
                 idenFHypers = set(pars[0])
                 parFHypers = set(pars[1])
-                for idx in range(self.Nunique):
+                for idx in range(self.fSet.Nunique):
                     if idx in idenFHypers:
                         retIdenFHypers.append(idx)
                         retFVal[idx] = False
