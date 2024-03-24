@@ -914,8 +914,12 @@ class successorWorker(Chare):
         self.processNodesArgs = {'solver':'glpk','ret':True}
         self.method = None
         # Defaults to glpk, so this empty call is ok:
-        self.lp = encapsulateLP.encapsulateLP()
-        self.lpIntPoint = encapsulateLP.encapsulateLP()
+        d = self.constraints.shape[1]-1
+        self.lpObjs = {d:encapsulateLP.encapsulateLP(), d+1: encapsulateLP.encapsulateLP()}
+        self.lp = self.lpObjs[d]
+        self.lpIntPoint = self.lpObjs[d+1]
+        if d > 1:
+            self.lpObjs[d-1] = encapsulateLP.encapsulateLP()
         self.rsLP = encapsulateLP.encapsulateLP()
         self.rsLPIntPoint = encapsulateLP.encapsulateLP()
         # self.hashChannels = []
@@ -936,8 +940,8 @@ class successorWorker(Chare):
         return self.timedOut
 
     def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,clearTable='speed',sendWitness=False,verbose=True):
-        self.lp.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
-        self.lpIntPoint.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1])})
+        for d in self.lpObjs.keys():
+            self.lpObjs[d].initSolver(solver=solver, opts={'dim':(d)})
         self.rsLP.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
         self.rsLPIntPoint.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1])})
         self.useQuery = useQuery
@@ -1414,6 +1418,17 @@ class successorWorker(Chare):
         safe = False
         if len(intIdx) == 0:
             return [], []
+        d = H2.shape[1] - 1
+        if d in self.lpObjs:
+            lpObj = self.lpObjs[d]
+        else:
+            lpObj = encapsulateLP.encapsulateLP()
+            lpObj.initSolver(solver=solver, opts={'dim':(d)})
+        if d+1 in self.lpObjs:
+            lpObjInt = self.lpObjs[d+1]
+        else:
+            lpObjInt = encapsulateLP.encapsulateLP()
+            lpObj.initSolver(solver=solver, opts={'dim':(d+1)})
 
         restricted = False if constraint_list_in is None else True
 
@@ -1456,7 +1471,7 @@ class successorWorker(Chare):
                 # Set the extra row to the negation of the pre-relaxed current constraint
                 H[-1,:] = -H2[intIdx[idx],:]
                 H[offsetIdx,0] += 1
-                status, x = self.lp.runLP( \
+                status, x = lpObj.runLP( \
                         H2[intIdx[idx],1:], \
                         -H[constraint_list,1:], \
                         H[constraint_list,0], \
@@ -1478,7 +1493,7 @@ class successorWorker(Chare):
                     to_keep.append(idx)
             else:
                 H[offsetIdx,:] = -H[offsetIdx,:]
-                x = region_helpers.findInteriorPoint(H,solver=solver,lpObj=self.lpIntPoint,tol=self.tol,rTol=self.rTol,lpopts=self.lpopts)
+                x = region_helpers.findInteriorPoint(H,solver=solver,lpObj=lpObjInt,tol=self.tol,rTol=self.rTol,lpopts=self.lpopts)
                 H[offsetIdx,:] = -H[offsetIdx,:]
                 if x is not None:
                     # If x satisfies all of the original constraints then it is a redundant hyperplane
