@@ -153,25 +153,43 @@ class flipConstraints:
             raise ValueError(f'Query vector must be a numpy array with {self.d} elements!')
         vec = vec.copy().flatten()
         pars = self.hyperSet.listParallel(vec)
-        if pars is None:
-            return None
-        idenHypers = set(pars[0])
-        parHypers = set(pars[1])
         retIdenHypers = []
         retParHypers = []
         retVal = np.ones((self.N,),dtype=np.bool_)
-        for idx, i in enumerate(self.nonRedundantHyperplanes):
-            if i in idenHypers:
-                retIdenHypers.append(idx)
-                retVal[idx] = False
-                # There should only be on instance of any given hyperplane represented in
-                # self.nonRedundantHyperplanes, since we're using a vectorSet there
-                break
-        for idx, i in enumerate(self.nonRedundantHyperplanes):
-            if i in parHypers:
-                retParHypers.append(idx)
-                retVal[idx] = False
-        return retIdenHypers, retParHypers, np.nonzero(retVal)[0]
+        if pars is not None:
+            idenHypers = set(pars[0])
+            parHypers = set(pars[1])
+            for idx, i in enumerate(self.nonRedundantHyperplanes):
+                if i in idenHypers:
+                    retIdenHypers.append(idx)
+                    retVal[idx] = False
+                    # There should only be on instance of any given hyperplane represented in
+                    # self.nonRedundantHyperplanes, since we're using a vectorSet there
+                    break
+            for idx, i in enumerate(self.nonRedundantHyperplanes):
+                if i in parHypers:
+                    retParHypers.append(idx)
+                    retVal[idx] = False
+        retIdenFHypers = []
+        retParFHypers = []
+        retFVal = np.ones((self.constraints.shape[0]-self.N,),dtype=np.bool_)
+        if self.fSet is not None:
+            pars = self.fSet.listParallel(vec)
+            if pars is not None:
+                idenFHypers = set(pars[0])
+                parFHypers = set(pars[1])
+                for idx in range(self.Nunique):
+                    if idx in idenFHypers:
+                        retIdenFHypers.append(idx)
+                        retFVal[idx] = False
+                        # There should only be on instance of any given hyperplane represented in
+                        # self.nonRedundantHyperplanes, since we're using a vectorSet there
+                        break
+                for idx in range(self.Nunique):
+                    if idx in parFHypers:
+                        retParFHypers.append(idx)
+                        retFVal[idx] = False
+        return retIdenHypers + retIdenFHypers, retParHypers + retParFHypers, list(np.nonzero(retVal)[0]) + list(self.N + np.nonzero(retFVal)[0])
 
     # This method returns flips of the hyperplanes *as provided* to obtain the region
     # specified by nodeBytes.
