@@ -53,6 +53,12 @@ class Node():
         else:
             return False
 
+    def asImmutableKey(self):
+        if type(self.nodeBytes) == bytearray:
+            return bytes(self.nodeBytes)
+        else:
+            return self.nodeBytes
+
 # Vertex Node equality check
 @njit( \
     types.int64[::1] \
@@ -945,6 +951,9 @@ class HashWorker(Chare):
     def getTable(self):
         return [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.table.keys()]
     @coro
+    def getTableHash(self):
+        return {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.table.keys()}
+    @coro
     def resetLevelCount(self):
         self.level=-1
     # @coro
@@ -1441,7 +1450,9 @@ class DistHash(Chare):
     @coro
     def getTable(self):
         return self.hWorkersFull.getTable(ret=True).get()
-
+    @coro
+    def getTableHash(self):
+        return reduce(operator.ior, self.hWorkersFull.getTableHash(ret=True).get(), {})
     @coro
     def getTableLen(self):
         return sum(self.hWorkersFull.getTableLen(ret=True).get())
