@@ -1452,6 +1452,9 @@ class DistHash(Chare):
     def getTable(self):
         return list(itertools.chain.from_iterable(self.hWorkersFull.getTable(ret=True).get()))
     @coro
+    def getTableNonFlat(self):
+        return self.hWorkersFull.getTable(ret=True).get()
+    @coro
     def getTableHash(self):
         return reduce(operator.ior, self.hWorkersFull.getTableHash(ret=True).get(), {})
     @coro
