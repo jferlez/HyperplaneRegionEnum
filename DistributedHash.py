@@ -12,6 +12,7 @@ from numba.core import types
 from numba.typed import Dict
 from numba.np.unsafe.ndarray import to_fixed_tuple
 from functools import partial, reduce
+import operator
 from region_helpers import hashNodeBytes
 
 XFER_CHUNK_SIZE = 1000
