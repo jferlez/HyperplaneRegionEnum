@@ -705,6 +705,17 @@ def projectConstraints(H,hyperIn,subIdx=None,tol=1e-8,rTol=1e-8):
     retH[:,0] = b - A[:,subIdx] * (1/hyper[subIdx+1]) * hyper[0]
     return retH, subIdx
 
+def liftPoint(x,hyperInT,subIdx):
+    hyperIn = hyperInT.flatten()
+    assert subIdx < hyperIn.shape[0] - 1, f'subIdx must be one less than the dimension of the hyperplane'
+    assert len(x.shape) == 2, f'Input point(s) must be a column vector or matrix of column vectors'
+    assert x.shape[0] == hyperIn.shape[0] - 2, f'Input point(s) must be in 1 dimension less than input hyperplane'
+    retVal = np.zeros((hyperIn.shape[0]-1,x.shape[1]),dtype=np.float64)
+    retVal[subIdx] = (hyperIn[0] + hyperIn[1:(subIdx+1)].reshape(1,-1) @ x[:subIdx,:] + hyperIn[(subIdx+2):].reshape(1,-1) @ x[(subIdx+1):,:])/hyperIn[subIdx+1]
+    retVal[:subIdx,:] = x[1:subIdx,:]
+    retVal[(subIdx+1):,:] = x[(subIdx+2):,:]
+    return retVal
+
 # Helper functions:
 
 # https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
