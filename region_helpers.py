@@ -712,8 +712,8 @@ def liftPoint(x,hyperInT,subIdx):
     assert x.shape[0] == hyperIn.shape[0] - 2, f'Input point(s) must be in 1 dimension less than input hyperplane'
     retVal = np.zeros((hyperIn.shape[0]-1,x.shape[1]),dtype=np.float64)
     retVal[subIdx] = (hyperIn[0] + hyperIn[1:(subIdx+1)].reshape(1,-1) @ x[:subIdx,:] + hyperIn[(subIdx+3):].reshape(1,-1) @ x[(subIdx+1):,:])/hyperIn[subIdx+1]
-    retVal[:subIdx,:] = x[1:subIdx,:]
-    retVal[(subIdx+1):,:] = x[(subIdx+2):,:]
+    retVal[:subIdx,:] = x[0:subIdx,:]
+    retVal[(subIdx+1):,:] = x[subIdx:,:]
     return retVal
 
 # Helper functions:
