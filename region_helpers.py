@@ -636,11 +636,12 @@ def findInteriorPointOld(H2,solver='glpk',lpObj=None,tol=1e-7,rTol=0):
         return None
 
 
-def regionBBox(H,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7):
+def regionBBox(H,solver='glpk',lpObj=None,tol=1e-7,rTol=1e-7,regionCheck=True):
     if lpObj is None:
        lpObj = encapsulateLP.encapsulateLP()
        lpObj.initSolver(solver=solver)
-    assert not findInteriorPoint(H,solver=solver,lpObj=lpObj,tol=tol,rTol=rTol) is None, 'H matrix specifies an empty region'
+    if regionCheck:
+        assert not findInteriorPoint(H,solver=solver,lpObj=lpObj,tol=tol,rTol=rTol) is None, 'H matrix specifies an empty region'
     n = H.shape[1]-1
     box = np.array([ [-np.inf, np.inf] for _ in range(n) ],dtype=np.float64)
     objective = np.zeros(n,dtype=np.float64)
