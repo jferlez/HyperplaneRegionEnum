@@ -291,9 +291,9 @@ class Poset(Chare):
     @coro
     def getSuccessorCommonProperty(self,prop,allPEs=True):
         if allPEs:
-            return self.succGroupFull.getProperty(prop,awaitable=True).get()
+            return self.succGroupFull.getProperty(prop,ret=True).get()
         else:
-            return self.succGroup.getProperty(prop,awaitable=True).get()
+            return self.succGroup.getProperty(prop,ret=True).get()
     @coro
     def getSuccGroupProxy(self):
         return self.succGroupFull
