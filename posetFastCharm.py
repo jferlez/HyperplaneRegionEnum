@@ -286,6 +286,9 @@ class Poset(Chare):
     def setSuccessorCommonProperty(self,prop,val):
         self.succGroupFull.setProperty(prop,val,awaitable=True).get()
     @coro
+    def getSuccessorCommonProperty(self,prop):
+        self.succGroupFull.getProperty(prop,awaitable=True).get()
+    @coro
     def getSuccGroupProxy(self):
         return self.succGroupFull
     @coro
