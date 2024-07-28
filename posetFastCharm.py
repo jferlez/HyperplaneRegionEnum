@@ -283,11 +283,17 @@ class Poset(Chare):
         return self.flippedConstraints.serialize()
 
     @coro
-    def setSuccessorCommonProperty(self,prop,val):
-        self.succGroupFull.setProperty(prop,val,awaitable=True).get()
+    def setSuccessorCommonProperty(self,prop,val,allPEs=True):
+        if allPEs:
+            self.succGroupFull.setProperty(prop,val,awaitable=True).get()
+        else:
+            self.succGroup.setProperty(prop,val,awaitable=True).get()
     @coro
-    def getSuccessorCommonProperty(self,prop):
-        self.succGroupFull.getProperty(prop,awaitable=True).get()
+    def getSuccessorCommonProperty(self,prop,allPEs=True):
+        if allPEs:
+            self.succGroupFull.getProperty(prop,awaitable=True).get()
+        else:
+            self.succGroup.getProperty(prop,awaitable=True).get()
     @coro
     def getSuccGroupProxy(self):
         return self.succGroupFull
