@@ -763,7 +763,7 @@ class HashWorker(Chare):
                                 table[newNode]['ptr'] = None
                                 del table[newNode]
                         else:
-                            print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
+                            # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             self.queryChannelsHashEnd[chIdx].send((-1,))
                     elif isinstance(val,int) and val < 0:
                         answeredSelf = True
