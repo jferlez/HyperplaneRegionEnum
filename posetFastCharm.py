@@ -306,6 +306,7 @@ class Poset(Chare):
         return self.distHashTable
     @coro
     def clearHashTable(self):
+        self.populated = False
         self.distHashTable.clearHashTable(awaitable=True).get()
     @coro
     def newTable(self,tableName):
