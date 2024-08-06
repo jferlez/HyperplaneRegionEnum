@@ -364,7 +364,7 @@ class Poset(Chare):
             self.hashStoreMode = 2
             tol = opts['tol'] if 'tol' in opts else 1e-9
             rTol = opts['rTol'] if 'rTol' in opts else 1e-9
-            self.distHashTable.updateNodeEqualityFn(nodeType='vertex', tol=tol, rTol=rTol, H=self.flippedConstraints.constraints, awaitable=True).get()
+            self.distHashTable.updateNodeEqualityFn(nodeType='vertex', tol=tol, rTol=rTol, H=self.constraints, awaitable=True).get()
         else:
             self.distHashTable.updateNodeEqualityFn(nodeType='standard', awaitable=True).get()
             self.hashStoreMode = 0
@@ -918,7 +918,7 @@ class successorWorker(Chare):
         self.workInts = []
         self.N = N
         self.flippedConstraints = constraints.deserialize()
-        self.constraints = self.flippedConstraints.constraints
+        self.constraints = self.flippedConstraints.constraints.copy()
         # self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver='glpk')
         self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP
         self.processNodesArgs = {'solver':'glpk','ret':True}
@@ -1169,7 +1169,7 @@ class successorWorker(Chare):
             # intIdx = np.where(boolIdxNoFlip==0)[0]
             # boolIdxNoFlip = np.packbits(boolIdxNoFlip,bitorder='little')
         elif type(INTrep) == bytearray:
-            boolIdxNoFlip = INTrep
+            boolIdxNoFlip = copy(INTrep)
             INTrep = bytesToList(boolIdxNoFlip, self.flippedConstraints.wholeBytes, self.flippedConstraints.tailBits)
             intIdxNoFlip = INTrep
             INTrep = tuple(intIdxNoFlip)
@@ -1273,7 +1273,7 @@ class successorWorker(Chare):
         if len(self.workInts) > 0:
             successorList = [[None,None,None,None,None,None,None] for k in range(len(self.workInts))]
             for ii in range(len(successorList)):
-                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.workInts[ii][1],self.flippedConstraints.constraints,**self.processNodesArgs,witness=self.workInts[ii][4], payload=self.workInts[ii][6],xN=self.workInts[ii][1],face=self.workInts[ii][3],adj=self.workInts[ii][5], awaitable=True).get()
+                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.workInts[ii][1],self.constraints,**self.processNodesArgs,witness=self.workInts[ii][4], payload=self.workInts[ii][6],xN=self.workInts[ii][1],face=self.workInts[ii][3],adj=self.workInts[ii][5], awaitable=True).get()
                 self.timedOut = (time.time() > self.clockTimeout) if self.clockTimeout is not None else False
                 # print('Working on ' + str(self.workInts[ii]) + 'on PE ' + str(charm.myPe()) + '; with timeout ' + str(self.timedOut))
                 if type(successorList[ii][1]) is int or self.timedOut:
