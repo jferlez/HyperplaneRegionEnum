@@ -388,7 +388,7 @@ class Poset(Chare):
         boolIdxNoFlip = bytearray(b'\x00') * (self.flippedConstraints.wholeBytes + (1 if self.flippedConstraints.tailBits != 0 else 0))
         for unflipIdx in range(len(thisLevel[0][0])-1,-1,-1):
             boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
-        print(f'boolIdxNoFlip = {boolIdxNoFlip}')
+        # print(f'boolIdxNoFlip = {boolIdxNoFlip}')
         self.successorProxies[0].hashAndSend([ \
                                         boolIdxNoFlip, \
                                         thisLevel[0][0], \
