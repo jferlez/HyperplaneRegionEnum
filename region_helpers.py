@@ -157,16 +157,14 @@ class flipConstraints:
         retParHypers = []
         retVal = np.ones((self.N,),dtype=np.bool_)
         if pars is not None:
-            idenHypers = set(pars[0])
-            parHypers = set(pars[1])
+            idenHypers = list(set(pars[0]) & self.hyperSet.uniqRowIdxSet.keys())
+            parHypers = {self.hyperSet.uniqRowIdxSet[i] for i in (set(pars[1]) & self.hyperSet.uniqRowIdxSet.keys())}
             for idx, i in enumerate(self.nonRedundantHyperplanes):
-                if i in idenHypers:
+                if len(idenHypers) > 0 and i == self.hyperSet.uniqRowIdxSet[idenHypers[0]]:
                     retIdenHypers.append(idx)
                     retVal[idx] = False
                     # There should only be on instance of any given hyperplane represented in
                     # self.nonRedundantHyperplanes, since we're using a vectorSet there
-                    break
-            for idx, i in enumerate(self.nonRedundantHyperplanes):
                 if i in parHypers:
                     retParHypers.append(idx)
                     retVal[idx] = False
@@ -176,20 +174,69 @@ class flipConstraints:
         if self.fSet is not None:
             pars = self.fSet.listParallel(vec)
             if pars is not None:
-                idenFHypers = set(pars[0])
-                parFHypers = set(pars[1])
-                for idx in range(self.fSet.Nunique):
-                    if idx in idenFHypers:
-                        retIdenFHypers.append(idx + self.N)
-                        retFVal[idx] = False
-                        # There should only be on instance of any given hyperplane represented in
-                        # self.nonRedundantHyperplanes, since we're using a vectorSet there
-                        break
-                for idx in range(self.fSet.Nunique):
-                    if idx in parFHypers:
-                        retParFHypers.append(idx + self.N)
-                        retFVal[idx] = False
+                idenFHypers = list(set(pars[0]) & self.fSet.uniqRowIdxSet.keys())
+                if len(idenFHypers) > 0:
+                    idx = self.fSet.uniqRowIdxSet[idenFHypers[0]]
+                    retIdenFHypers.append(idx + self.N)
+                    retFVal[idx] = False
+                    # There should only be on instance of any given hyperplane represented in
+                    # self.nonRedundantHyperplanes, since we're using a vectorSet there
+                parFHypers = set(pars[1]) & self.fSet.uniqRowIdxSet.keys()
+                for idx in [self.fSet.uniqRowIdxSet[i] for i in parFHypers]:
+                    retParFHypers.append(idx + self.N)
+                    retFVal[idx] = False
         return retIdenHypers + retIdenFHypers, retParHypers + retParFHypers, list(np.nonzero(retVal)[0]) + list(self.N + np.nonzero(retFVal)[0])
+
+    def projectConstraints(self,hyperIn,subIdx=None,regSpec=None,extraConstr=None,allN=False):
+        if not isinstance(hyperIn, np.ndarray) or hyperIn.size != self.d + 1:
+            raise ValueError(f'Projection hyperplane vector must be a numpy array with {self.d} elements!')
+        hyper = hyperIn.copy().flatten()
+
+        idenHypers, parHypers, diffHypers = self.filterParallel(hyper)
+        origParHypers = parHypers
+
+        if regSpec is None:
+            H = self.constraints.copy()
+        else:
+            if isinstance(regSpec,bytearray):
+                nodeBytes = tuple(self.bytesToList(regSpec,allN=allN))
+            else:
+                nodeBytes = nodeBytesInt
+            if allN:
+                nodeBytes = self.collapseRegion( regSpec )
+            H = self.constraints.copy()
+            H[nodeBytes,:] = -H[nodeBytes,:]
+
+        # Test each parallel hyperplane to see if it is compatible with (on the correct side of)
+        # the projection constraint
+        testPt = -(hyperIn[0] / np.linalg.norm(hyperIn[1:])**2) * hyperIn[1:].reshape(-1,1)
+        unsatPars = np.any( ( -H[parHypers,1:] @ testPt > H[parHypers,0].reshape(-1,1) + self.tol ).flatten() )
+        H = H[diffHypers,:]
+
+        extraDiffHypers = None
+        unsatParsExtra = []
+        if extraConstr is not None:
+            extraSet = vectorSet.vectorSet( extraConstr )
+            extraSetRows = extraSet.getUniqueRows()
+            pars = extraSet.listParallel(hyper)
+            retIdenHypers = []
+            retParHypers = []
+            retVal = np.ones((extraSet.Nunique,),dtype=np.bool_)
+            if pars is not None:
+                retParHypers = list(pars[0])
+                retIdenHypers = list(pars[1])
+                eIdenHypers = set(pars[0])
+                eParHypers = set(pars[1])
+                extraDiffHypers = sorted(list( (set(range(extraSet.Nunique))-eIdenHypers)-eParHypers ))
+                # Test each parallel hyperplane to see if it is compatible with (on the correct side of)
+                # the projection constraint
+                unsatParsExtra = np.any( ( -extraSetRows[retParHypers,1:] @ testPt > extraSetRows[retParHypers,0].reshape(-1,1) + self.tol ).flatten() )
+                if len(extraDiffHypers) > 0 and unsatParsExtra:
+                    H = np.vstack([H,extraConstr[extraDiffHypers,:].reshape((len(extraDiffHypers),extraConstr.shape[1]))])
+            else:
+                H = np.vstack([H,extraConstr])
+
+        return ( projectConstraints(H, hyper, subIdx=subIdx) + (diffHypers, extraDiffHypers) ) if not unsatPars and not unsatParsExtra else None
 
     # This method returns flips of the hyperplanes *as provided* to obtain the region
     # specified by nodeBytes.
