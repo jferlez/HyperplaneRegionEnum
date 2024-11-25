@@ -201,7 +201,7 @@ class flipConstraints:
             if isinstance(regSpec,bytearray):
                 nodeBytes = tuple(self.bytesToList(regSpec,allN=allN))
             else:
-                nodeBytes = nodeBytesInt
+                nodeBytes = regSpec
             if allN:
                 nodeBytes = self.collapseRegion( regSpec )
             H = self.constraints.copy()
@@ -370,7 +370,7 @@ class flipConstraints:
                 else:
                     INTrep.add(fl)
             if type(nodeBytes) == np.ndarray:
-                return np.array(sorted(list(nodeBytes)),dtype=x.dtype)
+                return np.array(sorted(list(nodeBytes)),dtype=nodeBytes.dtype)
             else:
                 return type(nodeBytes)(INTrep)
 
