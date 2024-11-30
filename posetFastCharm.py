@@ -638,7 +638,7 @@ class Poset(Chare):
             print(f'    <><><><>    Trying  to recode {newBaseRegFull} to length {region_helpers.byteLenFromN(aug.N-idx)}')
             newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, newBaseRegFull, aug.N)
             print((newBaseReg, newBaseRegTup, newBaseRegN))
-            retVal = self.succGroup[0].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
+            retVal = self.succGroup[self.posetPElist[0]].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
             print(retVal)
             if retVal[0] > 0:
                 stripNum = idx
