@@ -563,8 +563,8 @@ class Poset(Chare):
         hyper = aug.constraints[aug.N-1,:]
         print(f'New hyper = {hyper}')
 
-        projWbOld, subIdxOld = region_helpers.projectConstraints(aug.constraints[:aug.N-1,:],hyper,tol=tol,rTol=rTol)
-        projFixedOld, _ = region_helpers.projectConstraints(aug.constraints[aug.N:,:],hyper,subIdx=subIdxOld,tol=tol,rTol=rTol)
+        # projWbOld, subIdxOld = region_helpers.projectConstraints(aug.constraints[:aug.N-1,:],hyper,tol=tol,rTol=rTol)
+        # projFixedOld, _ = region_helpers.projectConstraints(aug.constraints[aug.N:,:],hyper,subIdx=subIdxOld,tol=tol,rTol=rTol)
 
         # This new method will correctly remove hyperplanes parallel to hyper before projection
         # The result is that these projected constraints will lead to much better behaved LPs.
