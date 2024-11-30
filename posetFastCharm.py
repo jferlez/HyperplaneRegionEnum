@@ -563,8 +563,30 @@ class Poset(Chare):
         hyper = aug.constraints[aug.N-1,:]
         print(f'New hyper = {hyper}')
 
-        projWb, subIdx = region_helpers.projectConstraints(aug.constraints[:aug.N-1,:],hyper,tol=tol,rTol=rTol)
-        projFixed, _ = region_helpers.projectConstraints(aug.constraints[aug.N:,:],hyper,subIdx=subIdx,tol=tol,rTol=rTol)
+        projWbOld, subIdxOld = region_helpers.projectConstraints(aug.constraints[:aug.N-1,:],hyper,tol=tol,rTol=rTol)
+        projFixedOld, _ = region_helpers.projectConstraints(aug.constraints[aug.N:,:],hyper,subIdx=subIdxOld,tol=tol,rTol=rTol)
+
+        # This new method will correctly remove hyperplanes parallel to hyper before projection
+        # The result is that these projected constraints will lead to much better behaved LPs.
+        res = aug.projectConstraints( hyper )
+        if res is None:
+            print(f'Projection failed...')
+            return False
+        projFull, subIdx, diffHypers, extraDiffHypers = res
+        diffHyperIdx = []
+        diffFixedIdx = []
+        for i in diffHypers:
+            if i < aug.N-1:
+                diffHyperIdx.append(i)
+            if i >= aug.N:
+                diffFixedIdx.append(i)
+        # Fill projWb with dummy (constant) constraints for the parallel constraints removed by aug.projectConstraints
+        # This will allow the usual pattern of indexing to convert indicies for the projected constraints to the
+        # original constraints
+        projWb = np.zeros((aug.N-1, aug.d),dtype=np.float64)
+        projWb[:,0] = np.abs(np.max(projFull[:,0])) + np.arange(1,projWb.shape[0]+1,1)
+        projWb[diffHyperIdx,:] = projFull[:len(diffHyperIdx), :]
+        projFixed = projFull[diffFixedIdx, :]
 
         if projWb.shape[1] > 1: # Should be equivalent to self.tll.n >= 2
             pt = region_helpers.findInteriorPoint(projFixed,solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
@@ -601,6 +623,7 @@ class Poset(Chare):
                                             rTol = rTol, \
                                             normalize = 1.0 \
                                         )
+        projFlipConstraints.maskHyperplanes(diffHyperIdx)
 
         print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
 
