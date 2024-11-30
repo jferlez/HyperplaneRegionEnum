@@ -95,6 +95,26 @@ class flipConstraints:
     def copy(self):
         return deepcopy(self)
 
+    def maskHyperplanes(self, hyperList, allN=False):
+        try:
+            hyperList = set(list(hyperList))
+        except Exception as e:
+            raise(ValueError('Input must be a list or list-castable object'))
+
+        assert max(hyperList) < (self.allN if allN else self.N), f'Elements of input must be less than {self.allN if allN else self.N}'
+
+        for k in range(self.allN if allN else self.N):
+            idx = k if allN else self.nonRedundantHyperplanes[k]
+            if not idx in hyperList:
+                self.redundantFlips[ idx ] = -1
+        self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+        self.N = len(self.nonRedundantHyperplanes)
+
+        self.constraints = np.vstack([ self.allConstraints[self.nonRedundantHyperplanes,:], self.allConstraints[self.allN:,:]])
+        self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,], self.allNrms[self.allN:,] ])
+        self.wholeBytes = self.N // 8
+        self.tailBits = self.N % 8
+
     def insertHyperplane(self,newA,newb):
         newSign = None
         newHyperplane = np.hstack([-newb, newA])
