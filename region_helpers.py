@@ -2,7 +2,10 @@ import numpy as np
 import encapsulateLP
 from copy import copy, deepcopy
 import posetFastCharm_numba
-import vectorSet.vectorSet as vectorSet
+try:
+    import vectorSet
+except Exception as e:
+    import vectorSet.vectorSet as vectorSet
 from itertools import chain
 
 class flipConstraints:
