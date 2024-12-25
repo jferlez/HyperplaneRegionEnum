@@ -4,6 +4,10 @@ from copy import copy, deepcopy
 import posetFastCharm_numba
 try:
     import vectorSet
+    if callable(vectorSet.vectorSet):
+        pass
+    else:
+        raise ImportError(f'VectorSet Import failed')
 except Exception as e:
     import vectorSet.vectorSet as vectorSet
 from itertools import chain
