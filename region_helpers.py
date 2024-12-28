@@ -175,6 +175,51 @@ class flipConstraints:
         else:
             return False
 
+    def removeHyperplanes(self, hyperList, allN=False, includeDup=False):
+        if not isinstance(hyperList, list) or len(hyperList) == 0:
+            raise ValueError('hyperList input must be a list object with length > 0')
+        N = (self.N if not allN else self.allN)
+        assert all([i < N for i in hyperList]), f'All elements of hyperList must be < {N}'
+        if not allN:
+            hyperList = self.nonRedundantHyperplanes[hyperList,].tolist()
+        hyperList = sorted(hyperList)
+        rootSet = set(self.root if not allN else self.nonRedundantHyperplanes[self.root,])
+        totalRemoved = 0
+        while len(hyperList) > 0:
+            h = hyperList.pop()
+            remd = self.hyperSet.removeRow(h, includeDup=includeDup)
+            totalRemoved += len(remd)
+            selArr = np.ones((len(self.redundantFlips)),dtype=np.bool_)
+            selArr[remd,] = np.zeros((len(remd),),dtype=np.bool_)
+            self.redundantFlips = self.redundantFlips[selArr,]
+            remdSet = set(remd)
+            # Correct the indices of hyperList for removed rows
+            if len(remd) > 0:
+                pos = 0
+                for i in range(len(hyperList)):
+                    while remd[pos] < hyperList[i]:
+                        for j in range(i,len(hyperList)):
+                            hyperList[j] -= 1
+                        pos += 1
+                pos = 0
+                rootTemp = list(self.root)
+                for i in range(len(rootTemp)):
+                    while remd[pos] < rootTemp[i]:
+                        for j in range(i,len(rootTemp)):
+                            rootTemp[j] -= 1
+                        pos += 1
+                self.root = tuple(rootTemp)
+        self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+        self.N = len(self.nonRedundantHyperplanes)
+        self.constraints = np.vstack([ self.constraints[self.nonRedundantHyperplanes,:], self.constraints[self.allN:,:]])
+        self.nrms = np.vstack([ self.nrms[self.nonRedundantHyperplanes,], self.nrms[self.allN:,] ])
+        self.wholeBytes = self.N // 8
+        self.tailBits = self.N % 8
+        # Update baseN... (not sure if this will work -- will have to check semantics with insertHyperplane)
+        if self.baseN is not None:
+            self.baseN -= totalRemoved
+
+
     def filterParallel(self, vec):
         if not isinstance(vec, np.ndarray) or vec.size != self.d + 1:
             raise ValueError(f'Query vector must be a numpy array with {self.d} elements!')
