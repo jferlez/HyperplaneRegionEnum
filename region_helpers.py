@@ -233,7 +233,7 @@ class flipConstraints:
         self.tailBitsAllN = self.allN % 8
         # Update baseN... (not sure if this will work -- will have to check semantics with insertHyperplane)
         if self.baseN is not None:
-            self.baseN -= totalRemoved
+            self.baseN -= totalRemoved - totalAdded
 
 
     def filterParallel(self, vec):
