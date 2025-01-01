@@ -185,36 +185,52 @@ class flipConstraints:
         hyperList = sorted(hyperList)
         rootSet = set(self.root if not allN else self.nonRedundantHyperplanes[self.root,])
         totalRemoved = 0
+        totalAdded = 0
         while len(hyperList) > 0:
-            h = hyperList.pop()
-            remd = self.hyperSet.removeRow(h, includeDup=includeDup)
+            h = hyperList.pop(0)
+            remd, added = self.hyperSet.removeRow(h, includeDup=includeDup)
             totalRemoved += len(remd)
-            selArr = np.ones((len(self.redundantFlips)),dtype=np.bool_)
+            selArr = np.ones((self.allConstraints.shape[0],),dtype=np.bool_)
             selArr[remd,] = np.zeros((len(remd),),dtype=np.bool_)
-            self.redundantFlips = self.redundantFlips[selArr,]
+            removedActive = np.any( self.redundantFlips[np.logical_not(selArr[:self.allN]),] > 0 )
+            self.redundantFlips = self.redundantFlips[selArr[:self.allN],]
+            # If a hyperplane was added back in, make sure it is counted as a non-redundant hyperplane
+            # when it replaces a previously active, non-redundant hyperplane
+            for idx in added:
+                if removedActive:
+                    self.redundantFlips[idx] = 1
+                    totalAdded += 1
+            self.allConstraints = self.allConstraints[selArr,:]
+            self.allNrms = self.allNrms[selArr,]
+            self.allN = np.count_nonzero(selArr[:self.allN])
+            assert self.allN == self.hyperSet.N, f'Inconsistent removal of rows from vectorSet'
             remdSet = set(remd)
+            # print(f'Remove set {remd}; hyperList pre correction {hyperList}')
             # Correct the indices of hyperList for removed rows
             if len(remd) > 0:
                 pos = 0
                 for i in range(len(hyperList)):
-                    while remd[pos] < hyperList[i]:
+                    while pos < len(remd) and remd[pos] < hyperList[i]:
                         for j in range(i,len(hyperList)):
                             hyperList[j] -= 1
                         pos += 1
                 pos = 0
                 rootTemp = list(self.root)
                 for i in range(len(rootTemp)):
-                    while remd[pos] < rootTemp[i]:
+                    while pos < len(remd) and remd[pos] < rootTemp[i]:
                         for j in range(i,len(rootTemp)):
                             rootTemp[j] -= 1
                         pos += 1
                 self.root = tuple(rootTemp)
+            # print(f'HyperList post correction {hyperList}')
         self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
         self.N = len(self.nonRedundantHyperplanes)
-        self.constraints = np.vstack([ self.constraints[self.nonRedundantHyperplanes,:], self.constraints[self.allN:,:]])
-        self.nrms = np.vstack([ self.nrms[self.nonRedundantHyperplanes,], self.nrms[self.allN:,] ])
+        self.constraints = np.vstack([ self.hyperSet.getRows()[self.nonRedundantHyperplanes,:], self.allConstraints[self.allN:,:]])
+        self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,], self.allNrms[self.allN:,] ])
         self.wholeBytes = self.N // 8
         self.tailBits = self.N % 8
+        self.wholeBytesAllN = self.allN // 8
+        self.tailBitsAllN = self.allN % 8
         # Update baseN... (not sure if this will work -- will have to check semantics with insertHyperplane)
         if self.baseN is not None:
             self.baseN -= totalRemoved
