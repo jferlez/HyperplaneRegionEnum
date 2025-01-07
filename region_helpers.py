@@ -100,7 +100,13 @@ class flipConstraints:
         return self
 
     def copy(self):
-        return deepcopy(self)
+        serialized = self.hyperSet.serialized
+        self.serialize()
+        retObj = deepcopy(self)
+        if not serialized:
+            self.deserialize()
+            retObj.deserialize()
+        return retObj
 
     def maskHyperplanes(self, hyperList, allN=False):
         try:
