@@ -11,6 +11,7 @@ try:
 except Exception as e:
     import vectorSet.vectorSet as vectorSet
 from itertools import chain
+import bisect
 
 class flipConstraints:
 
@@ -186,50 +187,55 @@ class flipConstraints:
             raise ValueError('hyperList input must be a list object with length > 0')
         N = (self.N if not allN else self.allN)
         assert all([i < N for i in hyperList]), f'All elements of hyperList must be < {N}'
+        # Ensure hyperList is internally in 'allN' mode
         if not allN:
+            print(f'Input hyperList = {hyperList}')
             hyperList = self.nonRedundantHyperplanes[hyperList,].tolist()
+            print(f'Expanded hyperList = {hyperList}')
         hyperList = sorted(hyperList)
-        rootSet = set(self.root if not allN else self.nonRedundantHyperplanes[self.root,])
         totalRemoved = 0
         totalAdded = 0
+        rootTemp = tuple(self.nonRedundantHyperplanes[self.root,])
+        seq = removalSeq(N=self.N, wholeBytes=self.wholeBytes, tailBits=self.tailBits, \
+                allN=self.allN, wholeBytesAllN=self.wholeBytesAllN, tailBitsAllN=self.tailBitsAllN, \
+                redundantFlips=self.redundantFlips.copy())
         while len(hyperList) > 0:
-            h = hyperList.pop(0)
+            h = hyperList.pop()
             remd, added = self.hyperSet.removeRow(h, includeDup=includeDup)
+            print(f'Removing {remd}; adding {added}')
             totalRemoved += len(remd)
             selArr = np.ones((self.allConstraints.shape[0],),dtype=np.bool_)
             selArr[remd,] = np.zeros((len(remd),),dtype=np.bool_)
             removedActive = np.any( self.redundantFlips[np.logical_not(selArr[:self.allN]),] > 0 )
             self.redundantFlips = self.redundantFlips[selArr[:self.allN],]
+            rootTemp = sorted(list(set(rootTemp) - set(remd)))
             # If a hyperplane was added back in, make sure it is counted as a non-redundant hyperplane
             # when it replaces a previously active, non-redundant hyperplane
             for idx in added:
                 if removedActive:
                     self.redundantFlips[idx] = 1
                     totalAdded += 1
+            seq.seq.append((remd, (added[0],) if len(added)>0 and removedActive else tuple()))
             self.allConstraints = self.allConstraints[selArr,:]
             self.allNrms = self.allNrms[selArr,]
+            self.flipMapN = self.flipMapN[selArr[:self.allN],]
+            self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
+            self.flipMapSet = frozenset(self.flipMapSetNP)
             self.allN = np.count_nonzero(selArr[:self.allN])
             assert self.allN == self.hyperSet.N, f'Inconsistent removal of rows from vectorSet'
             remdSet = set(remd)
             # print(f'Remove set {remd}; hyperList pre correction {hyperList}')
             # Correct the indices of hyperList for removed rows
             if len(remd) > 0:
-                pos = 0
-                for i in range(len(hyperList)):
-                    while pos < len(remd) and remd[pos] < hyperList[i]:
-                        for j in range(i,len(hyperList)):
-                            hyperList[j] -= 1
-                        pos += 1
-                pos = 0
-                rootTemp = list(self.root)
-                for i in range(len(rootTemp)):
-                    while pos < len(remd) and remd[pos] < rootTemp[i]:
-                        for j in range(i,len(rootTemp)):
-                            rootTemp[j] -= 1
-                        pos += 1
-                self.root = tuple(rootTemp)
+                # print(f'Removing {h}; pre-removal list = {hyperList} seq[-1] = {seq.seq[-1]}')
+                hyperList = seq.applyRemovalSeqRaw(hyperList, seq=[seq.seq[-1]])
+                # print(f'post-removal list = {hyperList}')
+                if len(added) > 0 and removedActive:
+                    hyperList.remove(added[0])
+                rootTemp = seq.applyRemovalSeqRaw(rootTemp, seq=[seq.seq[-1]])
             # print(f'HyperList post correction {hyperList}')
         self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+        self.root = tuple(rootTemp)
         self.N = len(self.nonRedundantHyperplanes)
         self.constraints = np.vstack([ self.hyperSet.getRows()[self.nonRedundantHyperplanes,:], self.allConstraints[self.allN:,:]])
         self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,], self.allNrms[self.allN:,] ])
@@ -240,6 +246,7 @@ class flipConstraints:
         # Update baseN... (not sure if this will work -- will have to check semantics with insertHyperplane)
         if self.baseN is not None:
             self.baseN -= totalRemoved - totalAdded
+        return seq
 
 
     def filterParallel(self, vec):
@@ -888,4 +895,57 @@ def bytesToList(boolIdxNoFlip,wholeBytes,tailBits):
             if boolIdxNoFlip[bIdx] & ( 1 << bitIdx):
                 INTrep.append(8*bIdx + bitIdx)
     return INTrep
+
+
+class removalSeq:
+
+    def __init__(self, N=None, wholeBytes=None, tailBits=None, allN=None, wholeBytesAllN=None, tailBitsAllN=None, redundantFlips=None):
+        self.N = N
+        self.wholeBytes = wholeBytes
+        self.tailBits = tailBits
+        self.allN = allN
+        self.wholeBytesAllN = wholeBytesAllN
+        self.tailBitsAllN = tailBitsAllN
+        self.redundantFlips = redundantFlips
+        self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+        self.seq = []
+
+    # Currently returns only tuples with effective allN=True
+    # Use the collapseRegion method of the edited flipConstraints object to
+    # restore allN=False output
+    def applyRemovalSeq(self, nodeBytesInt, allN=False, seq=None):
+        if seq is None:
+            seq = self.seq
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(bytesToList(nodeBytesInt,(self.wholeBytesAllN if allN else self.wholeBytes),(self.tailBitsAllN if allN else self.tailBits)))
+        else:
+            nodeBytes = nodeBytesInt
+        return tuple(self.applyRemovalSeqRaw(nodeBytes, seq=seq))
+
+    def applyRemovalSeqRaw(self, nodeBytes, seq=None):
+        if seq is None:
+            seq = self.seq
+        nodeBytes = list(nodeBytes)
+        for remd, added in seq:
+            if len(nodeBytes) > 0 and len(remd) > 0:
+                posN = len(nodeBytes)-1
+                posR = len(remd)-1
+                while remd[posR] > nodeBytes[posN]:
+                    posR -= 1
+                # print(f'  >    {posR} {remd[posR]}; {posN} {nodeBytes[posN]}')
+                while posN >= 0 and posR >= 0:
+                    # print(f'  >>   {posR} {remd[posR]}; {posN} {nodeBytes[posN]}')
+                    if remd[posR] <= nodeBytes[posN]:
+                        if remd[posR] == nodeBytes[posN]:
+                            nodeBytes.pop(posN)
+                        else:
+                            nodeBytes[posN] -= posR + 1
+                        posN -= 1
+                    else:
+                        posR -= 1
+                    # print(f'  >>>  {posR} {remd[posR]}; {posN} {nodeBytes[posN]}')
+            if len(added) > 0:
+                bisect.insort_right(nodeBytes,added[0])
+            # print(f' ////  after addition {nodeBytes}')
+        return nodeBytes
 
