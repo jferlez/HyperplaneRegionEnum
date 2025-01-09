@@ -954,7 +954,7 @@ class removalSeq:
             if len(nodeBytes) > 0 and len(remd) > 0:
                 posN = len(nodeBytes)-1
                 posR = len(remd)-1
-                while remd[posR] > nodeBytes[posN]:
+                while posR >=0 and remd[posR] > nodeBytes[posN]:
                     posR -= 1
                 # print(f'  >    {posR} {remd[posR]}; {posN} {nodeBytes[posN]}')
                 while posN >= 0 and posR >= 0:
