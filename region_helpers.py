@@ -938,7 +938,16 @@ class removalSeq:
             nodeBytes = tuple(bytesToList(nodeBytesInt,(self.wholeBytesAllN if allN else self.wholeBytes),(self.tailBitsAllN if allN else self.tailBits)))
         else:
             nodeBytes = nodeBytesInt
-        return tuple(self.applyRemovalSeqRaw(nodeBytes, seq=seq))
+        if not allN:
+            nodeBytes = self.nonRedundantHyperplanes[nodeBytes,]
+        retVal = tuple(self.applyRemovalSeqRaw(nodeBytes, seq=seq))
+        if self.finalN is None:
+            return retVal
+        if not allN:
+            retVal = tuple(np.nonzero(self.redundantFlips[nodeBytes,])[0])
+        if isinstance(nodeBytesInt,bytearray):
+            retVal = tupToBytes(retVal, self.finalWholeBytesAllN if allN else self.finalWholeBytes, self.finalTailBitsAllN if allN else self.finalTailBits)
+        return retVal
 
     def applyRemovalSeqRaw(self, nodeBytes, seq=None):
         if seq is None:
