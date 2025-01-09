@@ -925,12 +925,9 @@ class removalSeq:
         self.finalWholeBytesAllN = self.finalAllN // 8
         self.finalTailBitsAllN = self.finalAllN % 8
         self.finalNonRedundantHyperplanes = deepcopy(nonRedundantHyperplanes)
-        self.redundantFlips = np.zeros((self.finalN,),dtype=np.bool_)
+        self.redundantFlips = np.zeros((self.finalAllN,),dtype=np.bool_)
         self.redundantFlips[self.finalNonRedundantHyperplanes,] = np.ones((len(self.finalNonRedundantHyperplanes),),dtype=np.bool_)
 
-    # Currently returns only tuples with effective allN=True
-    # Use the collapseRegion method of the edited flipConstraints object to
-    # restore allN=False output
     def applyRemovalSeq(self, nodeBytesInt, allN=False, seq=None):
         if seq is None:
             seq = self.seq
