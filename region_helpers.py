@@ -229,8 +229,8 @@ class flipConstraints:
                 # print(f'Removing {h}; pre-removal list = {hyperList} seq[-1] = {seq.seq[-1]}')
                 hyperList = seq.applyRemovalSeqRaw(hyperList, seq=[seq.seq[-1]])
                 # print(f'post-removal list = {hyperList}')
-                if len(added) > 0 and removedActive:
-                    hyperList.remove(added[0])
+                # if len(added) > 0 and removedActive:
+                #     hyperList.remove(added[0])
                 rootTemp = seq.applyRemovalSeqRaw(rootTemp, seq=[seq.seq[-1]])
             # print(f'HyperList post correction {hyperList}')
         self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
@@ -962,6 +962,7 @@ class removalSeq:
             seq = self.seq
         nodeBytes = list(nodeBytes)
         for remd, added in seq:
+            removedActive = False
             if len(nodeBytes) > 0 and len(remd) > 0:
                 posN = len(nodeBytes)-1
                 posR = len(remd)-1
@@ -973,13 +974,14 @@ class removalSeq:
                     if remd[posR] <= nodeBytes[posN]:
                         if remd[posR] == nodeBytes[posN]:
                             nodeBytes.pop(posN)
+                            removedActive = True
                         else:
                             nodeBytes[posN] -= posR + 1
                         posN -= 1
                     else:
                         posR -= 1
                     # print(f'  >>>  {posR} {remd[posR]}; {posN} {nodeBytes[posN]}')
-            if len(added) > 0:
+            if len(added) > 0 and removedActive:
                 bisect.insort_right(nodeBytes,added[0])
             # print(f' ////  after addition {nodeBytes}')
         return nodeBytes
