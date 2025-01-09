@@ -249,6 +249,12 @@ class flipConstraints:
         self.lastRemoval = deepcopy(seq)
         return seq
 
+    def applyLastRemoval(self,nodeBytesInt, allN=False):
+        if self.lastRemoval is None:
+            raise ValueError(f'No removals recorded.')
+        if not (isinstance(nodeBytesInt, tuple) or isinstance(nodeBytesInt, bytearray) or isinstance(nodeBytesInt, list)):
+            raise ValueError(f'Supplied node is not a bytearray or list-type object')
+        return self.lastRemoval.applyRemovalSeq(nodeBytesInt, allN=allN)
 
     def filterParallel(self, vec):
         if not isinstance(vec, np.ndarray) or vec.size != self.d + 1:
