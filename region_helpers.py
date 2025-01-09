@@ -190,9 +190,9 @@ class flipConstraints:
         assert all([i < N for i in hyperList]), f'All elements of hyperList must be < {N}'
         # Ensure hyperList is internally in 'allN' mode
         if not allN:
-            print(f'Input hyperList = {hyperList}')
+            # print(f'Input hyperList = {hyperList}')
             hyperList = self.nonRedundantHyperplanes[hyperList,].tolist()
-            print(f'Expanded hyperList = {hyperList}')
+            # print(f'Expanded hyperList = {hyperList}')
         hyperList = sorted(hyperList)
         totalRemoved = 0
         totalAdded = 0
@@ -201,7 +201,7 @@ class flipConstraints:
         while len(hyperList) > 0:
             h = hyperList.pop()
             remd, added = self.hyperSet.removeRow(h, includeDup=includeDup)
-            print(f'Removing {remd}; adding {added}')
+            # print(f'Removing {remd}; adding {added}')
             totalRemoved += len(remd)
             selArr = np.ones((self.allConstraints.shape[0],),dtype=np.bool_)
             selArr[remd,] = np.zeros((len(remd),),dtype=np.bool_)
