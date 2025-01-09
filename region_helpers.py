@@ -916,6 +916,7 @@ class removalSeq:
         self.finalWholeBytesAllN = None
         self.finalTailBitsAllN = None
         self.finalNonRedundantHyperplanes = None
+        self.collapseIdx = None
 
     def setRemovalComplete(self, N=None, allN=None, nonRedundantHyperplanes=None):
         self.finalN = N
@@ -927,6 +928,8 @@ class removalSeq:
         self.finalNonRedundantHyperplanes = deepcopy(nonRedundantHyperplanes)
         self.redundantFlips = np.zeros((self.finalAllN,),dtype=np.bool_)
         self.redundantFlips[self.finalNonRedundantHyperplanes,] = np.ones((len(self.finalNonRedundantHyperplanes),),dtype=np.bool_)
+        self.collapseIdx = -1 * np.ones((self.finalAllN,),dtype=np.int64)
+        self.collapseIdx[self.finalNonRedundantHyperplanes,] = np.arange(len(self.finalNonRedundantHyperplanes))
 
     def applyRemovalSeq(self, nodeBytesInt, allN=False, seq=None):
         if seq is None:
@@ -941,7 +944,9 @@ class removalSeq:
         if self.finalN is None:
             return retVal
         if not allN:
-            retVal = tuple(np.nonzero(self.redundantFlips[nodeBytes,])[0])
+            retVal = self.collapseIdx[retVal,]
+            assert np.all(retVal >= 0), f'Consistency failure! retVal = {retVal}'
+            retVal = tuple(retVal)
         if isinstance(nodeBytesInt,bytearray):
             retVal = tupToBytes(retVal, self.finalWholeBytesAllN if allN else self.finalWholeBytes, self.finalTailBitsAllN if allN else self.finalTailBits)
         return retVal
