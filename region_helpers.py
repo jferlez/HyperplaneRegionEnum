@@ -36,6 +36,7 @@ class flipConstraints:
         self.tol = tol
         self.rTol = rTol
         self.normalize = normalize
+        self.lastRemoval = None
 
         if (fA is not None) and (fb is not None):
             v = fA @ pt
@@ -196,9 +197,7 @@ class flipConstraints:
         totalRemoved = 0
         totalAdded = 0
         rootTemp = tuple(self.nonRedundantHyperplanes[self.root,])
-        seq = removalSeq(N=self.N, wholeBytes=self.wholeBytes, tailBits=self.tailBits, \
-                allN=self.allN, wholeBytesAllN=self.wholeBytesAllN, tailBitsAllN=self.tailBitsAllN, \
-                redundantFlips=self.redundantFlips.copy())
+        seq = removalSeq(N=self.N, allN=self.allN, nonRedundantHyperplanes=self.nonRedundantHyperplanes)
         while len(hyperList) > 0:
             h = hyperList.pop()
             remd, added = self.hyperSet.removeRow(h, includeDup=includeDup)
@@ -243,9 +242,11 @@ class flipConstraints:
         self.tailBits = self.N % 8
         self.wholeBytesAllN = self.allN // 8
         self.tailBitsAllN = self.allN % 8
+        seq.setRemovalComplete(N=self.N, allN=self.allN, nonRedundantHyperplanes=self.nonRedundantHyperplanes)
         # Update baseN... (not sure if this will work -- will have to check semantics with insertHyperplane)
         if self.baseN is not None:
             self.baseN -= totalRemoved - totalAdded
+        self.lastRemoval = deepcopy(seq)
         return seq
 
 
@@ -899,16 +900,33 @@ def bytesToList(boolIdxNoFlip,wholeBytes,tailBits):
 
 class removalSeq:
 
-    def __init__(self, N=None, wholeBytes=None, tailBits=None, allN=None, wholeBytesAllN=None, tailBitsAllN=None, redundantFlips=None):
+    def __init__(self, N=None,  allN=None, nonRedundantHyperplanes=None):
         self.N = N
-        self.wholeBytes = wholeBytes
-        self.tailBits = tailBits
+        self.wholeBytes = self.N // 8
+        self.tailBits = self.N % 8
         self.allN = allN
-        self.wholeBytesAllN = wholeBytesAllN
-        self.tailBitsAllN = tailBitsAllN
-        self.redundantFlips = redundantFlips
-        self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+        self.wholeBytesAllN = self.allN // 8
+        self.tailBitsAllN = self.allN % 8
+        self.nonRedundantHyperplanes = deepcopy(nonRedundantHyperplanes)
         self.seq = []
+        self.finalN = None
+        self.finalAllN = None
+        self.finalWholeBytes = None
+        self.finalTailBits = None
+        self.finalWholeBytesAllN = None
+        self.finalTailBitsAllN = None
+        self.finalNonRedundantHyperplanes = None
+
+    def setRemovalComplete(self, N=None, allN=None, nonRedundantHyperplanes=None):
+        self.finalN = N
+        self.finalWholeBytes = self.finalN // 8
+        self.finalTailBits = self.finalN % 8
+        self.finalAllN = allN
+        self.finalWholeBytesAllN = self.finalAllN // 8
+        self.finalTailBitsAllN = self.finalAllN % 8
+        self.finalNonRedundantHyperplanes = deepcopy(nonRedundantHyperplanes)
+        self.redundantFlips = np.zeros((self.finalN,),dtype=np.bool_)
+        self.redundantFlips[self.finalNonRedundantHyperplanes,] = np.ones((len(self.finalNonRedundantHyperplanes),),dtype=np.bool_)
 
     # Currently returns only tuples with effective allN=True
     # Use the collapseRegion method of the edited flipConstraints object to
