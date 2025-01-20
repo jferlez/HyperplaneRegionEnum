@@ -242,6 +242,11 @@ class flipConstraints:
         self.tailBits = self.N % 8
         self.wholeBytesAllN = self.allN // 8
         self.tailBitsAllN = self.allN % 8
+        if self.rebasePt is not None:
+            v = self.constraints[:self.N, 1:] @ self.rebasePt + self.constraints[:self.N, 0].reshape(-1,1)
+            self.rebaseSet = frozenset(np.nonzero(v.flatten() < -self.tol)[0])
+            v = self.allConstraints[:self.allN, 1:] @ self.rebasePt + self.allConstraints[:self.allN, 0].reshape(-1,1)
+            self.rebaseSetAllN = frozenset(np.nonzero(v.flatten() < -self.tol)[0])
         seq.setRemovalComplete(N=self.N, allN=self.allN, nonRedundantHyperplanes=self.nonRedundantHyperplanes)
         # Update baseN... (not sure if this will work -- will have to check semantics with insertHyperplane)
         if self.baseN is not None:
