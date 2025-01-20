@@ -355,6 +355,7 @@ class Poset(Chare):
         if self.clearTable and self.sendFaces:
             print(f'ERROR: \'clearTable\' flag is incompatible with \'sendFaces\'.')
             return None
+        payload = None if payload == tuple() or payload == [] else payload
 
 
         #print(f'verbose is {self.verbose}')
@@ -397,7 +398,7 @@ class Poset(Chare):
                                         self.flippedConstraints.pt if witness is None else witness \
                                     ], \
                                     adjUpdate=adjUpdate, \
-                                    payload=(tuple() if payload is None else payload), \
+                                    payload=payload, \
                                     vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())), \
                                 ret=True).get()
         thisLevel = [( \
@@ -880,6 +881,7 @@ class Poset(Chare):
         self.succGroup.setMethod(**opts)
         self.rsPeScheduler.resetScheduler(verbose=self.verbose,awaitable=True).get()
 
+        payload = None if payload == tuple() or payload == [] else payload
         checkVal = True
         level = 0
         thisLevel = [(self.flippedConstraints.root,)]
@@ -889,7 +891,7 @@ class Poset(Chare):
         # Start reverse search on the root on the first PE
         peToUse = self.rsPeScheduler.schedNextFreePE(ret=True).get()
         if peToUse >= 0:
-            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root,payload=(tuple() if payload is None else payload),witness=self.flippedConstraints.pt)
+            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root,payload=payload,witness=self.flippedConstraints.pt)
         else:
             print('Error: RS Pe scheduler not configured properly')
 
@@ -1708,6 +1710,7 @@ class successorWorker(Chare):
         d = H.shape[1]-1
         witnessList = []
         Ntab = N
+        payload = None if payload == tuple() or payload == [] else payload
 
         # Note the N passed here includes the inserted hyperplane, and INTrep will always be of the same length
         if debug:
@@ -2041,6 +2044,7 @@ class successorWorker(Chare):
         debug = False
         d = H.shape[1]-1
         witnessList = []
+        payload = None if payload == tuple() or payload == [] else payload
 
         if not self.iPtLift is None and isinstance(self.iPtLift,np.ndarray) and self.iPtLift.shape == (d,1):
             self.flippedConstraints.setRebase(self.iPtLift)
@@ -2136,7 +2140,7 @@ class successorWorker(Chare):
                                             witness \
                                         ), \
                                         adjUpdate={ky:self.flippedConstraints.N for ky in adj.keys()} if isinstance(adj,dict) else None, \
-                                        payload=payload, \
+                                        payload=None if payload == tuple() or payload == [] else payload, \
                                         ret=True \
                                     ).get()
 

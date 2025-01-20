@@ -40,7 +40,7 @@ class Node():
         cl = type(self)
         return cl( \
                   self.localProxy, self.storePe, self.parentChare, self.nodeEqualityFn, self.lsbHash, \
-                  self.msbHash, copy(self.nodeBytes),self.N, self.originPe, deepcopy(self.face), deepcopy(self.witness), deepcopy(self.adj), (deepcopy(self.payload),) \
+                  self.msbHash, copy(self.nodeBytes),self.N, self.originPe, deepcopy(self.face), deepcopy(self.witness), deepcopy(self.adj), deepcopy(self.payload) \
                 )
 
     def __hash__(self):
