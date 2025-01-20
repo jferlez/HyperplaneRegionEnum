@@ -2114,21 +2114,31 @@ class successorWorker(Chare):
 
         boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(0, INTrep , N) # should be identity for INTrep
 
-        INTrepNew = self.flippedConstraints.applyLastRemoval(INTrep)
+        # INTrepNew = self.flippedConstraints.applyLastRemoval(INTrep)
+        removed = set()
+        kept = []
+        for i in INTrep:
+            res = self.flippedConstraints.applyLastRemoval((i,))
+            if len(res) == 0:
+                removed.add(i)
+            else:
+                kept.append(res[0])
 
-        cont = self.thisProxy[self.thisIndex].hashAndSend( \
-                                    region_helpers.recodeRegNewN( \
-                                        0, \
-                                        INTrepNew, \
-                                        self.flippedConstraints.N \
-                                    ) + ( \
-                                        face, \
-                                        witness \
-                                    ), \
-                                    adjUpdate={ky:self.flippedConstraints.N for ky in adj.keys()} if isinstance(adj,dict) else None, \
-                                    payload=payload, \
-                                    ret=True \
-                                ).get()
+        # only hash node if it is on the positive side of all face vectors
+        if len(  removed & face ) == 0:
+            cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                                        region_helpers.recodeRegNewN( \
+                                            0, \
+                                            tuple(kept), \
+                                            self.flippedConstraints.N \
+                                        ) + ( \
+                                            face, \
+                                            witness \
+                                        ), \
+                                        adjUpdate={ky:self.flippedConstraints.N for ky in adj.keys()} if isinstance(adj,dict) else None, \
+                                        payload=payload, \
+                                        ret=True \
+                                    ).get()
 
         return [set([]),None]
 
