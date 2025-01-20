@@ -790,6 +790,69 @@ class Poset(Chare):
         #####
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
 
+
+    @coro
+    def removeHyperplanes(self, hyperList, allN=False, includeDup=False, opts={}):
+        if not isinstance(hyperList, list) or len(hyperList) == 0:
+            print('hyperList input must be a list object with length > 0')
+            return False
+        N = (self.N if not allN else self.allN)
+        if not all([i < N for i in hyperList]):
+            print(f'All elements of hyperList must be < {N}')
+            return False
+        if self.flippedConstraints.baseN is not None:
+            # A slow but safe approach...
+            print(f'Canonicalizing region table... (No rebase applied.)')
+            self.thisProxy.canonicalizeTable(opts=opts, awaitable=True).get()
+
+        self.oldFlippedConstraints = deepcopy(self.flippedConstraints)
+
+        remSeq = self.flippedConstraints.removeHyperplanes(hyperList, allN=allN, includeDup=includeDup)
+        self.pt = self.flippedConstraints.pt
+        # To do?: have each instance insert the hyperplane separately for speed (avoids copying custom object)
+        aug = self.flippedConstraints.deserialize()
+        # Distribute post-removal flippedConstraints object to all workers
+        self.flippedConstraints.serialize()
+        self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
+        self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
+        if len(remSeq.seq) == 0:
+            return True
+
+        localOpts = deepcopy(opts)
+        localOpts['method'] = 'removeHyperplanes'
+        localOpts['clearTable'] = False
+        localOpts['sendWitness'] = True
+        localOpts['sendFaces'] = True
+        localOpts['queryReturnInfo'] = True
+        localOpts['useQuery'] = False
+        localOpts['maxLevels'] = aug.N + 2
+        tol = opts['tol'] if 'tol' in opts else 1e-9
+        rTol = opts['rTol'] if 'rTol' in opts else 1e-9
+        solver = localOpts['solver'] if 'solver' in localOpts else 'glpk'
+
+        self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
+
+        tval = self.distHashTable.seedLevelFullTable(clearTable=True,ret=True).get()
+
+        self.succGroup.setMethod(**localOpts)
+
+        ##### Now test the canonicalization features...
+        f = Future()
+        self.distHashTable.initListening(f,queryReturnInfo=True,awaitable=True).get()
+        f.get()
+        self.succGroup.startListening(awaitable=True).get()
+
+        self.succGroup.computeSuccessorsNew(ret=True).get()
+
+        self.distHashTable.awaitPending(usePosetChecking=False,awaitable=True).get()
+        self.succGroup.sendAll(-2,awaitable=True).get()
+        self.succGroup.closeQueryChannels(awaitable=True).get()
+        self.succGroup.flushMessages(ret=True).get()
+        #####
+        self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
+
+        return True
+
     @coro
     def getLPCount(self):
         statsFut = Future()
@@ -1009,6 +1072,9 @@ class successorWorker(Chare):
             self.processNodesArgs = {'solver':solver}
         elif method=='canonicalizeTable':
             self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsCanonicalizeTable
+            self.processNodesArgs = {'solver':solver}
+        elif method=='removeHyperplanes':
+            self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsRemoveHyperplanes
             self.processNodesArgs = {'solver':solver}
         if len(lpopts) == 0:
             self.lpopts = {}
@@ -2034,7 +2100,31 @@ class successorWorker(Chare):
 
         return [set([]),None]
 
+    @coro
+    def processNodeSuccessorsRemoveHyperplanes(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+        debug = False
+        d = H.shape[1]-1
+        witnessList = []
 
+        boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(0, INTrep , N) # should be identity for INTrep
+
+        INTrepNew = self.flippedConstraints.applyLastRemoval(INTrep)
+
+        cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                                    region_helpers.recodeRegNewN( \
+                                        0, \
+                                        INTrepNew, \
+                                        self.flippedConstraints.N \
+                                    ) + ( \
+                                        face, \
+                                        witness \
+                                    ), \
+                                    adjUpdate={ky:self.flippedConstraints.N for ky in adj.keys()} if isinstance(adj,dict) else None, \
+                                    payload=payload, \
+                                    ret=True \
+                                ).get()
+
+        return [set([]),None]
 
 def Union(contribs):
     return set().union(*contribs)
