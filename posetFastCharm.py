@@ -790,6 +790,12 @@ class Poset(Chare):
         #####
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
 
+        aug = self.flippedConstraints.serialize()
+        aug.baseN = None
+        if rebasePt is not None:
+            aug.rebasePt = deepcopy(rebasePt)
+        self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
+        self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
 
     @coro
     def removeHyperplanes(self, hyperList, allN=False, includeDup=False, opts={}):
