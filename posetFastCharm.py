@@ -2130,6 +2130,16 @@ class successorWorker(Chare):
 
         # only hash node if it is on the positive side of all face vectors
         if len(  removed & face ) == 0:
+            # Debugging query
+            # q = self.thisProxy[self.thisIndex].query( \
+            #                         region_helpers.recodeRegNewN( \
+            #                             0, \
+            #                             tuple(kept), \
+            #                             self.flippedConstraints.N \
+            #                         ), \
+            #                         ret=True).get()
+            # if q[0] > 0:
+            #     print(f' (*)***  Hitting same node {INTrep} {tuple(kept)}')
             cont = self.thisProxy[self.thisIndex].hashAndSend( \
                                         region_helpers.recodeRegNewN( \
                                             0, \
