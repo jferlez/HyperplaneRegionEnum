@@ -73,10 +73,10 @@ class Node():
 )
 def vertexNodeDecode(H,H0close,aSol,aList):
     diff = (-H[:,1:] @ aSol).flatten() - H[:,0]
-    flipIdxsA = ( diff > -H0close).flatten().astype(np.bool8)
+    flipIdxsA = ( diff > -H0close).flatten().astype(np.bool_)
     activeFlips = np.nonzero((np.abs(diff) <= H0close).flatten())[0]
-    flipIdxsA[activeFlips] = np.zeros(activeFlips.shape,dtype=np.bool8)
-    flipIdxsA[aList] = np.ones(aList.shape,dtype=np.bool8)
+    flipIdxsA[activeFlips] = np.zeros(activeFlips.shape,dtype=np.bool_)
+    flipIdxsA[aList] = np.ones(aList.shape,dtype=np.bool_)
     return np.nonzero(flipIdxsA)[0]
 
 def vertexNodeEquality(H,H0close,wholeBytes,tailBits,a,b):

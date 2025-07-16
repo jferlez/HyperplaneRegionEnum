@@ -1172,12 +1172,12 @@ class successorWorker(Chare):
         if type(INTrep) == tuple and len(INTrep) == 2 and type(INTrep[1]) is tuple:
             incommingINTrep = INTrep
             Hsol = (-self.constraints[:,1:] @ INTrep[0]).flatten()
-            flipIdxs = (Hsol  > self.Hcol0CloseVertex).flatten().astype(np.bool8)
+            flipIdxs = (Hsol  > self.Hcol0CloseVertex).flatten().astype(np.bool_)
             # print(flipIdxs)
             intersectionIdxs = np.nonzero((np.abs(Hsol - self.constraints[:,0]) <= self.Hcol0Close).flatten())[0]
             # print(intersectionIdxs)
-            flipIdxs[intersectionIdxs] = np.zeros(intersectionIdxs.shape,dtype=np.bool8)
-            flipIdxs[list(INTrep[1])] = np.ones(len(INTrep[1]),dtype=np.bool8)
+            flipIdxs[intersectionIdxs] = np.zeros(intersectionIdxs.shape,dtype=np.bool_)
+            flipIdxs[list(INTrep[1])] = np.ones(len(INTrep[1]),dtype=np.bool_)
             INTrep = tuple(np.nonzero(flipIdxs)[0])
             # print(f'{INTrep}==>{(incommingINTrep[0].flatten().tolist(),incommingINTrep[1])}')
         if type(INTrep) == tuple:
