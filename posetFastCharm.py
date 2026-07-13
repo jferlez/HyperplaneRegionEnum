@@ -355,6 +355,7 @@ class Poset(Chare):
         if self.clearTable and self.sendFaces:
             print(f'ERROR: \'clearTable\' flag is incompatible with \'sendFaces\'.')
             return None
+        payload = None if payload == tuple() or payload == [] else payload
 
 
         #print(f'verbose is {self.verbose}')
@@ -397,7 +398,7 @@ class Poset(Chare):
                                         self.flippedConstraints.pt if witness is None else witness \
                                     ], \
                                     adjUpdate=adjUpdate, \
-                                    payload=(tuple() if payload is None else payload), \
+                                    payload=payload, \
                                     vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())), \
                                 ret=True).get()
         thisLevel = [( \
@@ -790,6 +791,75 @@ class Poset(Chare):
         #####
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
 
+        aug = self.flippedConstraints.serialize()
+        aug.baseN = None
+        if rebasePt is not None:
+            aug.rebasePt = deepcopy(rebasePt)
+        self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
+        self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
+
+    @coro
+    def removeHyperplanes(self, hyperList, allN=False, includeDup=False, opts={}):
+        if not isinstance(hyperList, list) or len(hyperList) == 0:
+            print('hyperList input must be a list object with length > 0')
+            return False
+        N = (self.N if not allN else self.allN)
+        if not all([i < N for i in hyperList]):
+            print(f'All elements of hyperList must be < {N}')
+            return False
+        if self.flippedConstraints.baseN is not None:
+            # A slow but safe approach...
+            print(f'Canonicalizing region table... (No rebase applied.)')
+            self.thisProxy.canonicalizeTable(opts=opts, awaitable=True).get()
+
+        self.oldFlippedConstraints = deepcopy(self.flippedConstraints)
+
+        remSeq = self.flippedConstraints.removeHyperplanes(hyperList, allN=allN, includeDup=includeDup)
+        self.pt = self.flippedConstraints.pt
+        # To do?: have each instance insert the hyperplane separately for speed (avoids copying custom object)
+        aug = self.flippedConstraints.deserialize()
+        # Distribute post-removal flippedConstraints object to all workers
+        self.flippedConstraints.serialize()
+        self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
+        self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
+        if len(remSeq.seq) == 0:
+            return True
+
+        localOpts = deepcopy(opts)
+        localOpts['method'] = 'removeHyperplanes'
+        localOpts['clearTable'] = False
+        localOpts['sendWitness'] = True
+        localOpts['sendFaces'] = True
+        localOpts['queryReturnInfo'] = True
+        localOpts['useQuery'] = False
+        localOpts['maxLevels'] = aug.N + 2
+        tol = opts['tol'] if 'tol' in opts else 1e-9
+        rTol = opts['rTol'] if 'rTol' in opts else 1e-9
+        solver = localOpts['solver'] if 'solver' in localOpts else 'glpk'
+
+        self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
+
+        tval = self.distHashTable.seedLevelFullTable(clearTable=True,ret=True).get()
+
+        self.succGroup.setMethod(**localOpts)
+
+        ##### Now test the canonicalization features...
+        f = Future()
+        self.distHashTable.initListening(f,queryReturnInfo=True,awaitable=True).get()
+        f.get()
+        self.succGroup.startListening(awaitable=True).get()
+
+        self.succGroup.computeSuccessorsNew(ret=True).get()
+
+        self.distHashTable.awaitPending(usePosetChecking=False,awaitable=True).get()
+        self.succGroup.sendAll(-2,awaitable=True).get()
+        self.succGroup.closeQueryChannels(awaitable=True).get()
+        self.succGroup.flushMessages(ret=True).get()
+        #####
+        self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
+
+        return True
+
     @coro
     def getLPCount(self):
         statsFut = Future()
@@ -811,6 +881,7 @@ class Poset(Chare):
         self.succGroup.setMethod(**opts)
         self.rsPeScheduler.resetScheduler(verbose=self.verbose,awaitable=True).get()
 
+        payload = None if payload == tuple() or payload == [] else payload
         checkVal = True
         level = 0
         thisLevel = [(self.flippedConstraints.root,)]
@@ -820,7 +891,7 @@ class Poset(Chare):
         # Start reverse search on the root on the first PE
         peToUse = self.rsPeScheduler.schedNextFreePE(ret=True).get()
         if peToUse >= 0:
-            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root,payload=(tuple() if payload is None else payload),witness=self.flippedConstraints.pt)
+            self.succGroup[peToUse].reverseSearch(self.flippedConstraints.root,payload=payload,witness=self.flippedConstraints.pt)
         else:
             print('Error: RS Pe scheduler not configured properly')
 
@@ -1009,6 +1080,9 @@ class successorWorker(Chare):
             self.processNodesArgs = {'solver':solver}
         elif method=='canonicalizeTable':
             self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsCanonicalizeTable
+            self.processNodesArgs = {'solver':solver}
+        elif method=='removeHyperplanes':
+            self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsRemoveHyperplanes
             self.processNodesArgs = {'solver':solver}
         if len(lpopts) == 0:
             self.lpopts = {}
@@ -1636,6 +1710,7 @@ class successorWorker(Chare):
         d = H.shape[1]-1
         witnessList = []
         Ntab = N
+        payload = None if payload == tuple() or payload == [] else payload
 
         # Note the N passed here includes the inserted hyperplane, and INTrep will always be of the same length
         if debug:
@@ -1969,6 +2044,7 @@ class successorWorker(Chare):
         debug = False
         d = H.shape[1]-1
         witnessList = []
+        payload = None if payload == tuple() or payload == [] else payload
 
         if not self.iPtLift is None and isinstance(self.iPtLift,np.ndarray) and self.iPtLift.shape == (d,1):
             self.flippedConstraints.setRebase(self.iPtLift)
@@ -2034,7 +2110,51 @@ class successorWorker(Chare):
 
         return [set([]),None]
 
+    @coro
+    def processNodeSuccessorsRemoveHyperplanes(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+        debug = False
+        d = H.shape[1]-1
+        witnessList = []
 
+        boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(0, INTrep , N) # should be identity for INTrep
+
+        # INTrepNew = self.flippedConstraints.applyLastRemoval(INTrep)
+        removed = set()
+        kept = []
+        for i in INTrep:
+            res = self.flippedConstraints.applyLastRemoval((i,))
+            if len(res) == 0:
+                removed.add(i)
+            else:
+                kept.append(res[0])
+
+        # only hash node if it is on the positive side of all face vectors
+        if len(  removed & face ) == 0:
+            # Debugging query
+            # q = self.thisProxy[self.thisIndex].query( \
+            #                         region_helpers.recodeRegNewN( \
+            #                             0, \
+            #                             tuple(kept), \
+            #                             self.flippedConstraints.N \
+            #                         ), \
+            #                         ret=True).get()
+            # if q[0] > 0:
+            #     print(f' (*)***  Hitting same node {INTrep} {tuple(kept)}')
+            cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                                        region_helpers.recodeRegNewN( \
+                                            0, \
+                                            tuple(kept), \
+                                            self.flippedConstraints.N \
+                                        ) + ( \
+                                            face, \
+                                            witness \
+                                        ), \
+                                        adjUpdate={ky:self.flippedConstraints.N for ky in adj.keys()} if isinstance(adj,dict) else None, \
+                                        payload=None if payload == tuple() or payload == [] else payload, \
+                                        ret=True \
+                                    ).get()
+
+        return [set([]),None]
 
 def Union(contribs):
     return set().union(*contribs)

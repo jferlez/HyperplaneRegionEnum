@@ -2,8 +2,16 @@ import numpy as np
 import encapsulateLP
 from copy import copy, deepcopy
 import posetFastCharm_numba
-import vectorSet.vectorSet as vectorSet
+try:
+    import vectorSet
+    if callable(vectorSet.vectorSet):
+        pass
+    else:
+        raise ImportError(f'VectorSet Import failed')
+except Exception as e:
+    import vectorSet.vectorSet as vectorSet
 from itertools import chain
+import bisect
 
 class flipConstraints:
 
@@ -28,6 +36,7 @@ class flipConstraints:
         self.tol = tol
         self.rTol = rTol
         self.normalize = normalize
+        self.lastRemoval = None
 
         if (fA is not None) and (fb is not None):
             v = fA @ pt
@@ -93,7 +102,13 @@ class flipConstraints:
         return self
 
     def copy(self):
-        return deepcopy(self)
+        serialized = self.hyperSet.serialized
+        self.serialize()
+        retObj = deepcopy(self)
+        if not serialized:
+            self.deserialize()
+            retObj.deserialize()
+        return retObj
 
     def maskHyperplanes(self, hyperList, allN=False):
         try:
@@ -167,6 +182,84 @@ class flipConstraints:
             return True
         else:
             return False
+
+    def removeHyperplanes(self, hyperList, allN=False, includeDup=False):
+        if not isinstance(hyperList, list) or len(hyperList) == 0:
+            raise ValueError('hyperList input must be a list object with length > 0')
+        N = (self.N if not allN else self.allN)
+        assert all([i < N for i in hyperList]), f'All elements of hyperList must be < {N}'
+        # Ensure hyperList is internally in 'allN' mode
+        if not allN:
+            # print(f'Input hyperList = {hyperList}')
+            hyperList = self.nonRedundantHyperplanes[hyperList,].tolist()
+            # print(f'Expanded hyperList = {hyperList}')
+        hyperList = sorted(hyperList)
+        totalRemoved = 0
+        totalAdded = 0
+        rootTemp = tuple(self.nonRedundantHyperplanes[self.root,])
+        seq = removalSeq(N=self.N, allN=self.allN, nonRedundantHyperplanes=self.nonRedundantHyperplanes)
+        while len(hyperList) > 0:
+            h = hyperList.pop()
+            remd, added = self.hyperSet.removeRow(h, includeDup=includeDup)
+            # print(f'Removing {remd}; adding {added}')
+            totalRemoved += len(remd)
+            selArr = np.ones((self.allConstraints.shape[0],),dtype=np.bool_)
+            selArr[remd,] = np.zeros((len(remd),),dtype=np.bool_)
+            removedActive = np.any( self.redundantFlips[np.logical_not(selArr[:self.allN]),] > 0 )
+            self.redundantFlips = self.redundantFlips[selArr[:self.allN],]
+            rootTemp = sorted(list(set(rootTemp) - set(remd)))
+            # If a hyperplane was added back in, make sure it is counted as a non-redundant hyperplane
+            # when it replaces a previously active, non-redundant hyperplane
+            for idx in added:
+                if removedActive:
+                    self.redundantFlips[idx] = 1
+                    totalAdded += 1
+            seq.seq.append((remd, (added[0],) if len(added)>0 and removedActive else tuple()))
+            self.allConstraints = self.allConstraints[selArr,:]
+            self.allNrms = self.allNrms[selArr,]
+            self.flipMapN = self.flipMapN[selArr[:self.allN],]
+            self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
+            self.flipMapSet = frozenset(self.flipMapSetNP)
+            self.allN = np.count_nonzero(selArr[:self.allN])
+            assert self.allN == self.hyperSet.N, f'Inconsistent removal of rows from vectorSet'
+            remdSet = set(remd)
+            # print(f'Remove set {remd}; hyperList pre correction {hyperList}')
+            # Correct the indices of hyperList for removed rows
+            if len(remd) > 0:
+                # print(f'Removing {h}; pre-removal list = {hyperList} seq[-1] = {seq.seq[-1]}')
+                hyperList = seq.applyRemovalSeqRaw(hyperList, seq=[seq.seq[-1]])
+                # print(f'post-removal list = {hyperList}')
+                # if len(added) > 0 and removedActive:
+                #     hyperList.remove(added[0])
+                rootTemp = seq.applyRemovalSeqRaw(rootTemp, seq=[seq.seq[-1]])
+            # print(f'HyperList post correction {hyperList}')
+        self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
+        self.root = tuple(rootTemp)
+        self.N = len(self.nonRedundantHyperplanes)
+        self.constraints = np.vstack([ self.hyperSet.getRows()[self.nonRedundantHyperplanes,:], self.allConstraints[self.allN:,:]])
+        self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,], self.allNrms[self.allN:,] ])
+        self.wholeBytes = self.N // 8
+        self.tailBits = self.N % 8
+        self.wholeBytesAllN = self.allN // 8
+        self.tailBitsAllN = self.allN % 8
+        if self.rebasePt is not None:
+            v = self.constraints[:self.N, 1:] @ self.rebasePt + self.constraints[:self.N, 0].reshape(-1,1)
+            self.rebaseSet = frozenset(np.nonzero(v.flatten() < -self.tol)[0])
+            v = self.allConstraints[:self.allN, 1:] @ self.rebasePt + self.allConstraints[:self.allN, 0].reshape(-1,1)
+            self.rebaseSetAllN = frozenset(np.nonzero(v.flatten() < -self.tol)[0])
+        seq.setRemovalComplete(N=self.N, allN=self.allN, nonRedundantHyperplanes=self.nonRedundantHyperplanes)
+        # Update baseN... (not sure if this will work -- will have to check semantics with insertHyperplane)
+        if self.baseN is not None:
+            self.baseN -= totalRemoved - totalAdded
+        self.lastRemoval = deepcopy(seq)
+        return seq
+
+    def applyLastRemoval(self,nodeBytesInt, allN=False):
+        if self.lastRemoval is None:
+            raise ValueError(f'No removals recorded.')
+        if not (isinstance(nodeBytesInt, tuple) or isinstance(nodeBytesInt, bytearray) or isinstance(nodeBytesInt, list)):
+            raise ValueError(f'Supplied node is not a bytearray or list-type object')
+        return self.lastRemoval.applyRemovalSeq(nodeBytesInt, allN=allN)
 
     def filterParallel(self, vec):
         if not isinstance(vec, np.ndarray) or vec.size != self.d + 1:
@@ -814,4 +907,87 @@ def bytesToList(boolIdxNoFlip,wholeBytes,tailBits):
             if boolIdxNoFlip[bIdx] & ( 1 << bitIdx):
                 INTrep.append(8*bIdx + bitIdx)
     return INTrep
+
+
+class removalSeq:
+
+    def __init__(self, N=None,  allN=None, nonRedundantHyperplanes=None):
+        self.N = N
+        self.wholeBytes = self.N // 8
+        self.tailBits = self.N % 8
+        self.allN = allN
+        self.wholeBytesAllN = self.allN // 8
+        self.tailBitsAllN = self.allN % 8
+        self.nonRedundantHyperplanes = deepcopy(nonRedundantHyperplanes)
+        self.seq = []
+        self.finalN = None
+        self.finalAllN = None
+        self.finalWholeBytes = None
+        self.finalTailBits = None
+        self.finalWholeBytesAllN = None
+        self.finalTailBitsAllN = None
+        self.finalNonRedundantHyperplanes = None
+        self.collapseIdx = None
+
+    def setRemovalComplete(self, N=None, allN=None, nonRedundantHyperplanes=None):
+        self.finalN = N
+        self.finalWholeBytes = self.finalN // 8
+        self.finalTailBits = self.finalN % 8
+        self.finalAllN = allN
+        self.finalWholeBytesAllN = self.finalAllN // 8
+        self.finalTailBitsAllN = self.finalAllN % 8
+        self.finalNonRedundantHyperplanes = deepcopy(nonRedundantHyperplanes)
+        self.redundantFlips = np.zeros((self.finalAllN,),dtype=np.bool_)
+        self.redundantFlips[self.finalNonRedundantHyperplanes,] = np.ones((len(self.finalNonRedundantHyperplanes),),dtype=np.bool_)
+        self.collapseIdx = -1 * np.ones((self.finalAllN,),dtype=np.int64)
+        self.collapseIdx[self.finalNonRedundantHyperplanes,] = np.arange(len(self.finalNonRedundantHyperplanes))
+
+    def applyRemovalSeq(self, nodeBytesInt, allN=False, seq=None):
+        if seq is None:
+            seq = self.seq
+        if isinstance(nodeBytesInt,bytearray):
+            nodeBytes = tuple(bytesToList(nodeBytesInt,(self.wholeBytesAllN if allN else self.wholeBytes),(self.tailBitsAllN if allN else self.tailBits)))
+        else:
+            nodeBytes = nodeBytesInt
+        if not allN:
+            nodeBytes = self.nonRedundantHyperplanes[nodeBytes,]
+        retVal = tuple(self.applyRemovalSeqRaw(nodeBytes, seq=seq))
+        if self.finalN is None:
+            return retVal
+        if not allN:
+            retVal = self.collapseIdx[retVal,]
+            assert np.all(retVal >= 0), f'Consistency failure! retVal = {retVal}'
+            retVal = tuple(retVal)
+        if isinstance(nodeBytesInt,bytearray):
+            retVal = tupToBytes(retVal, self.finalWholeBytesAllN if allN else self.finalWholeBytes, self.finalTailBitsAllN if allN else self.finalTailBits)
+        return retVal
+
+    def applyRemovalSeqRaw(self, nodeBytes, seq=None):
+        if seq is None:
+            seq = self.seq
+        nodeBytes = list(nodeBytes)
+        for remd, added in seq:
+            removedActive = False
+            if len(nodeBytes) > 0 and len(remd) > 0:
+                posN = len(nodeBytes)-1
+                posR = len(remd)-1
+                while posR >=0 and remd[posR] > nodeBytes[posN]:
+                    posR -= 1
+                # print(f'  >    {posR} {remd[posR]}; {posN} {nodeBytes[posN]}')
+                while posN >= 0 and posR >= 0:
+                    # print(f'  >>   {posR} {remd[posR]}; {posN} {nodeBytes[posN]}')
+                    if remd[posR] <= nodeBytes[posN]:
+                        if remd[posR] == nodeBytes[posN]:
+                            nodeBytes.pop(posN)
+                            removedActive = True
+                        else:
+                            nodeBytes[posN] -= posR + 1
+                        posN -= 1
+                    else:
+                        posR -= 1
+                    # print(f'  >>>  {posR} {remd[posR]}; {posN} {nodeBytes[posN]}')
+            if len(added) > 0 and removedActive:
+                bisect.insort_right(nodeBytes,added[0])
+            # print(f' ////  after addition {nodeBytes}')
+        return nodeBytes
 
