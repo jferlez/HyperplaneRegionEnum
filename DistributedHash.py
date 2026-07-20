@@ -34,7 +34,7 @@ class Node():
         self.witness = witness
         self.nodeEqualityFn = nodeEqualityFn
         self.adj = {} if adj is None else adj
-        self.payload = args[0] if len(args) > 0 else tuple()
+        self.payload = args[0] if len(args) > 0 else None
 
     def copy(self):
         cl = type(self)
@@ -928,7 +928,8 @@ class HashWorker(Chare):
     @coro
     def getLevelList(self, levelListFut):
         if self.levelDone:
-            self.reduce(levelListFut, [(nd.nodeBytes, *nd.payload) for nd in self.levelList], Reducer.Join)
+            # payload is now either None or a NamedTuple
+            self.reduce(levelListFut, [(nd.nodeBytes, nd.payload) for nd in self.levelList], Reducer.Join)
             # self.levelList = []
             # self.table = {}
         else:

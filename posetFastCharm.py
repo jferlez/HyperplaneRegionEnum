@@ -355,7 +355,7 @@ class Poset(Chare):
         if self.clearTable and self.sendFaces:
             print(f'ERROR: \'clearTable\' flag is incompatible with \'sendFaces\'.')
             return None
-        payload = None if payload == tuple() or payload == [] else payload
+        # payload = None if payload == tuple() or payload == [] else payload
 
 
         #print(f'verbose is {self.verbose}')
@@ -408,7 +408,7 @@ class Poset(Chare):
                       tuple() if face is None else face, \
                       self.flippedConstraints.pt if witness is None else witness, \
                       adjUpdate, \
-                      tuple() if payload is None else payload
+                      payload
                     )]
 
         self.distHashTable.awaitPending(usePosetChecking=self.usePosetChecking, awaitable=True).get()
@@ -881,7 +881,8 @@ class Poset(Chare):
         self.succGroup.setMethod(**opts)
         self.rsPeScheduler.resetScheduler(verbose=self.verbose,awaitable=True).get()
 
-        payload = None if payload == tuple() or payload == [] else payload
+        # Assume that paylod is either None or an instance of a NamedTuple
+        # payload = None if payload == tuple() or payload == [] else payload
         checkVal = True
         level = 0
         thisLevel = [(self.flippedConstraints.root,)]
@@ -1620,7 +1621,7 @@ class successorWorker(Chare):
             return to_keep, witnessList
 
     @coro
-    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
         # INTrep = INTrep[0]
         # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
         # t = time.time()
@@ -1684,7 +1685,7 @@ class successorWorker(Chare):
             return successors, sel, witnessList
 
     @coro
-    def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+    def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
         # *****
         # This function takes as input the regions newly split by the inserted hyperplane.
         #
@@ -1710,7 +1711,7 @@ class successorWorker(Chare):
         d = H.shape[1]-1
         witnessList = []
         Ntab = N
-        payload = None if payload == tuple() or payload == [] else payload
+        # payload = None if payload == tuple() or payload == [] else payload
 
         # Note the N passed here includes the inserted hyperplane, and INTrep will always be of the same length
         if debug:
@@ -2040,11 +2041,11 @@ class successorWorker(Chare):
         return [set([]),None]
 
     @coro
-    def processNodeSuccessorsCanonicalizeTable(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+    def processNodeSuccessorsCanonicalizeTable(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
         debug = False
         d = H.shape[1]-1
         witnessList = []
-        payload = None if payload == tuple() or payload == [] else payload
+        # payload = None if payload == tuple() or payload == [] else payload
 
         if not self.iPtLift is None and isinstance(self.iPtLift,np.ndarray) and self.iPtLift.shape == (d,1):
             self.flippedConstraints.setRebase(self.iPtLift)
@@ -2111,7 +2112,7 @@ class successorWorker(Chare):
         return [set([]),None]
 
     @coro
-    def processNodeSuccessorsRemoveHyperplanes(self,INTrep,N,H,payload=[],solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+    def processNodeSuccessorsRemoveHyperplanes(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
         debug = False
         d = H.shape[1]-1
         witnessList = []
@@ -2150,7 +2151,7 @@ class successorWorker(Chare):
                                             witness \
                                         ), \
                                         adjUpdate={ky:self.flippedConstraints.N for ky in adj.keys()} if isinstance(adj,dict) else None, \
-                                        payload=None if payload == tuple() or payload == [] else payload, \
+                                        payload=payload, \
                                         ret=True \
                                     ).get()
 
