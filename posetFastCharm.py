@@ -793,7 +793,6 @@ class Poset(Chare):
 
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
 
-        tval = self.distHashTable.seedLevelFullTable(clearTable=True,ret=True).get()
 
         self.succGroup.setMethod(**localOpts)
 
@@ -805,6 +804,8 @@ class Poset(Chare):
         self.distHashTable.initListening(f,queryReturnInfo=True,awaitable=True).get()
         f.get()
         self.succGroup.startListening(awaitable=True).get()
+
+        tval = self.distHashTable.seedLevelFullTable(clearTable=True,ret=True).get()
 
         self.succGroup.computeSuccessorsNew(ret=True).get()
 
