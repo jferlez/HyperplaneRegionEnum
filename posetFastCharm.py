@@ -890,6 +890,8 @@ class Poset(Chare):
         self.succGroup.closeQueryChannels(awaitable=True).get()
         self.succGroup.flushMessages(ret=True).get()
         #####
+        checkVal = self.distHashTable.levelDone(ret=True).get()
+        listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
 
         return True
