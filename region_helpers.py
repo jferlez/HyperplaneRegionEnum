@@ -154,7 +154,7 @@ class flipConstraints:
         self.allNrms = np.vstack([ self.allNrms[:self.allN,], np.array([[1]],dtype=np.int64), self.allNrms[self.allN:,] ])
         if not self.normalize is None:
             self.allNrms[self.allN,] = self.normalize / np.linalg.norm(self.allConstraints[self.allN,1:].reshape(1,-1),axis=1).reshape(-1,1)
-            self.allConstraints = self.allNrms * self.allConstraints
+            self.allConstraints[self.allN,:] = self.allNrms[self.allN] * self.allConstraints[self.allN,:]
         else:
             self.normalize = None
 

@@ -537,12 +537,11 @@ class Poset(Chare):
                 setattr(self,ky,opts[ky])
         opts['verbose'] = self.verbose
 
-        nrm = np.linalg.norm(np.hstack([-newA.flatten(), newb.flatten()])) / normalize
-        newA = -newA.copy().flatten() / nrm
-        newb = copy(newb).flatten() / nrm
+        newAt = newA.copy()
+        newbt = copy(newb)
         self.oldFlippedConstraints = deepcopy(self.flippedConstraints)
 
-        inserted = self.flippedConstraints.insertHyperplane(newA, newb)
+        inserted = self.flippedConstraints.insertHyperplane(newAt, newbt)
         self.pt = self.flippedConstraints.pt
         # To do?: have each instance insert the hyperplane separately for speed (avoids copying custom object)
         aug = self.flippedConstraints.deserialize()
@@ -565,8 +564,11 @@ class Poset(Chare):
         solver = localOpts['solver'] if 'solver' in localOpts else 'glpk'
         lpopts = localOpts['lpopts'] if 'lpopts' in localOpts else None
 
+        # nrm = np.linalg.norm(np.hstack([-newA.flatten()])) / normalize
+        # newA = -newA.copy().flatten() / nrm
+        # newb = copy(newb).flatten() / nrm
         # From now on, we are going to work in CDD format...
-        hyper = np.hstack([-newb, newA])
+        hyper = np.hstack([-newbt, newAt])
         print(f'Old hyper = {hyper}')
         hyper = aug.constraints[aug.N-1,:]
         print(f'New hyper = {hyper}')
