@@ -166,12 +166,12 @@ class flipConstraints:
             self.nonRedundantHyperplanes = np.array(self.nonRedundantHyperplanes.tolist() + [self.allN-1], dtype=np.int64)
             self.N = len(self.nonRedundantHyperplanes)
 
-            self.constraints = np.vstack([ self.constraints[self.nonRedundantHyperplanes,:], self.constraints[self.allN:,:]])
+            self.constraints = np.vstack([ self.allConstraints[self.nonRedundantHyperplanes,:], self.allConstraints[self.allN:,:]])
             if updatePoint:
                 self.pt = findInteriorPoint( self.constraints, tol=self.tol, rTol=self.rTol )
                 print(f'\nWARNING: Perturbing provided initial point to:\n{self.pt} after insertion!\n')
                 assert not self.pt is None, f'Unable to update anchor point to interior of root region!'
-            self.nrms = np.vstack([ self.nrms[self.nonRedundantHyperplanes,], self.nrms[self.allN:,] ])
+            self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,], self.allNrms[self.allN:,] ])
             self.redundantFlips = np.full(self.allN,-1,dtype=np.int64)
             self.redundantFlips[self.nonRedundantHyperplanes,] = np.ones_like(self.nonRedundantHyperplanes,dtype=np.int64)
 
