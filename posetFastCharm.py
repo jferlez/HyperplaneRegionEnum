@@ -257,8 +257,8 @@ class Poset(Chare):
         allConstraints = self.flippedConstraints.allConstraints
         allN = self.flippedConstraints.allN
         self.AbPairs = [[-allConstraints[:allN,1:].copy(), -allConstraints[:allN,0].reshape(-1,1).copy()]]
-        self.fixedA = allConstraints[allN:,1:]
-        self.fixedb = -allConstraints[allN:,0].reshape(-1,1)
+        self.fixedA = allConstraints[allN:,1:].copy()
+        self.fixedb = -allConstraints[allN:,0].reshape(-1,1).copy()
         self.pt = self.flippedConstraints.pt
 
         self.normalize = self.flippedConstraints.normalize
@@ -1050,7 +1050,7 @@ class successorWorker(Chare):
     def initialize(self,N,constraints,timeout):
         self.workInts = []
         self.N = N
-        self.flippedConstraints = constraints.deserialize()
+        self.flippedConstraints = deepcopy(constraints).deserialize()
         self.constraints = self.flippedConstraints.constraints.copy()
         # self.processNodeSuccessors = partial(successorWorker.processNodeSuccessorsFastLP, self, solver='glpk')
         self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsFastLP
