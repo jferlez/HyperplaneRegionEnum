@@ -407,9 +407,9 @@ class flipConstraints:
     def setRebase(self, rebasePoint):
         self.rebasePt = rebasePoint
         v = self.constraints[:self.N, 1:] @ self.rebasePt + self.constraints[:self.N, 0].reshape(-1,1)
-        self.rebaseSet = frozenset(np.nonzero(v.flatten() < -self.tol)[0])
+        self.rebaseSet = frozenset(np.nonzero(v.flatten() < -self.tol)[0].tolist())
         v = self.allConstraints[:self.allN, 1:] @ self.rebasePt + self.allConstraints[:self.allN, 0].reshape(-1,1)
-        self.rebaseSetAllN = frozenset(np.nonzero(v.flatten() < -self.tol)[0])
+        self.rebaseSetAllN = frozenset(np.nonzero(v.flatten() < -self.tol)[0].tolist())
 
     def rebaseRegion(self, nodeBytesInt, allN=False):
         if self.rebasePt is None:
