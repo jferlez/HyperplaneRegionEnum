@@ -2112,20 +2112,20 @@ class successorWorker(Chare):
                             lpopts=lpopts \
                         )
             if witness is None:
-                print(f'ERROR finding interior point!')
+                print(f'ERROR finding interior point! {INTrep} {adj}')
                 return [set([]),None]
 
         # This is a region encoded with fewer than the final number of hyperplanes, self.flippedConstraints.N,
         # so we have to figure out which side of the un-encoded hyperplanes this region lies on
         if self.flippedConstraints.N - N > 0:
             newBaseRegFullTup = INTrep + tuple( \
-                                N + np.nonzero( \
+                                (N + np.nonzero( \
                                     ( \
                                         -H[N:self.flippedConstraints.N,1:] @ witness \
                                         - H[N:self.flippedConstraints.N,0].reshape(-1,1) \
                                     ).flatten() \
                                     >= self.tol \
-                                )[0] \
+                                )[0]).tolist() \
                             )
         else:
             newBaseRegFullTup = INTrep
