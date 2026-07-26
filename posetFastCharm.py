@@ -537,7 +537,7 @@ class Poset(Chare):
                 setattr(self,ky,opts[ky])
         opts['verbose'] = self.verbose
 
-        newAt = newA.copy()
+        newAt = -newA.copy()
         newbt = copy(newb)
         self.oldFlippedConstraints = deepcopy(self.flippedConstraints)
 
