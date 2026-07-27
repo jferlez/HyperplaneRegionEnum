@@ -16,6 +16,7 @@ import sys
 import warnings
 import numba as nb
 import random
+import pickle
 # import TLLHypercubeReach
 import posetFastCharm_numba
 import region_helpers
@@ -1626,15 +1627,36 @@ class successorWorker(Chare):
                     )
                 H[offsetIdx,0] -= 1
 
+                if intIdx == (np.int64(25),np.int64(27)):
+                    with open(f'lpParams_{time.time()}.p','wb') as fp:
+                        pickle.dump({ \
+                                    'H': H, \
+                                    'H2': H2, \
+                                    'offsetIdx': offsetIdx, \
+                                    'intIdx': intIdx, \
+                                    'idx': idx, \
+                                    'lpopts': self.lpopts, \
+                                    'constraint_list': constraint_list \
+                                }, fp)
+                    print(f'\n\n-----------------------\n{intIdx[idx]} result is {status} {x}\nH\n{H}\nH2\n{H2}\n-----------------------\n\n')
+
                 if status != 'optimal' and (safe or status != 'primal infeasible') and status != 'dual infeasible':
                     print('********************  PE' + str(charm.myPe()) + ' WARNING!!  ********************')
                     print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
                     print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
                     return [set([]), 0]
+                if status == 'optimal':
+                    tempLHS = -H2[intIdx[idx],1:]@x - H2[intIdx[idx],0]
+                    tempRHS = self.tol + self.rTol * np.abs(H[:,0].reshape(-1,1))
+                    tttemp = f'blah: {tempLHS} and blah {tempRHS}'
+                else:
+                    tttemp = ''
                 if (safe and -H2[intIdx[idx],1:]@x < H2[intIdx[idx],0]) \
                     or (not safe and (status == 'primal infeasible' or np.all(-H2[intIdx[idx],1:]@x - H2[intIdx[idx],0] <= self.tol + self.rTol * np.abs(H[:,0].reshape(-1,1))))):
                     # inequality is redundant, so skip it
                     constraint_list[offsetIdx] = False
+                    if intIdx == (np.int64(25),np.int64(27)) and idx == 0:
+                        print(f'\n\n---------**------**----\nRemoving constraint {idx}\n---------**------**----\n\n')
                 else:
                     to_keep.append(idx)
             else:
@@ -1656,6 +1678,8 @@ class successorWorker(Chare):
             # We are not solving full LPs, so the witness points aren't meaningful...
             return to_keep, []
         else:
+            if intIdx == (np.int64(25),np.int64(27)):
+                print(f'\n\n---------**------------\n{tttemp}\n{to_keep}\n---------**------------\n\n')
             return to_keep, witnessList
 
     @coro
@@ -1862,7 +1886,7 @@ class successorWorker(Chare):
                                             ret = True \
                                         ).get()
         if self.verbose > 9:
-            print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   {[(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[collapsedFaces[i]],self.iFlipConstraints.hyperSet.expandDuplicates(iexp)) for i in splitFacesIdx]}')
+            print(f'++++[[[{INTrepFull}, {charm.myPe()}]]] {splitFacesIdx} --> {[(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[collapsedFaces[i]],self.iFlipConstraints.hyperSet.expandDuplicates(iexp)) for i in splitFacesIdx]}')
         splitFaces = {(self.iFlipConstraints.nonRedundantHyperplanes[(iexp:=collapsedFaces[i])]): \
                       self.iFlipConstraints.hyperSet.expandDuplicates(iexp) for i in splitFacesIdx}
                       # [validFlipsList[ii] for ii in self.iFlipConstraints.hyperSet.expandDuplicates(iexp)] for i in splitFacesIdx}
@@ -1956,6 +1980,25 @@ class successorWorker(Chare):
                 print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    intPtPos = {intPtPos}')
             H[neighborReg,:] = -H[neighborReg,:]
             # Create the new split region (positive-side of inserted hyperplane)
+            debugtest = region_helpers.recodeRegNewN( \
+                                        0, \
+                                        neighborReg, \
+                                        N \
+                                    )
+            print(f'    ****[[[{INTrepFull}, {charm.myPe()}]]]    {debugtest}')
+            if debugtest[1] == (24,26,28,):
+                print(f'    ****[[[{INTrepFull}, {charm.myPe()}]]]    SENT BAD FACE')
+            if INTrepFull == (27,) and intPtPos is None:
+                with open(f'debugLP_{time.time()}.p','wb') as fp:
+                    pickle.dump({ \
+                            'INTrepFull': INTrepFull, \
+                            'N': xN, \
+                            'projINTrep': projINTrep, \
+                            'projConstraints': self.iFlipConstraints.getRegionConstraints( projINTrep, allN=False  ), \
+                            'collapsedFaces': collapsedFaces, \
+                            'neighborReg': neighborReg, \
+                            'H': H \
+                        },fp)
             cont = self.thisProxy[self.thisIndex].hashAndSend( \
                                 region_helpers.recodeRegNewN( \
                                     0, \
@@ -2022,6 +2065,14 @@ class successorWorker(Chare):
             print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    posFacesUpdate = {posFacesUpdate}')
 
         # Send an update to the CURRENT region, using read/write semantics of adj dictionary
+        debugtest = region_helpers.recodeRegNewN( \
+                                        0, \
+                                        INTrepFull, \
+                                        N \
+                                    )
+        print(f'    ****[[[{INTrepFull}, {charm.myPe()}]]]    {debugtest}')
+        if debugtest[1] == (24,26,28,):
+            print(f'    ****[[[{INTrepFull}, {charm.myPe()}]]]    SENT BAD FACE')
         cont = self.thisProxy[self.thisIndex].hashAndSend( \
                                     region_helpers.recodeRegNewN( \
                                         0, \
@@ -2130,8 +2181,11 @@ class successorWorker(Chare):
         else:
             newBaseRegFullTup = INTrep
 
+        temp = copy(newBaseRegFullTup)
         if self.useRebase:
             _, newBaseRegFullTup = self.flippedConstraints.rebaseRegion(newBaseRegFullTup)
+        if newBaseRegFullTup == (24,26,28,) or newBaseRegFullTup == (26,29,30,31,):
+            print(f'_________ sending {newBaseRegFullTup} from {temp} and {INTrep}')
 
         cont = self.thisProxy[self.thisIndex].hashAndSend( \
                                     region_helpers.recodeRegNewN( \

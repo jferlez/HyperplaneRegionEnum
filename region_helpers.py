@@ -684,7 +684,7 @@ def lpMinHRep(H2,constraint_list_in,intIdx,solver='glpk',safe=False,lpObj=None,t
                 H2[intIdx[idx],1:], \
                 -H[constraint_list,1:], \
                 H[constraint_list,0], \
-                lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk'}, \
+                lpopts = {'solver':solver, 'fallback':'glpk'} if solver != 'glpk' else {'solver':'glpk', 'tol_bnd':1e-9,'basis_fac':'luf+ft'}, \
                 msgID = 'None' \
             )
         H[offsetIdx,0] -= 1
