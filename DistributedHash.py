@@ -14,6 +14,7 @@ from numba.np.unsafe.ndarray import to_fixed_tuple
 from functools import partial, reduce
 import operator
 from region_helpers import hashNodeBytes
+from collections import defaultdict
 
 XFER_CHUNK_SIZE = 1000
 
@@ -112,9 +113,11 @@ class HashWorker(Chare):
         self.level = -1
         self.levelList = []
         self.levelDone = True
-        self.tableStore = {'default':{}}
+        self.tableStore = {'default':{'table':{},'tags':defaultdict(dict)}}
         self.activeTableName = 'default'
-        self.table = self.tableStore['default']
+        self.table = self.tableStore['default']['table']
+        self.tags = self.tableStore['default']['tags']
+        self.currentTags = []
         self.localListenerActive = False
         self.localQueryListenterActive = False
         self.tableNameLUT = {0:'default'}
@@ -137,7 +140,7 @@ class HashWorker(Chare):
         self.nodeCalls = 0
         self.maxNodeYields = 1
         callIdx = 0
-        for checkCall in ['init','update','check']:
+        for checkCall in ['init','update','check','tagInit','tagUpdate','tagCheckAll','tagCheckFail']:
             call = getattr(self.nodeConstructor,checkCall,None)
             if callable(call):
                 self.nodeCalls += 1 << callIdx
@@ -167,7 +170,7 @@ class HashWorker(Chare):
     @coro
     def setCheckDispatch(self,updateDict):
         callIdx = 0
-        for checkCall in ['init','update','check']:
+        for checkCall in ['init','update','check','tagInit','tagUpdate','tagCheckAll','tagCheckFail']:
             if checkCall in updateDict:
                 call = getattr(self.nodeConstructor,updateDict[checkCall],None)
                 if callable(call):
@@ -183,7 +186,7 @@ class HashWorker(Chare):
             print(f'Table name {tableName} already exists in distributed hash...')
             return False
         else:
-            self.tableStore[tableName] = {}
+            self.tableStore[tableName] = {'table':{},'tags':defaultdict(dict)}
             newIdx = self.tableNameMapFree.pop()
             self.tableNameLUT[newIdx] = tableName
             self.tableNameRevLUT[tableName] = newIdx
@@ -214,7 +217,8 @@ class HashWorker(Chare):
             print(f'Table {tableName} does not exist')
             return False
         else:
-            self.table = self.tableStore[tableName]
+            self.table = self.tableStore[tableName]['table']
+            self.tags = self.tableStore[tableName]['tags']
             self.activeTableName = tableName
             self.levelList = []
             self.level = -1
@@ -233,21 +237,29 @@ class HashWorker(Chare):
         elif self.localListenerActive or self.localQueryListenterActive or self.mainListenerActive or self.disableTableChanges or self.enumListenerActive \
                 and self.activeTableName == src or  self.activeTableName == dest:
             print(f'Table operations are in progress, and either the source or destination is the active table. Changing tables is not permitted at this time')
+            print(f'self.localListenerActive = {self.localListenerActive}; self.localQueryListenterActive = {self.localQueryListenterActive}; self.mainListenerActive = {self.mainListenerActive}; self.disableTableChanges = {self.disableTableChanges}')
             return False
         else:
             if not dest in self.tableStore:
                 newIdx = self.tableNameMapFree.pop()
-                self.tableNameLUT[newIdx] = tableName
-                self.tableNameRevLUT[tableName] = newIdx
+                self.tableNameLUT[newIdx] = dest
+                self.tableNameRevLUT[dest] = newIdx
                 if len(self.tableNameMapFree) == 0:
                     self.tableNameMapMax += 1
                     self.tableNameMapFree.append(self.tableNameMapMax)
-            self.tableStore[dest] = { \
+            self.tableStore[dest] = {'table': { \
                                      (nTab:=val['ptr'].copy()) : {'checked':val['checked'],'ptr':nTab} \
-                                     for ky,val in self.tableStore[src].items()
-                            }
+                                     for ky,val in self.tableStore[src]['table'].items()
+                                }, 'tags':defaultdict(dict) }
+            for tg in self.tableStore[src]['tags'].keys():
+                self.tableStore[dest]['tags'][tg] = { \
+                                                    ( nTab:=self.tableStore[dest]['table'][ky] ) : {'ct':deepcopy(val['ct']), 'ptr':nTab} \
+                                                    for ky,val in self.tableStore[src]['tags'][tg].items() \
+                                                    }
             if dest == self.activeTableName:
-                self.table = self.tableStore[dest]
+                self.table = self.tableStore[dest]['table']
+                self.tags = self.tableStore[dest]['tags']
+            # print(f'\n\n++++++++++++++++++++\n{self.tableStore[src]}\n\n{self.tableStore[dest]}')
             return True
     @coro
     def deleteTable(self,tableName):
@@ -259,13 +271,15 @@ class HashWorker(Chare):
             print(f'Cannot delete table because it is active and table operations are in progress')
             return False
         else:
+            del self.tableStore[tableName]['table']
+            del self.tableStore[tableName]['tags']
             del self.tableStore[tableName]
             newIdx = self.tableNameRevLUT[tableName]
             del self.tableNameLUT[newIdx]
             del self.tableNameRevLUT[tableName]
             self.tableNameMapFree.append(newIdx)
             if len(self.tableStore) == 0:
-                self.tableStore['default'] = {}
+                self.tableStore['default'] = {'table':{},'tags':defaultdict(dict)}
                 self.tableNameLUT = {0:'default'}
                 self.tableNameRevLUT = {'default':0}
                 self.tableNameMapFree = [1]
@@ -273,12 +287,21 @@ class HashWorker(Chare):
             if tableName == self.activeTableName:
                 for ky in self.tableStore.keys():
                     self.activeTableName = ky
-                    self.table = self.tableStore[ky]
+                    self.table = self.tableStore[ky]['table']
+                    self.tags = self.tableStore[ky]['tags']
                     break
             return True
     @coro
     def getTableNames(self):
         return frozenset(self.tableStore.keys())
+
+    @coro
+    def setTags(self,tags):
+        self.currentTags = tags
+        return True
+    @coro
+    def getTags(self):
+        return self.currentTags
 
     @coro
     def setConstraint(self,hashStoreMode=1):
@@ -748,7 +771,8 @@ class HashWorker(Chare):
                             # print(f' [ + ][ + ][ + ]     Received tabIdx = {tabIdx}')
                             # print(f' [ + ][ + ][ + ]     tabname = {self.tableNameLUT[tabIdx]} {self.tableNameLUT}')
                         if tabIdx in self.tableNameLUT:
-                            table = self.tableStore[self.tableNameLUT[tabIdx]]
+                            table = self.tableStore[self.tableNameLUT[tabIdx]]['table']
+                            tags = self.tableStore[self.tableNameLUT[tabIdx]]['tags']
                         if (not charm.myPe() in self.overlapPElist) or (not selfQuery or charm.myPe() == chIdx):
                             answeredSelf = True
                         newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val[2:])
@@ -760,6 +784,9 @@ class HashWorker(Chare):
                             nd = table[newNode]['ptr']
                             self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness, nd.adj, nd.payload))
                             if qOp == QUERYOP_DELETE:
+                                for tg in tags.keys():
+                                    if newNode in tags[tg]:
+                                        del tags[tg][newNode]
                                 table[newNode]['ptr'] = None
                                 del table[newNode]
                         else:
@@ -846,12 +873,21 @@ class HashWorker(Chare):
                         newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
                         if self.nodeCalls & 1:
                             self.initDispatch(newNode)
+                            if self.nodeCalls & 8:
+                                for tg in self.tagInitDispatch(newNode,self.currentTags):
+                                    self.tags[tg].append(newNode)
                         if not newNode in self.table:
                             self.table[newNode] = {'checked':False, 'ptr':newNode}
                             # self.levelList.append((val[2],*newNode.payload))
                             self.levelList.append(newNode)
+                            if self.nodeCalls & 32:
+                                # This allows for a node to be tagged exactly once
+                                for tg in self.tagCheckAllDispatch(newNode,self.currentTags):
+                                    self.tags[tg].append(newNode)
                             # Check node here:
                             if self.nodeCalls & 4 and not self.checkDispatch(newNode): # If result of node check is False return False on all the workerDone Futures
+                                    if self.nodeCalls & 64:
+                                        self.tagCheckFailDispatch(newNode)
                                     if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
                                         self.workerDone[ch].send(False)
                                     self.status[ch] = -3
@@ -861,6 +897,10 @@ class HashWorker(Chare):
                                     self.levelDone = True
                         elif self.nodeCalls & 2:
                             self.updateDispatch(self.table[newNode]['ptr'],*val)
+                            if self.nodeCalls & 16:
+                                # Add updated node to a tag list
+                                for tg in self.tagUpdateDispatch(self.table[newNode]['ptr'],self.currentTags):
+                                    self.tags[tg].append(self.table[newNode]['ptr'])
                     # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
                     elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
                         print(self.status)
@@ -947,8 +987,9 @@ class HashWorker(Chare):
         if tableName is None:
             tableName = self.activeTableName
         self.levelList = []
-        self.tableStore[tableName] = {}
-        self.table = self.tableStore[tableName]
+        self.tableStore[tableName] = {'table':{},'tags':defaultdict(dict)}
+        self.table = self.tableStore[tableName]['table']
+        self.tags = self.tableStore[tableName]['tags']
     @coro
     def getTable(self):
         return [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.table.keys()]
@@ -984,7 +1025,11 @@ class HashWorker(Chare):
                 cnt += fut.get()
             if clearTable:
                 for idx in range(chunkSize):
-                    self.table.pop(self.levelList[idx])
+                    te = self.table.pop(self.levelList[idx])
+                    for tg in self.tags.keys():
+                        if te['ptr'] in self.tags[tg]:
+                            self.tags[tg].pop(te['ptr'])
+                    te = None
             self.levelList = self.levelList[chunkSize:]
         self.disableTableChanges = False
         retFut.send(1)
@@ -1210,7 +1255,7 @@ class DistHash(Chare):
     def getTabIdx(self,tableName=None):
         retVal = self.hWorkersFull.getTabIdx(tableName=tableName,ret=True).get()
         assert len(retVal) > 0, f'Error'
-        assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent table idx'
+        assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent table idx {retVal}'
         return retVal[0]
     @coro
     def activateTable(self,tableName):
@@ -1225,10 +1270,18 @@ class DistHash(Chare):
         retVal = self.hWorkersFull.deleteTable(tableName,ret=True).get()
         return all(retVal)
     @coro
+    def setTags(self,tags):
+        retVal = self.hWorkersFull.setTags(tags,ret=True).get()
+        return retVal
+    @coro
+    def getTags(self):
+        retVal = self.hWorkersFull.getTags(ret=True).get()[0]
+        return retVal
+    @coro
     def getTableNames(self):
         retVal = self.hWorkersFull.getTableNames(ret=True).get()
         assert len(retVal) > 0, f'Error'
-        assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent active table names'
+        assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent active table names {retVal}'
         return sorted(list(retVal[0]))
     @coro
     def decHashedNodeCountFeeder(self,pe):
