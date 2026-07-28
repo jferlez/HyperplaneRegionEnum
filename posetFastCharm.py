@@ -1631,10 +1631,29 @@ class successorWorker(Chare):
                     print('PE' + str(charm.myPe()) + ': Infeasible or numerical ill-conditioning detected at node' )
                     print('PE ' + str(charm.myPe()) + ': RESULTS MAY NOT BE ACCURATE!!')
                     return [set([]), 0]
+                if status == 'optimal':
+                    tempConstStatus = [constraint_list[offsetIdx], constraint_list[-1]]
+                    constraint_list[offsetIdx] = False
+                    constraint_list[-1] = False
+                    constraintViolation = (-H[constraint_list,1:]@x - H[constraint_list,0].reshape(-1,1) > self.tol + self.rTol * np.abs(H[constraint_list,0].reshape(-1,1)))
+                    constraint_list[offsetIdx] = tempConstStatus[0]
+                    constraint_list[-1] = tempConstStatus[1]
+                else:
+                    constraintViolation = False
                 if (safe and -H2[intIdx[idx],1:]@x < H2[intIdx[idx],0]) \
-                    or (not safe and (status == 'primal infeasible' or np.all(-H2[intIdx[idx],1:]@x - H2[intIdx[idx],0] <= self.tol + self.rTol * np.abs(H[:,0].reshape(-1,1))))):
+                    or ( \
+                            not safe and \
+                            ( \
+                                status == 'primal infeasible' or \
+                                np.any(constraintViolation) or \
+                                # the optimal point is actually *still* on the constraint that we just relaxed (or interior ot the region)
+                                np.all(-H2[intIdx[idx],1:]@x - H2[intIdx[idx],0] <= self.tol + self.rTol * np.abs(H2[intIdx[idx],0].reshape(-1,1))) \
+                            ) \
+                    ):
                     # inequality is redundant, so skip it
                     constraint_list[offsetIdx] = False
+                    if np.any(constraintViolation):
+                        print(f'WARNING: an LP returned an infeasible point as an optimal solution')
                 else:
                     to_keep.append(idx)
             else:
@@ -1914,6 +1933,7 @@ class successorWorker(Chare):
             testStripNum = -N + adj[h]
             if self.verbose > 9:
                 print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    submitted update = {testStripNum} {region_helpers.recodeRegNewN(testStripNum, neighborReg, N)}')
+        spuriousSplitFaces = []
         for h in splitFaces:
             neighborReg = copy(INTrepSetFull)
             for hh in splitFaces[h]:
@@ -1955,6 +1975,10 @@ class successorWorker(Chare):
             if self.verbose > 9:
                 print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    intPtPos = {intPtPos}')
             H[neighborReg,:] = -H[neighborReg,:]
+            if intPtPos is None:
+                print(f'WARNING: spurious split face detected, which led to spurious region {neighborReg}')
+                spuriousSplitFaces.append(h)
+                continue
             # Create the new split region (positive-side of inserted hyperplane)
             cont = self.thisProxy[self.thisIndex].hashAndSend( \
                                 region_helpers.recodeRegNewN( \
@@ -1969,6 +1993,9 @@ class successorWorker(Chare):
                                 payload=None, \
                                 ret=True \
                             ).get()
+
+            for ky in spuriousSplitFaces:
+                del splitFaces[ky]
 
 
         # Now fix the face information for the current node
