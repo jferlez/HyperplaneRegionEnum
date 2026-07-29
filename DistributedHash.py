@@ -105,7 +105,7 @@ Reducer.addReducer(Join)
 
 class HashWorker(Chare):
 
-    def __init__(self,nodeConstructor,localVarGroup,parentProxy,pes,feederPEs,overlapPEs):
+    def __init__(self,nodeConstructor,localVarGroup,parentProxy,pes,feederPEs,overlapPEs,trackProperties=None):
         self.hashPElist = pes
         self.feederPElist = feederPEs
         self.overlapPElist = overlapPEs
@@ -113,7 +113,7 @@ class HashWorker(Chare):
         self.level = -1
         self.levelList = []
         self.levelDone = True
-        self.tableStore = {'default':{'table':{},'tags':defaultdict(dict)}}
+        self.tableStore = {'default':{'table':{},'tags':defaultdict(dict),'properties':{}}}
         self.activeTableName = 'default'
         self.table = self.tableStore['default']['table']
         self.tags = self.tableStore['default']['tags']
@@ -159,6 +159,14 @@ class HashWorker(Chare):
         self.msgCounter = 0
         self.processedNodeCounter = 0
         self.hashedNodeCount = 0
+        self.trackProperties = trackProperties if trackProperties is not None else []
+        assert isinstance(self.trackProperties,list) and all([isinstance(p,str) for p in self.trackProperties]), f'ERROR: trackProperties must be a list of strings'
+        for p in self.trackProperties:
+            if getattr(self,p,None) is not None:
+                raise ValueError(f'ERROR: cannot track an existing/built-in property {p}')
+            else:
+                setattr(self,p,None)
+                self.tableStore[self.activeTableName]['properties'][p] = None
         #print(self.thisIndex)
 
     @coro
@@ -186,7 +194,7 @@ class HashWorker(Chare):
             print(f'Table name {tableName} already exists in distributed hash...')
             return False
         else:
-            self.tableStore[tableName] = {'table':{},'tags':defaultdict(dict)}
+            self.tableStore[tableName] = {'table':{},'tags':defaultdict(dict),'properties':{ky: None for ky in self.trackProperties}}
             newIdx = self.tableNameMapFree.pop()
             self.tableNameLUT[newIdx] = tableName
             self.tableNameRevLUT[tableName] = newIdx
@@ -217,6 +225,11 @@ class HashWorker(Chare):
             print(f'Table {tableName} does not exist')
             return False
         else:
+            for p in self.trackProperties:
+                # Copy tracked properties back to the dictionary associated with the previous table
+                self.tableStore[self.activeTableName]['properties'][p] = getattr(self,p,None)
+                # set those same properties from the newly activated table
+                setattr(self,p,self.tableStore[tableName]['properties'][p])
             self.table = self.tableStore[tableName]['table']
             self.tags = self.tableStore[tableName]['tags']
             self.activeTableName = tableName
@@ -250,12 +263,14 @@ class HashWorker(Chare):
             self.tableStore[dest] = {'table': { \
                                      (nTab:=val['ptr'].copy()) : {'checked':val['checked'],'ptr':nTab} \
                                      for ky,val in self.tableStore[src]['table'].items()
-                                }, 'tags':defaultdict(dict) }
+                                               }, 'tags':defaultdict(dict), 'properties':{ ky: None for ky in self.trackProperties } }
             for tg in self.tableStore[src]['tags'].keys():
                 self.tableStore[dest]['tags'][tg] = { \
                                                     ( nTab:=self.tableStore[dest]['table'][ky] ) : {'ct':deepcopy(val['ct']), 'ptr':nTab} \
                                                     for ky,val in self.tableStore[src]['tags'][tg].items() \
                                                     }
+            for p in self.tableStore[src]['properties'].keys():
+                self.tableStore[dest]['properties'][p] = deepcopy(self.tableStore[src]['properties'][p])
             if dest == self.activeTableName:
                 self.table = self.tableStore[dest]['table']
                 self.tags = self.tableStore[dest]['tags']
@@ -273,13 +288,16 @@ class HashWorker(Chare):
         else:
             del self.tableStore[tableName]['table']
             del self.tableStore[tableName]['tags']
+            for p in self.tableStore[tableName]['properties'].keys():
+                del self.tableStore[tableName]['properties'][p]
+            del self.tableStore[tableName]['properties']
             del self.tableStore[tableName]
             newIdx = self.tableNameRevLUT[tableName]
             del self.tableNameLUT[newIdx]
             del self.tableNameRevLUT[tableName]
             self.tableNameMapFree.append(newIdx)
             if len(self.tableStore) == 0:
-                self.tableStore['default'] = {'table':{},'tags':defaultdict(dict)}
+                self.tableStore['default'] = {'table':{},'tags':defaultdict(dict), 'properties':{ky:None for ky in self.trackProperties} }
                 self.tableNameLUT = {0:'default'}
                 self.tableNameRevLUT = {'default':0}
                 self.tableNameMapFree = [1]
@@ -289,6 +307,9 @@ class HashWorker(Chare):
                     self.activeTableName = ky
                     self.table = self.tableStore[ky]['table']
                     self.tags = self.tableStore[ky]['tags']
+                    for p in self.trackProperties:
+                        # set those same properties from the newly activated table
+                        setattr(self,p,self.tableStore[tableName]['properties'][p])
                     break
             return True
     @coro
@@ -302,6 +323,20 @@ class HashWorker(Chare):
     @coro
     def getTags(self):
         return self.currentTags
+
+    @coro
+    def setTrackedProperty(self,p,val):
+        if p not in self.trackProperties:
+            raise ValueError(f'ERROR: {p} is not a tracked property.')
+        setattr(self,p,val)
+    @coro
+    def getTrackedProperty(self,p):
+        if p not in self.trackProperties:
+            raise ValueError(f'ERROR: {p} is not a tracked property.')
+        if getattr(getattr(self,p),'serialize',None) is not None and callable(getattr(getattr(self,p),'serialize')):
+            serializeMethod = getattr(getattr(self,p),'serialize')
+            serializeMethod()
+        return getattr(self,p)
 
     @coro
     def setConstraint(self,hashStoreMode=1):
@@ -1099,7 +1134,7 @@ class HashWorker(Chare):
 
 class DistHash(Chare):
     @coro
-    def __init__(self, feederGroup, nodeConstructor, localVarGroup, hashPEs, posetPEs, feederSpec):
+    def __init__(self, feederGroup, nodeConstructor, localVarGroup, hashPEs, posetPEs, feederSpec, trackProperties=None):
         self.feederGroup = feederGroup
         self.posetPEs = posetPEs
         self.posetPElist = list(itertools.chain.from_iterable( \
@@ -1134,6 +1169,8 @@ class DistHash(Chare):
             hashIdx += 1
         self.overlapPElist = copy(overlapPElist)
 
+        self.trackProperties = trackProperties if trackProperties is not None else []
+        assert isinstance(self.trackProperties,list) and all([isinstance(p,str) for p in self.trackProperties]), f'ERROR: tracked properties must be strings.'
 
         self.hWorkersFull = Group(HashWorker,args=[self.nodeConstructor, self.localVarGroup, self.thisProxy, self.hashPElist, self.posetPElist, overlapPElist])
         charm.awaitCreation(self.hWorkersFull)
@@ -1300,6 +1337,12 @@ class DistHash(Chare):
     def getTags(self):
         retVal = self.hWorkersFull.getTags(ret=True).get()[0]
         return retVal
+    @coro
+    def setTrackedProperty(self,p,val):
+        self.hWorkersFull(p,val,awaitable=True).get()
+    @coro
+    def getTrackedProperty(self,p):
+        return self.hWorkersFull(p,ret=True).get()[0]
     @coro
     def getTableNames(self):
         retVal = self.hWorkersFull.getTableNames(ret=True).get()
