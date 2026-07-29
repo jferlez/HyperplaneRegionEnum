@@ -903,7 +903,8 @@ class HashWorker(Chare):
                                 newTagList = self.tagUpdateDispatch(self.table[newNode]['ptr'],self.currentTags,*val)
                                 for tg in self.currentTags:
                                     if not tg in newTagList:
-                                        del self.tags[tg][self.table[newNode]['ptr']]
+                                        if self.table[newNode]['ptr'] in self.tags[tg]:
+                                            del self.tags[tg][self.table[newNode]['ptr']]
                                     else:
                                         self.tags[tg][self.table[newNode]['ptr']] = {'ptr':self.table[newNode]['ptr']}
                     # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
