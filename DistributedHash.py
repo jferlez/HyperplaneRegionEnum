@@ -875,7 +875,7 @@ class HashWorker(Chare):
                             self.initDispatch(newNode)
                             if self.nodeCalls & 8:
                                 for tg in self.tagInitDispatch(newNode,self.currentTags):
-                                    self.tags[tg].append(newNode)
+                                    self.tags[tg][newNode] = {'ptr':newNode}
                         if not newNode in self.table:
                             self.table[newNode] = {'checked':False, 'ptr':newNode}
                             # self.levelList.append((val[2],*newNode.payload))
@@ -883,24 +883,25 @@ class HashWorker(Chare):
                             if self.nodeCalls & 32:
                                 # This allows for a node to be tagged exactly once
                                 for tg in self.tagCheckAllDispatch(newNode,self.currentTags):
-                                    self.tags[tg].append(newNode)
+                                    self.tags[tg][newNode] = {'ptr':newNode}
                             # Check node here:
                             if self.nodeCalls & 4 and not self.checkDispatch(newNode): # If result of node check is False return False on all the workerDone Futures
-                                    if self.nodeCalls & 64:
-                                        self.tagCheckFailDispatch(newNode)
-                                    if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
-                                        self.workerDone[ch].send(False)
-                                    self.status[ch] = -3
-                                    self.negStatusCnt += 1
-                                    self.termStatusCnt += 1
-                                    # self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
-                                    self.levelDone = True
+                                if self.nodeCalls & 64:
+                                    for tg in self.tagCheckFailDispatch(self.table[newNode]['ptr'],self.currentTags,*val):
+                                        self.tags[tg][self.table[newNode]['ptr']] = {'ptr':self.table[newNode]['ptr']}
+                                if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
+                                    self.workerDone[ch].send(False)
+                                self.status[ch] = -3
+                                self.negStatusCnt += 1
+                                self.termStatusCnt += 1
+                                # self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
+                                self.levelDone = True
                         elif self.nodeCalls & 2:
                             self.updateDispatch(self.table[newNode]['ptr'],*val)
                             if self.nodeCalls & 16:
                                 # Add updated node to a tag list
-                                for tg in self.tagUpdateDispatch(self.table[newNode]['ptr'],self.currentTags):
-                                    self.tags[tg].append(self.table[newNode]['ptr'])
+                                for tg in self.tagUpdateDispatch(self.table[newNode]['ptr'],self.currentTags,*val):
+                                    self.tags[tg][self.table[newNode]['ptr']] = {'ptr':self.table[newNode]['ptr']}
                     # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
                     elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
                         print(self.status)
