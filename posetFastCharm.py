@@ -329,6 +329,13 @@ class Poset(Chare):
     @coro
     def getTableNames(self):
         return self.distHashTable.getTableNames(ret=True).get()
+    @coro
+    def getTags(self):
+        return self.distHashTable.getTags(ret=True).get()[0]
+    @coro
+    def setTags(self,tags):
+        retVal = self.distHashTable.setTags(tags,ret=True).get()
+        return retVal
 
     # Because charm4py seems to filter **kwargs, pass all arguments to populatePoset in a single dictionary.
     # This avoids having to distinguish between those arguments that are for populatePoset itself and those
@@ -753,7 +760,7 @@ class Poset(Chare):
         checkVal = self.distHashTable.levelDone(ret=True).get()
         listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
 
-        
+
 
         self.succGroup.initialize(aug.N, aug.serialize(), None, awaitable=True).get()
         self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()

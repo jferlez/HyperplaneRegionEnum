@@ -995,8 +995,25 @@ class HashWorker(Chare):
     def getTable(self):
         return [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.table.keys()]
     @coro
+    def getTaggedNodes(self,tags=None):
+        if tags is None:
+            tags = self.currentTags
+        return list(itertools.chain.from_iterable( \
+                [ \
+                    [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.tags[tg]] \
+                    for tg in tags
+                ] \
+                ))
+    @coro
     def getTableHash(self):
         return {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.table.keys()}
+    def getTaggedNodesHash(self,tags=None):
+        if tags is None:
+            tags = self.currentTags
+        return [ \
+                    {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.tags[tg]} \
+                    for tg in tags \
+            ]
     @coro
     def resetLevelCount(self):
         self.level=-1
@@ -1515,6 +1532,12 @@ class DistHash(Chare):
     @coro
     def getTableLen(self):
         return sum(self.hWorkersFull.getTableLen(ret=True).get())
+    @coro
+    def getTaggedNodes(self,tags=None):
+        return list(itertools.chain.from_iterable(self.hWorkersFull.getTaggedNodes(tags,ret=True).get()))
+    @coro
+    def getTaggedNodesHash(self,tags=None):
+        return reduce(operator.ior, self.hWorkersFull.getTaggedNodesHash(tags,ret=True).get(), {})
     @coro
     def registerEnumChannels(self, remChare):
         if remChare in self.enumChannels:
