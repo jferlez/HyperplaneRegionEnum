@@ -31,7 +31,7 @@ class flipConstraints:
             updatePoint = False
         self.N = len(nA)
         self.allN = self.N
-        self.d = len(nA[0])
+        self.d = len(fA[0]) if fA is not None else len(nA[0])
         self.pt = pt
         self.tol = tol
         self.rTol = rTol
@@ -64,7 +64,12 @@ class flipConstraints:
         self.nrms = self.allNrms
 
         # Create a vector set for the main hyperplanes
-        self.hyperSet = vectorSet.vectorSet(self.allConstraints[:self.N,:])
+        if self.N > 0:
+            self.hyperSet = vectorSet.vectorSet(self.allConstraints[:self.N,:])
+        else:
+            # hack to create an empty vectorset
+            self.hyperSet = vectorSet.vectorSet(np.ones(self.d+1,dtype=np.float64).reshape(-1,self.d+1))
+            self.hyperSet.removeRow(idxOrigOrder=0)
 
         # self.root = bytearray( np.packbits(np.full(self.N,0,dtype=bool),bitorder='little') )
         # self.root = int.from_bytes(self.root, 'little')
