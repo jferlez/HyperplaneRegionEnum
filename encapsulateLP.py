@@ -47,6 +47,7 @@ class encapsulateLP():
             self.xVar = self.cylp.addVariable('x', self.d)
             self.cylp.logLevel = 0
             self.initializedSolvers['clp'] = True
+        return self
 
     def runLP(self,obj,A,b,Ae=None,be=None,lpopts={'solver':'clp', 'fallback':{'solver':'glpk'}},msgID=''):
         self.lpCount += 1
