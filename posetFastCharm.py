@@ -40,7 +40,7 @@ class PosetNode(DistributedHash.Node):
 
     # def check(self):
     #     pass
-    def update(self, lsb,msb,nodeBytes,N, originPe, face, witness, adj, *args):
+    def update(self, lsb,msb,nodeBytes,N, originPe, face, witness, adj, tags, *args):
         self.face |= set(face)
         if adj and isinstance(adj,dict):
             for ky in adj.keys():
@@ -50,7 +50,7 @@ class PosetNode(DistributedHash.Node):
     def checkForInsert(self):
         return True
 
-    def updateForInsert(self, lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args):
+    def updateForInsert(self, lsb, msb, nodeBytes, N, originPe, face, witness, adj, tags, *args):
         self.face |= set(face)
         origFace = copy(self.face)
         if not adj is None and isinstance(adj,dict):
@@ -333,8 +333,12 @@ class Poset(Chare):
     def getTags(self):
         return self.distHashTable.getTags(ret=True).get()[0]
     @coro
-    def setTags(self,tags):
-        retVal = self.distHashTable.setTags(tags,ret=True).get()
+    def addTag(self,tag):
+        retVal = self.distHashTable.addTag(tag,ret=True).get()
+        return retVal
+    @coro
+    def renameTag(self,tag,newTag):
+        retVal = self.distHashTable.renameTag(tag,newTag,ret=True).get()
         return retVal
 
     # Because charm4py seems to filter **kwargs, pass all arguments to populatePoset in a single dictionary.
@@ -345,7 +349,7 @@ class Poset(Chare):
     # opts dictionary keys 'clearTable' and 'retrieveFaces' set parameters in populatePoset itself; any
     # other keys are passed as keyword arguments to setMethod
     @coro
-    def populatePoset(self,face=None,witness=None,adjUpdate=None,payload=None, opts={} ):
+    def populatePoset(self,face=None,witness=None,adjUpdate=None,tags=None,payload=None, opts={} ):
         if self.populated:
             return
         self.clearTable = 'speed'
@@ -405,6 +409,7 @@ class Poset(Chare):
                                         self.flippedConstraints.pt if witness is None else witness \
                                     ], \
                                     adjUpdate=adjUpdate, \
+                                    tags=tags if isinstance(tags,set) else None, \
                                     payload=payload, \
                                     vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())), \
                                 ret=True).get()
@@ -415,6 +420,7 @@ class Poset(Chare):
                       tuple() if face is None else face, \
                       self.flippedConstraints.pt if witness is None else witness, \
                       adjUpdate, \
+                      tags if isinstance(tags,set) else set(), \
                       payload
                     )]
 
@@ -690,6 +696,7 @@ class Poset(Chare):
         aug.root = tuple(newBaseRegFullTup)
         aug.setRebase(rebasePt)
 
+        print(f' --------- {retVal}')
         newAdj = deepcopy(retVal[3])
         if self.verbose > 5:
             print(f',,,,,,   newAdj = {newAdj}')
@@ -774,7 +781,7 @@ class Poset(Chare):
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
 
         self.populated = False
-        self.thisProxy.populatePoset(face=set(),witness=rebasePt,adjUpdate={-1:aug.N-stripNum},payload=deepcopy(retVal[4]),opts=localOpts,awaitable=True).get()
+        self.thisProxy.populatePoset(face=set(),witness=rebasePt,adjUpdate={-1:aug.N-stripNum},payload=deepcopy(retVal[5]),opts=localOpts,awaitable=True).get()
 
         # Now that we're all done, restore default dispatch for check/update
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
@@ -1241,7 +1248,7 @@ class successorWorker(Chare):
         for ch in self.hashChannels:
             ch.send(-100)
 
-    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=None):
+    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=None,tags=None):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
         # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         hashInt = hashNodeBytes(toHash[0])
@@ -1264,14 +1271,14 @@ class successorWorker(Chare):
         else:
             witness = None
         if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate, payload)
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate, tags, payload)
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate )
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate, tags )
 
     @coro
-    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=None):
+    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=None,tags=None):
         self.hashedNodeCount += 1
-        val = self.hashNode(toHash,payload=payload,vertex=vertex,adjUpdate=adjUpdate)
+        val = self.hashNode(toHash,payload=payload,vertex=vertex,adjUpdate=adjUpdate,tags=tags)
         self.hashChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(nodeInt))
         # retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
@@ -1414,9 +1421,21 @@ class successorWorker(Chare):
     def computeSuccessorsNew(self):
         term = False
         if len(self.workInts) > 0:
-            successorList = [[None,None,None,None,None,None,None] for k in range(len(self.workInts))]
+            successorList = [[None,None,None,None,None,None,None,None] for k in range(len(self.workInts))]
             for ii in range(len(successorList)):
-                successorList[ii] = self.processNodeSuccessors(self.workInts[ii][0],self.workInts[ii][1],self.constraints,**self.processNodesArgs,witness=self.workInts[ii][4], payload=self.workInts[ii][6],xN=self.workInts[ii][1],face=self.workInts[ii][3],adj=self.workInts[ii][5], awaitable=True).get()
+                successorList[ii] = self.processNodeSuccessors( \
+                            self.workInts[ii][0], \
+                            self.workInts[ii][1], \
+                            self.constraints, \
+                            **self.processNodesArgs, \
+                            witness=self.workInts[ii][4], \
+                            payload=self.workInts[ii][7], \
+                            xN=self.workInts[ii][1], \
+                            face=self.workInts[ii][3], \
+                            adj=self.workInts[ii][5], \
+                            tags=self.workInts[ii][6], \
+                            awaitable=True \
+                        ).get()
                 self.timedOut = (time.time() > self.clockTimeout) if self.clockTimeout is not None else False
                 # print('Working on ' + str(self.workInts[ii]) + 'on PE ' + str(charm.myPe()) + '; with timeout ' + str(self.timedOut))
                 if type(successorList[ii][1]) is int or self.timedOut:
@@ -1685,7 +1704,7 @@ class successorWorker(Chare):
             return to_keep, witnessList
 
     @coro
-    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+    def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None,tags=None):
         # INTrep = INTrep[0]
         # We assume INTrep is a list of integers representing the hyperplanes that CAN'T be flipped
         # t = time.time()
@@ -1749,7 +1768,7 @@ class successorWorker(Chare):
             return successors, sel, witnessList
 
     @coro
-    def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+    def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None,tags=None):
         # *****
         # This function takes as input the regions newly split by the inserted hyperplane.
         #
@@ -1824,7 +1843,8 @@ class successorWorker(Chare):
             oldFace = q[1]
             oldWitness = q[2]
             adj = q[3]
-            oldPayload = q[4]
+            tags = q[4]
+            oldPayload = q[5]
         else:
             adj = None
             if self.verbose > 9:
@@ -2113,7 +2133,7 @@ class successorWorker(Chare):
         return [set([]),None]
 
     @coro
-    def processNodeSuccessorsCanonicalizeTable(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+    def processNodeSuccessorsCanonicalizeTable(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None,tags=None):
         debug = False
         d = H.shape[1]-1
         witnessList = []
@@ -2184,7 +2204,7 @@ class successorWorker(Chare):
         return [set([]),None]
 
     @coro
-    def processNodeSuccessorsRemoveHyperplanes(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None):
+    def processNodeSuccessorsRemoveHyperplanes(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None,tags=None):
         debug = False
         d = H.shape[1]-1
         witnessList = []

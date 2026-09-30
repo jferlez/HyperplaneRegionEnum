@@ -14,7 +14,7 @@ from numba.np.unsafe.ndarray import to_fixed_tuple
 from functools import partial, reduce
 import operator
 from region_helpers import hashNodeBytes
-from collections import defaultdict
+from collections import defaultdict, deque
 
 XFER_CHUNK_SIZE = 1000
 
@@ -22,7 +22,7 @@ QUERYOP_DELETE = 1
 
 class Node():
 
-    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes,N, originPe, face, witness, adj, *args):
+    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes,N, originPe, face, witness, adj, tags, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
@@ -35,6 +35,8 @@ class Node():
         self.witness = witness
         self.nodeEqualityFn = nodeEqualityFn
         self.adj = {} if adj is None else adj
+        # tags=None behavior should be different for update methods
+        self.tags = set() if tags is None else tags
         self.payload = args[0] if len(args) > 0 else None
 
     def copy(self):
@@ -113,11 +115,24 @@ class HashWorker(Chare):
         self.level = -1
         self.levelList = []
         self.levelDone = True
-        self.tableStore = {'default':{'table':{},'tags':defaultdict(dict),'properties':{}}}
+        self.tableStore = { \
+                    'default':{ \
+                        'table':{},'tags':defaultdict(dict), \
+                        'tagIDtoName':{}, \
+                        'tagNametoID':{}, \
+                        'maxTagID':0, \
+                        'freeTagIDs':deque(), \
+                        'properties':{} \
+                    } \
+                }
         self.activeTableName = 'default'
         self.table = self.tableStore['default']['table']
         self.tags = self.tableStore['default']['tags']
-        self.currentTags = []
+        self.tagIDtoName = self.tableStore['default']['tagIDtoName']
+        self.tagNametoID = self.tableStore['default']['tagNametoID']
+        self.freeTagIDs = self.tableStore['default']['freeTagIDs']
+        self.maxTagID = self.tableStore['default']['maxTagID']
+        self.freeTagIDs.append(0)
         self.localListenerActive = False
         self.localQueryListenterActive = False
         self.tableNameLUT = {0:'default'}
@@ -194,7 +209,16 @@ class HashWorker(Chare):
             print(f'Table name {tableName} already exists in distributed hash...')
             return False
         else:
-            self.tableStore[tableName] = {'table':{},'tags':defaultdict(dict),'properties':{ky: None for ky in self.trackProperties}}
+            self.tableStore[tableName] = { \
+                        'table':{}, \
+                        'tags':defaultdict(dict), \
+                        'tagIDtoName':{}, \
+                        'tagNametoID':{}, \
+                        'maxTagID':0, \
+                        'freeTagIDs':deque(), \
+                        'properties':{ky: None for ky in self.trackProperties} \
+                }
+            #{'table':{},'tags':defaultdict(dict), 'tagIDtoName':{}, 'tagNametoID':{}, 'maxTagID':0, 'freeTagIDs':deque(), 'properties':{ky: None for ky in self.trackProperties}}
             newIdx = self.tableNameMapFree.pop()
             self.tableNameLUT[newIdx] = tableName
             self.tableNameRevLUT[tableName] = newIdx
@@ -232,6 +256,10 @@ class HashWorker(Chare):
                 setattr(self,p,self.tableStore[tableName]['properties'][p])
             self.table = self.tableStore[tableName]['table']
             self.tags = self.tableStore[tableName]['tags']
+            self.tagIDtoName = self.tableStore[tableName]['tagIDtoName']
+            self.tagNametoID = self.tableStore[tableName]['tagNametoID']
+            self.freeTagIDs = self.tableStore[tableName]['freeTagIDs']
+            self.maxTagID = self.tableStore[tableName]['maxTagID']
             self.activeTableName = tableName
             self.levelList = []
             self.level = -1
@@ -260,10 +288,18 @@ class HashWorker(Chare):
                 if len(self.tableNameMapFree) == 0:
                     self.tableNameMapMax += 1
                     self.tableNameMapFree.append(self.tableNameMapMax)
-            self.tableStore[dest] = {'table': { \
-                                     (nTab:=val['ptr'].copy()) : {'checked':val['checked'],'ptr':nTab} \
-                                     for ky,val in self.tableStore[src]['table'].items()
-                                               }, 'tags':defaultdict(dict), 'properties':{ ky: None for ky in self.trackProperties } }
+            self.tableStore[dest] = { \
+                                        'table': { \
+                                                (nTab:=val['ptr'].copy()) : {'checked':val['checked'],'ptr':nTab} \
+                                                for ky,val in self.tableStore[src]['table'].items()
+                                               }, \
+                                        'tags':defaultdict(dict), \
+                                        'tagIDtoName':deepcopy(self.tableStore[src]['tagIDtoName']), \
+                                        'tagNametoID':deepcopy(self.tableStore[src]['tagNametoID']), \
+                                        'maxTagID':self.tableStore[src]['maxTagID'], \
+                                        'freeTagIDs':deepcopy(self.tableStore[src]['freeTagIDs']), \
+                                        'properties':{ ky: None for ky in self.trackProperties } \
+                                    }
             for tg in self.tableStore[src]['tags'].keys():
                 self.tableStore[dest]['tags'][tg] = { \
                                                     ( nTab:=self.tableStore[dest]['table'][ky] ) : {'ct':deepcopy(val['ct']), 'ptr':nTab} \
@@ -274,6 +310,10 @@ class HashWorker(Chare):
             if dest == self.activeTableName:
                 self.table = self.tableStore[dest]['table']
                 self.tags = self.tableStore[dest]['tags']
+                self.tagIDtoName = self.tableStore[dest]['tagIDtoName']
+                self.tagNametoID = self.tableStore[dest]['tagNametoID']
+                self.freeTagIDs = self.tableStore[dest]['freeTagIDs']
+                self.maxTagID = self.tableStore[dest]['maxTagID']
             # print(f'\n\n++++++++++++++++++++\n{self.tableStore[src]}\n\n{self.tableStore[dest]}')
             return True
     @coro
@@ -297,16 +337,37 @@ class HashWorker(Chare):
             del self.tableNameRevLUT[tableName]
             self.tableNameMapFree.append(newIdx)
             if len(self.tableStore) == 0:
-                self.tableStore['default'] = {'table':{},'tags':defaultdict(dict), 'properties':{ky:None for ky in self.trackProperties} }
+                self.tableStore['default'] = { \
+                        'table':{}, \
+                        'tags':defaultdict(dict), \
+                        'tagIDtoName':{}, \
+                        'tagNametoID':{}, \
+                        'maxTagID':0, \
+                        'freeTagIDs':deque(), \
+                        'properties':{ky: None for ky in self.trackProperties} \
+                }
+                # {'table':{},'tags':defaultdict(dict), 'tagIDtoName':{}, 'tagNametoID':{}, 'maxTagID':0, 'freeTagIDs':deque(), 'properties':{ky:None for ky in self.trackProperties} }
                 self.tableNameLUT = {0:'default'}
                 self.tableNameRevLUT = {'default':0}
                 self.tableNameMapFree = [1]
                 self.tableNameMapMax = 1
+                self.activeTableName = 'default'
+                self.table = self.tableStore['default']['table']
+                self.tags = self.tableStore['default']['tags']
+                self.tagIDtoName = self.tableStore['default']['tagIDtoName']
+                self.tagNametoID = self.tableStore['default']['tagNametoID']
+                self.freeTagIDs = self.tableStore['default']['freeTagIDs']
+                self.maxTagID = self.tableStore['default']['maxTagID']
+                self.freeTagIDs.append(0)
             if tableName == self.activeTableName:
                 for ky in self.tableStore.keys():
                     self.activeTableName = ky
                     self.table = self.tableStore[ky]['table']
                     self.tags = self.tableStore[ky]['tags']
+                    self.tagIDtoName = self.tableStore[ky]['tagIDtoName']
+                    self.tagNametoID = self.tableStore[ky]['tagNametoID']
+                    self.freeTagIDs = self.tableStore[ky]['freeTagIDs']
+                    self.maxTagID = self.tableStore[ky]['maxTagID']
                     for p in self.trackProperties:
                         # set those same properties from the newly activated table
                         setattr(self,p,self.tableStore[tableName]['properties'][p])
@@ -317,12 +378,35 @@ class HashWorker(Chare):
         return frozenset(self.tableStore.keys())
 
     @coro
-    def setTags(self,tags):
-        self.currentTags = tags
+    def getTags(self):
+        return list(self.tagNametoID.keys())
+    @coro
+    def addTag(self,tag):
+        if tag in self.tagNametoID:
+            raise ValueError(f'ERROR: tag {tag} already exists!')
+        if len(self.freeTagIDs) > 0:
+            newTagID = self.freeTagIDs.pop()
+            if newTagID > self.maxTagID:
+                self.maxTagID = newTagID
+        else:
+            newTagID = self.maxTagID + 1
+            self.maxTagID = newTagID
+        self.tagIDtoName[newTagID] = tag
+        self.tagNametoID[tag] = newTagID
         return True
     @coro
-    def getTags(self):
-        return self.currentTags
+    def renameTag(self, tag, newTag):
+        if tag not in self.tagNametoID:
+            raise ValueError(f'ERROR: tag {tag} cannot be renamed because it doesn\'t exists!')
+        if newTag in self.tagNametoID:
+            raise ValueError(f'ERROR: new tag name {newTag} already exists!')
+        tagID = self.tagNametoID[tag]
+        del self.tagNametoID[tag]
+        self.tagNametoID[newTag] = tagID
+        self.tagIDtoName[tagID] = newTag
+        return True
+    # TODO: implement delete tag, which should iterate over all nodes, and remove the correct tag ids
+
 
     @coro
     def setTrackedProperty(self,p,val):
@@ -469,7 +553,7 @@ class HashWorker(Chare):
                 return False
         self.deferLock = False
         return True
-    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=None):
+    def hashNode(self,toHash,payload=None,vertex=None,adjUpdate=None,tags=None):
         # hashInt = int(posetFastCharm_numba.hashNodeBytes(np.array(toHash[0],dtype=np.uint8)))
         # hashInt = hashNodeBytes(np.array(toHash[0],dtype=np.uint8))
         hashInt = hashNodeBytes(toHash[0])
@@ -492,14 +576,14 @@ class HashWorker(Chare):
         else:
             witness = None
         if payload is not None:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate, payload)
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate, tags, payload)
         else:
-            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate )
+            return ( (hashInt & self.hashMask) % self.numHashWorkers , hashInt >> self.numHashBits, regEncode, N, charm.myPe(), face, witness, adjUpdate, tags )
 
     @coro
-    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=None):
+    def hashAndSend(self,toHash,payload=None,vertex=None,adjUpdate=None,tags=None):
         self.hashedNodeCount += 1
-        val = self.hashNode(toHash,payload=payload,vertex=vertex,adjUpdate=adjUpdate)
+        val = self.hashNode(toHash,payload=payload,vertex=vertex,adjUpdate=adjUpdate,tags=tags)
         self.hashChannels[val[0]].send(val)
         # print('Trying to hash integer ' + str(val))
         # retVal = self.thisProxy[self.thisIndex].deferControl(code=5,ret=True).get()
@@ -817,7 +901,8 @@ class HashWorker(Chare):
                         elif newNode in table:
                             # print('Responding to query ' + str(val) + ' on channel ' + str(chIdx))
                             nd = table[newNode]['ptr']
-                            self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else (1, nd.face, nd.witness, nd.adj, nd.payload))
+                            self.queryChannelsHashEnd[chIdx].send((1,) if not self.queryReturnInfo else \
+                                    (1, nd.face, nd.witness, nd.adj, nd.tags, nd.payload))
                             if qOp == QUERYOP_DELETE:
                                 for tg in tags.keys():
                                     if newNode in tags[tg]:
@@ -909,20 +994,21 @@ class HashWorker(Chare):
                         if self.nodeCalls & 1:
                             self.initDispatch(newNode)
                             if self.nodeCalls & 8:
-                                for tg in self.tagInitDispatch(newNode,self.currentTags):
+                                # tagInitDispatch should set the tags property of the node
+                                for tg in self.tagInitDispatch(newNode,self.tagIDtoName,self.tagNametoID):
                                     self.tags[tg][newNode] = {'ptr':newNode}
                         if not newNode in self.table:
                             self.table[newNode] = {'checked':False, 'ptr':newNode}
                             # self.levelList.append((val[2],*newNode.payload))
                             self.levelList.append(newNode)
                             if self.nodeCalls & 32:
-                                # This allows for a node to be tagged exactly once
-                                for tg in self.tagCheckAllDispatch(newNode,self.currentTags):
+                                # This allows for a node to be tagged exactly once (should set the tags property of the node)
+                                for tg in self.tagCheckAllDispatch(newNode,self.tagIDtoName,self.tagNametoID):
                                     self.tags[tg][newNode] = {'ptr':newNode}
                             # Check node here:
                             if self.nodeCalls & 4 and not self.checkDispatch(newNode): # If result of node check is False return False on all the workerDone Futures
                                 if self.nodeCalls & 64:
-                                    for tg in self.tagCheckFailDispatch(self.table[newNode]['ptr'],self.currentTags,*val):
+                                    for tg in self.tagCheckFailDispatch(self.table[newNode]['ptr'],self.tagIDtoName,self.tagNametoID,*val):
                                         self.tags[tg][self.table[newNode]['ptr']] = {'ptr':self.table[newNode]['ptr']}
                                 if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
                                     self.workerDone[ch].send(False)
@@ -935,13 +1021,15 @@ class HashWorker(Chare):
                             self.updateDispatch(self.table[newNode]['ptr'],*val)
                             if self.nodeCalls & 16:
                                 # Add updated node to a tag list
-                                newTagList = self.tagUpdateDispatch(self.table[newNode]['ptr'],self.currentTags,*val)
-                                for tg in self.currentTags:
-                                    if not tg in newTagList:
-                                        if self.table[newNode]['ptr'] in self.tags[tg]:
-                                            del self.tags[tg][self.table[newNode]['ptr']]
-                                    else:
-                                        self.tags[tg][self.table[newNode]['ptr']] = {'ptr':self.table[newNode]['ptr']}
+                                oldTagIDSet = deepcopy(self.table[newNode]['ptr'].tags)
+                                newTagIDSet = self.tagUpdateDispatch(self.table[newNode]['ptr'],self.tagIDtoName,self.tagNametoID,*val)
+                                # it is tagUpdateDispatch's responsibility to update the 'internal' tag property of the node
+                                # so we only have to fix the 'external' tables
+                                for tg in oldTagIDSet - newTagIDSet:
+                                    if self.table[newNode]['ptr'] in self.tags[tg]:
+                                        del self.tags[tg][self.table[newNode]['ptr']]
+                                for tg in newTagIDSet - oldTagIDSet:
+                                    self.tags[tg][self.table[newNode]['ptr']] = {'ptr':self.table[newNode]['ptr']}
                     # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
                     elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
                         print(self.status)
@@ -1037,23 +1125,23 @@ class HashWorker(Chare):
     @coro
     def getTaggedNodes(self,tags=None):
         if tags is None:
-            tags = self.currentTags
+            tags = list(self.tagNametoID.keys())
         return list(itertools.chain.from_iterable( \
                 [ \
-                    [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.tags[tg]] \
+                    [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj,ky.tags, ky.payload) for ky in self.tags[self.tagNametoID[tg]]] \
                     for tg in tags
                 ] \
                 ))
     @coro
     def getTableHash(self):
-        return {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.table.keys()}
+        return {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in self.table.keys()}
     def getTaggedNodesHash(self,tags=None):
         if tags is None:
-            tags = self.currentTags
-        return [ \
-                    {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.tags[tg]} \
+            tags = list(self.tagNametoID.keys())
+        return { \
+                tg: {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in self.tags[self.tagNametoID[tg]]} \
                     for tg in tags \
-            ]
+            }
     @coro
     def resetLevelCount(self):
         self.level=-1
@@ -1077,7 +1165,7 @@ class HashWorker(Chare):
             xferDone = [Future() for _ in range(len(self.feederPElist))]
             for feederPEidx in range(len(self.feederPElist)):
                 idx = (feederPEidx + feederPEoffset) % len(self.feederPElist)
-                self.feederProxies[idx].appendToWorkList([(nd.nodeBytes, nd.N, nd.originPe, nd.face, nd.witness, nd.adj, nd.payload) for nd in self.levelList[feederPEidx:chunkSize:len(self.feederPElist)]],xferDone[feederPEidx])
+                self.feederProxies[idx].appendToWorkList([(nd.nodeBytes, nd.N, nd.originPe, nd.face, nd.witness, nd.adj, nd.tags, nd.payload) for nd in self.levelList[feederPEidx:chunkSize:len(self.feederPElist)]],xferDone[feederPEidx])
             cnt = 0
             for fut in charm.iwait(xferDone):
                 cnt += fut.get()
@@ -1118,7 +1206,7 @@ class HashWorker(Chare):
             ctrlVal = ctrlChan.recv()
             if ctrlVal > 0:
                 ptr = self.table[nd]['ptr']
-                dataChan.send((ptr.lsbHash, ptr.msbHash, ptr.nodeBytes, ptr.N, ptr.originPe, ptr.face, ptr.witness, ptr.adj, ptr.payload))
+                dataChan.send((ptr.lsbHash, ptr.msbHash, ptr.nodeBytes, ptr.N, ptr.originPe, ptr.face, ptr.witness, ptr.adj, ptr.tags, ptr.payload))
             else:
                 term = True
                 dataChan.send(None)
@@ -1330,8 +1418,12 @@ class DistHash(Chare):
         retVal = self.hWorkersFull.deleteTable(tableName,ret=True).get()
         return all(retVal)
     @coro
-    def setTags(self,tags):
-        retVal = self.hWorkersFull.setTags(tags,ret=True).get()
+    def addTag(self,tag):
+        retVal = self.hWorkersFull.addTag(tag,ret=True).get()
+        return retVal
+    @coro
+    def renameTag(self,tag, newTag):
+        retVal = self.hWorkersFull.renameTag(tag,newTag,ret=True).get()
         return retVal
     @coro
     def getTags(self):
