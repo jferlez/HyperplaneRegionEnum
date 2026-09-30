@@ -1121,14 +1121,14 @@ class HashWorker(Chare):
         self.tags = self.tableStore[tableName]['tags']
     @coro
     def getTable(self):
-        return [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.payload) for ky in self.table.keys()]
+        return [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in self.table.keys()]
     @coro
     def getTaggedNodes(self,tags=None):
         if tags is None:
             tags = list(self.tagNametoID.keys())
         return list(itertools.chain.from_iterable( \
                 [ \
-                    [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj,ky.tags, ky.payload) for ky in self.tags[self.tagNametoID[tg]]] \
+                    [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in self.tags[self.tagNametoID[tg]]] \
                     for tg in tags
                 ] \
                 ))
