@@ -117,7 +117,8 @@ class HashWorker(Chare):
         self.levelDone = True
         self.tableStore = { \
                     'default':{ \
-                        'table':{},'tags':defaultdict(dict), \
+                        'table':{},\
+                        'tags':defaultdict(dict), \
                         'tagIDtoName':{}, \
                         'tagNametoID':{}, \
                         'maxTagID':0, \
@@ -1108,8 +1109,9 @@ class HashWorker(Chare):
     def getLevelSizes(self):
         return len(self.levelList)
     @coro
-    def getTableLen(self):
-        return len(self.table)
+    def getTableLen(self,tableName=None):
+        table = self.table if tableName is None else self.tableStore[tableName]
+        return len(table)
 
     @coro
     def clearHashTable(self,tableName=None):
@@ -1120,26 +1122,35 @@ class HashWorker(Chare):
         self.table = self.tableStore[tableName]['table']
         self.tags = self.tableStore[tableName]['tags']
     @coro
-    def getTable(self):
-        return [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in self.table.keys()]
+    def getTable(self, tableName=None):
+        table = self.table if tableName is None else self.tableStore[tableName]
+        return [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) \
+                for ky in table.keys()]
     @coro
-    def getTaggedNodes(self,tags=None):
+    def getTaggedNodes(self,tableName=None,tags=None):
+        Ttags = self.tags if tableName is None else self.tableStore[tableName]['tags']
+        tagNametoID = self.tagNametoID if tableName is None else self.tableStore[tableName]['tagNametoID']
         if tags is None:
-            tags = list(self.tagNametoID.keys())
+            tags = list(tagNametoID.keys())
         return list(itertools.chain.from_iterable( \
                 [ \
-                    [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in self.tags[self.tagNametoID[tg]]] \
+                    [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) \
+                    for ky in Ttags[tagNametoID[tg]]] \
                     for tg in tags
                 ] \
                 ))
     @coro
-    def getTableHash(self):
-        return {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in self.table.keys()}
-    def getTaggedNodesHash(self,tags=None):
+    def getTableHash(self,tableName=None):
+        table = self.table if tableName is None else self.tableStore[tableName]
+        return {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in table.keys()}
+    def getTaggedNodesHash(self,tableName=None,tags=None):
+        Ttags = self.tags if tableName is None else self.tableStore[tableName]['tags']
+        tagNametoID = self.tagNametoID if tableName is None else self.tableStore[tableName]['tagNametoID']
         if tags is None:
-            tags = list(self.tagNametoID.keys())
+            tags = list(tagNametoID.keys())
         return { \
-                tg: {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in self.tags[self.tagNametoID[tg]]} \
+                tg: {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) \
+                for ky in Ttags[tagNametoID[tg]]} \
                     for tg in tags \
             }
     @coro
@@ -1661,23 +1672,42 @@ class DistHash(Chare):
         self.hWorkersFull.resetLevelCount(awaitable=True).get()
 
     @coro
-    def getTable(self):
-        return list(itertools.chain.from_iterable(self.hWorkersFull.getTable(ret=True).get()))
+    def getTable(self,tableName=None):
+        if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table {tableName} does not exist!')
+        return list(itertools.chain.from_iterable(self.hWorkersFull.getTable(tableName=tableName,ret=True).get()))
     @coro
-    def getTableNonFlat(self):
-        return self.hWorkersFull.getTable(ret=True).get()
+    def getTableStore(self,tableName=None):
+        if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table {tableName} does not exist!')
+        retVal = {}
+        retVal['table'] = list(itertools.chain.from_iterable(self.hWorkersFull.getTable(tableName=tableName,ret=True).get()))
+        return retVal
     @coro
-    def getTableHash(self):
-        return reduce(operator.ior, self.hWorkersFull.getTableHash(ret=True).get(), {})
+    def getTableNonFlat(self,tableName=None):
+        if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table {tableName} does not exist!')
+        return self.hWorkersFull.getTable(tableName=tableName,ret=True).get()
     @coro
-    def getTableLen(self):
-        return sum(self.hWorkersFull.getTableLen(ret=True).get())
+    def getTableHash(self,tableName=None):
+        if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table {tableName} does not exist!')
+        return reduce(operator.ior, self.hWorkersFull.getTableHash(tableName=tableName,ret=True).get(), {})
     @coro
-    def getTaggedNodes(self,tags=None):
-        return list(itertools.chain.from_iterable(self.hWorkersFull.getTaggedNodes(tags,ret=True).get()))
+    def getTableLen(self,tableName=None):
+        if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table {tableName} does not exist!')
+        return sum(self.hWorkersFull.getTableLen(tableName=tableName,ret=True).get())
     @coro
-    def getTaggedNodesHash(self,tags=None):
-        return reduce(operator.ior, self.hWorkersFull.getTaggedNodesHash(tags,ret=True).get(), {})
+    def getTaggedNodes(self,tags=None,tableName=None):
+        if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table {tableName} does not exist!')
+        return list(itertools.chain.from_iterable(self.hWorkersFull.getTaggedNodes(tags=tags,tableName=tableName,ret=True).get()))
+    @coro
+    def getTaggedNodesHash(self,tags=None,tableName=None):
+        if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table {tableName} does not exist!')
+        return reduce(operator.ior, self.hWorkersFull.getTaggedNodesHash(tags,tableName=tableName,ret=True).get(), {})
     @coro
     def registerEnumChannels(self, remChare):
         if remChare in self.enumChannels:
