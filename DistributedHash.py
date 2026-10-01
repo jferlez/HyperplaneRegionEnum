@@ -1154,6 +1154,20 @@ class HashWorker(Chare):
                     for tg in tags \
             }
     @coro
+    def getTableStoreProperties(self,props=None,tableName=None):
+        tableStore = self.tableStore[self.activeTableName] if tableName is None else self.tableStore[tableName]
+        propsFull = set(tableStore.keys())
+        if props is None or isinstance(props,list) or isinstance(props,set):
+            if props is None: props = copy(propsFull)
+            props = set(props) - {'table'}
+            if not props <= propsFull: raise ValueError(f'ERROR: properties {props} must a be a subset of {propsFull}')
+        else:
+            raise ValueError('ERROR: properties specified must be a list or set')
+        return { \
+                    ky: tableStore[ky] \
+                    for ky in props
+                }
+    @coro
     def resetLevelCount(self):
         self.level=-1
     # @coro
@@ -1683,6 +1697,11 @@ class DistHash(Chare):
         retVal = {}
         retVal['table'] = list(itertools.chain.from_iterable(self.hWorkersFull.getTable(tableName=tableName,ret=True).get()))
         return retVal
+    @coro
+    def getTableStoreProperties(self,props=None,tableName=None):
+        if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table {tableName} does not exist!')
+        return self.hashWorkerProxies[0].getTableStoreProperties(props=props,tableName=tableName,ret=True).get()
     @coro
     def getTableNonFlat(self,tableName=None):
         if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
