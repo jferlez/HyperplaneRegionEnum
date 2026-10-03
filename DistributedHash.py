@@ -1159,7 +1159,7 @@ class HashWorker(Chare):
         propsFull = set(tableStore.keys())
         if props is None or isinstance(props,list) or isinstance(props,set):
             if props is None: props = copy(propsFull)
-            props = set(props) - {'table'}
+            props = set(props) - {'table','tags'}
             if not props <= propsFull: raise ValueError(f'ERROR: properties {props} must a be a subset of {propsFull}')
         else:
             raise ValueError('ERROR: properties specified must be a list or set')
@@ -1173,7 +1173,7 @@ class HashWorker(Chare):
         propsFull = set(tableStore.keys())
         if isinstance(props,dict) and set(props.keys()) <= propsFull:
             for ky in props.keys():
-                if ky == 'table': continue
+                if ky == 'table' or ky == 'tags': continue
                 tableStore[ky] = deepcopy(props[ky])
         else:
             raise ValueError('ERROR: properties specified must be a dict whose properties are in {propsFull}')
