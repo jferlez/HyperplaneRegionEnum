@@ -1168,6 +1168,17 @@ class HashWorker(Chare):
                     for ky in props
                 }
     @coro
+    def setTableStoreProperties(self,props,tableName=None):
+        tableStore = self.tableStore[self.activeTableName] if tableName is None else self.tableStore[tableName]
+        propsFull = set(tableStore.keys())
+        if isinstance(props,dict) and set(props.keys()) <= propsFull:
+            for ky in props.keys():
+                if ky == 'table': continue
+                tableStore[ky] = deepcopy(props[ky])
+        else:
+            raise ValueError('ERROR: properties specified must be a dict whose properties are in {propsFull}')
+        return True
+    @coro
     def resetLevelCount(self):
         self.level=-1
     # @coro
@@ -1702,6 +1713,12 @@ class DistHash(Chare):
         if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
             raise ValueError(f'ERROR: table {tableName} does not exist!')
         return self.hashWorkerProxies[0].getTableStoreProperties(props=props,tableName=tableName,ret=True).get()
+    @coro
+    def setTableStoreProperties(self,props,tableName=None):
+        if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table {tableName} does not exist!')
+        self.hWorkersFull.setTableStoreProperties(props,tableName=tableName,awaitable=True).get()
+        return True
     @coro
     def getTableNonFlat(self,tableName=None):
         if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
