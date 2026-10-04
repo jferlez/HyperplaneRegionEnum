@@ -1709,11 +1709,12 @@ class DistHash(Chare):
             raise ValueError(f'ERROR: table {tableName} does not exist!')
         return list(itertools.chain.from_iterable(self.hWorkersFull.getTable(tableName=tableName,ret=True).get()))
     @coro
-    def getTableStore(self,tableName=None):
+    def getTableStore(self,props=None,tableName=None):
         if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():
             raise ValueError(f'ERROR: table {tableName} does not exist!')
         retVal = {}
         retVal['table'] = list(itertools.chain.from_iterable(self.hWorkersFull.getTable(tableName=tableName,ret=True).get()))
+        retVal |= self.thisProxy.getTableStoreProperties(props=props,tableName=tableName,ret=True).get()
         return retVal
     @coro
     def getTableStoreProperties(self,props=None,tableName=None):
