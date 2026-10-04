@@ -121,7 +121,7 @@ class HashWorker(Chare):
                         'tags':defaultdict(dict), \
                         'tagIDtoName':{}, \
                         'tagNametoID':{}, \
-                        'maxTagID':0, \
+                        'maxTagID':[0], \
                         'freeTagIDs':deque(), \
                         'properties':{} \
                     } \
@@ -133,7 +133,6 @@ class HashWorker(Chare):
         self.tagNametoID = self.tableStore['default']['tagNametoID']
         self.freeTagIDs = self.tableStore['default']['freeTagIDs']
         self.maxTagID = self.tableStore['default']['maxTagID']
-        self.freeTagIDs.append(0)
         self.localListenerActive = False
         self.localQueryListenterActive = False
         self.tableNameLUT = {0:'default'}
@@ -215,7 +214,7 @@ class HashWorker(Chare):
                         'tags':defaultdict(dict), \
                         'tagIDtoName':{}, \
                         'tagNametoID':{}, \
-                        'maxTagID':0, \
+                        'maxTagID':[0], \
                         'freeTagIDs':deque(), \
                         'properties':{ky: None for ky in self.trackProperties} \
                 }
@@ -297,7 +296,7 @@ class HashWorker(Chare):
                                         'tags':defaultdict(dict), \
                                         'tagIDtoName':deepcopy(self.tableStore[src]['tagIDtoName']), \
                                         'tagNametoID':deepcopy(self.tableStore[src]['tagNametoID']), \
-                                        'maxTagID':self.tableStore[src]['maxTagID'], \
+                                        'maxTagID':copy(self.tableStore[src]['maxTagID']), \
                                         'freeTagIDs':deepcopy(self.tableStore[src]['freeTagIDs']), \
                                         'properties':{ ky: None for ky in self.trackProperties } \
                                     }
@@ -343,7 +342,7 @@ class HashWorker(Chare):
                         'tags':defaultdict(dict), \
                         'tagIDtoName':{}, \
                         'tagNametoID':{}, \
-                        'maxTagID':0, \
+                        'maxTagID':[0], \
                         'freeTagIDs':deque(), \
                         'properties':{ky: None for ky in self.trackProperties} \
                 }
@@ -359,7 +358,6 @@ class HashWorker(Chare):
                 self.tagNametoID = self.tableStore['default']['tagNametoID']
                 self.freeTagIDs = self.tableStore['default']['freeTagIDs']
                 self.maxTagID = self.tableStore['default']['maxTagID']
-                self.freeTagIDs.append(0)
             if tableName == self.activeTableName:
                 for ky in self.tableStore.keys():
                     self.activeTableName = ky
@@ -387,11 +385,9 @@ class HashWorker(Chare):
             raise ValueError(f'ERROR: tag {tag} already exists!')
         if len(self.freeTagIDs) > 0:
             newTagID = self.freeTagIDs.pop()
-            if newTagID > self.maxTagID:
-                self.maxTagID = newTagID
         else:
-            newTagID = self.maxTagID + 1
-            self.maxTagID = newTagID
+            newTagID = self.maxTagID[0]
+            self.maxTagID[0] += 1
         self.tagIDtoName[newTagID] = tag
         self.tagNametoID[tag] = newTagID
         return True
