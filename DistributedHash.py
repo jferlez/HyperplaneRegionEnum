@@ -996,21 +996,27 @@ class HashWorker(Chare):
                             self.initDispatch(newNode)
                             if self.nodeCalls & 8:
                                 # tagInitDispatch should set the tags property of the node
-                                for tg in self.tagInitDispatch(newNode,self.tagIDtoName,self.tagNametoID):
+                                newTags = self.tagInitDispatch(newNode,self.tagIDtoName,self.tagNametoID)
+                                for tg in newTags:
                                     self.tags[tg][newNode] = {'ptr':newNode}
+                                newNode.tags = newTags
                         if not newNode in self.table:
                             self.table[newNode] = {'checked':False, 'ptr':newNode}
                             # self.levelList.append((val[2],*newNode.payload))
                             self.levelList.append(newNode)
                             if self.nodeCalls & 32:
-                                # This allows for a node to be tagged exactly once (should set the tags property of the node)
-                                for tg in self.tagCheckAllDispatch(newNode,self.tagIDtoName,self.tagNametoID):
+                                # This allows for a node to be tagged exactly once
+                                newTags = self.tagCheckAllDispatch(newNode,self.tagIDtoName,self.tagNametoID)
+                                for tg in newTags:
                                     self.tags[tg][newNode] = {'ptr':newNode}
+                                newNode.tags = newTags
                             # Check node here:
                             if self.nodeCalls & 4 and not self.checkDispatch(newNode): # If result of node check is False return False on all the workerDone Futures
                                 if self.nodeCalls & 64:
-                                    for tg in self.tagCheckFailDispatch(self.table[newNode]['ptr'],self.tagIDtoName,self.tagNametoID,*val):
+                                    newTags = self.tagCheckFailDispatch(self.table[newNode]['ptr'],self.tagIDtoName,self.tagNametoID,*val)
+                                    for tg in newTags:
                                         self.tags[tg][self.table[newNode]['ptr']] = {'ptr':self.table[newNode]['ptr']}
+                                    self.table[newNode]['ptr'].tags = newTags
                                 if self.status[ch] != -2 and self.status[ch] != -3 and not self.workerDone[ch] is None:
                                     self.workerDone[ch].send(False)
                                 self.status[ch] = -3
@@ -1031,6 +1037,7 @@ class HashWorker(Chare):
                                         del self.tags[tg][self.table[newNode]['ptr']]
                                 for tg in newTagIDSet - oldTagIDSet:
                                     self.tags[tg][self.table[newNode]['ptr']] = {'ptr':self.table[newNode]['ptr']}
+                                self.table[newNode]['ptr'].tags = newTagIDSet
                     # If self.status[ch] == -2 or -3, we know we're supposed to shutdown so ignore any other messages
                     elif self.status[ch] != -2 and self.status[ch] != -3 and not msg['fut'] is None:
                         print(self.status)
