@@ -1441,6 +1441,9 @@ class DistHash(Chare):
     def setCheckDispatch(self,updateDict):
         assert isinstance(updateDict,dict), f'New dispatch table must be a dictionary!'
         self.hWorkersFull.setCheckDispatch(updateDict,awaitable=True).get()
+    @coro
+    def getCheckDispatch(self):
+        return self.hashWorkerProxies[0].getCheckDispatch(ret=True).get()
 
     @coro
     def tableApplyMethod(self,method,*args):
