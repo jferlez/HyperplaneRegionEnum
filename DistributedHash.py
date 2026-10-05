@@ -205,6 +205,15 @@ class HashWorker(Chare):
                 else:
                     self.nodeCalls -= (1 << callIdx) if (self.nodeCalls & (1 << callIdx)) > 0 else 0
             callIdx += 1
+    @coro
+    def getCheckDispatch(self):
+        retVal = {}
+        callIdx = 0
+        for checkCall in ['init','update','check','tagInit','tagUpdate','tagCheckAll','tagCheckFail']:
+            if self.nodeCalls & (1 << callIdx) > 0:
+                retVal[checkCall] = getattr(self,checkCall+'Dispatch').__name__
+            callIdx += 1
+        return retVal
 
     @coro
     def newTable(self,tableName):
