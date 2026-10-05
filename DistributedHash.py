@@ -20,6 +20,8 @@ XFER_CHUNK_SIZE = 1000
 
 QUERYOP_DELETE = 1
 
+tableStoreProperties = ['table',  'tagNametoID', 'tagIDtoName', 'maxTagID', 'freeTagIDs']
+
 class Node():
 
     def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes,N, originPe, face, witness, adj, tags, *args):
@@ -62,6 +64,9 @@ class Node():
             return bytes(self.nodeBytes)
         else:
             return self.nodeBytes
+
+    def tagTableRestore(self, tagIDtoName, tagNametoID):
+        return self.tags
 
 # Vertex Node equality check
 @njit( \
@@ -1203,7 +1208,7 @@ class HashWorker(Chare):
                 if ky == 'table' or ky == 'tags': continue
                 tableStore[ky] = deepcopy(props[ky])
         else:
-            raise ValueError('ERROR: properties specified must be a dict whose properties are in {propsFull}')
+            raise ValueError(f'ERROR: properties specified must be a dict whose properties are in {propsFull}')
         return True
     @coro
     def resetLevelCount(self):
@@ -1737,8 +1742,8 @@ class DistHash(Chare):
             raise ValueError(f'ERROR: table {tableName} does not exist!')
         retVal = {}
         retVal['table'] = list(itertools.chain.from_iterable(self.hWorkersFull.getTable(tableName=tableName,ret=True).get()))
-        retVal |= self.thisProxy.getTableStoreProperties(props=props,tableName=tableName,ret=True).get()
-        return retVal
+        retVal2 = self.thisProxy.getTableStoreProperties(props=props,tableName=tableName,ret=True).get()
+        return retVal | retVal2
     @coro
     def getTableStoreProperties(self,props=None,tableName=None):
         if tableName is not None and not self.thisProxy.isTable(tableName,ret=True).get():

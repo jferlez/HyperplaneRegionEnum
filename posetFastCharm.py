@@ -16,6 +16,7 @@ import sys
 import warnings
 import numba as nb
 import random
+import pickle
 # import TLLHypercubeReach
 import posetFastCharm_numba
 import region_helpers
@@ -340,6 +341,90 @@ class Poset(Chare):
     def renameTag(self,tag,newTag):
         retVal = self.distHashTable.renameTag(tag,newTag,ret=True).get()
         return retVal
+    @coro
+    def loadTable(self,tablefile,tableName=None,clearTable=True):
+        if not isinstance(tablefile,dict):
+            with open(tablefile, 'rb') as fp:
+                tableDict = pickle.load(fp)
+        else:
+            tableDict = tablefile
+            tablefile = 'Input dictionary'
+        if not all([p in tableDict for p in DistributedHash.tableStoreProperties]):
+            raise(TypeError(f'{tablefile} does not contain a valid table store. One or more properties are missing.'))
+        if tableName is None:
+            tableName = self.thisProxy.getActiveTable(ret=True).get()
+            if clearTable: self.thisProxy.clearHashTable(awaitable=True).get()
+        elif not self.thisProxy.isTable(tableName,awaitable=True).get():
+            self.thisProxy.newTable(tableName,awaitable=True).get()
+        elif clearTable:
+            self.thisProxy.deleteTable(tableName,awaitable=True).get()
+            self.thisProxy.newTable(tableName,awaitable=True).get()
+
+        activeTable = self.thisProxy.getActiveTable(ret=True).get()
+        self.thisProxy.activateTable(tableName,awaitable=True).get()
+
+        self.distHashTable.setTableStoreProperties(tableDict, tableName=tableName, awaitable=True).get()
+
+        checkDispatchTable = self.distHashTable.getCheckDispatch(ret=True).get()
+        self.distHashTable.setCheckDispatch({'tagCheckAll':'tagTableRestore'},awaitable=True).get()
+
+        # reset the work lists:
+        doneFuts = [Future() for k in range(len(self.successorProxies))]
+        for k in range(len(doneFuts)):
+            self.successorProxies[k].initList(doneFuts[k])
+        cnt = 0
+        for fut in charm.iwait(doneFuts):
+            cnt += fut.get()
+
+        table = tableDict['table']
+        divCount = len(table) // len(self.successorProxies)
+        overhang = len(table) % len(self.successorProxies)
+
+        doneFuts = [Future() for k in range(len(self.successorProxies))]
+        for k in range(len(doneFuts)):
+            self.successorProxies[k].initListNew( \
+                    table[k:((divCount+1 if k < overhang else divCount) * len(self.successorProxies)):len(self.successorProxies)], \
+                    doneFuts[k] \
+                    )
+        cnt = 0
+        for fut in charm.iwait(doneFuts):
+            cnt += fut.get()
+
+        localOpts = {}
+        localOpts['method'] = 'loadTable'
+        self.succGroup.setMethod(**localOpts)
+
+        initFut = Future()
+        self.distHashTable.initListening(initFut,queryReturnInfo=self.queryReturnInfo,awaitable=True).get()
+        initFut.get()
+        self.succGroupFull.startListening(awaitable=True).get()
+
+        self.succGroup.computeSuccessorsNew(ret=True).get()
+
+        self.distHashTable.awaitPending(usePosetChecking=False, awaitable=True).get()
+        self.succGroup.sendAll(-2,awaitable=True).get()
+        self.succGroup.closeQueryChannels(awaitable=True).get()
+        self.succGroup.flushMessages(ret=True).get()
+
+        # print('Finished looking for successors on level ' + str(level))
+        checkVal = self.distHashTable.levelDone(ret=True).get()
+        listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
+
+        self.distHashTable.setCheckDispatch(checkDispatchTable,awaitable=True).get()
+        self.thisProxy.activateTable(activeTable,awaitable=True).get()
+
+    @coro
+    def saveTable(self,fname=None,tableName=None):
+        if tableName is None: tableName = self.thisProxy.getActiveTable(ret=True).get()
+        if not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table {tableName} does not exist!')
+        tableDict = self.distHashTable.getTableStore(tableName=tableName,ret=True).get()
+        # print(f'?????????? tableDict = {tableDict}')
+        if fname is not None:
+            with open(fname,'wb') as fp:
+                pickle.dump( tableDict, fp )
+        return tableDict
+
 
     # Because charm4py seems to filter **kwargs, pass all arguments to populatePoset in a single dictionary.
     # This avoids having to distinguish between those arguments that are for populatePoset itself and those
@@ -1137,6 +1222,9 @@ class successorWorker(Chare):
         elif method=='removeHyperplanes':
             self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsRemoveHyperplanes
             self.processNodesArgs = {'solver':solver}
+        elif method=='loadTable':
+            self.processNodeSuccessors = self.thisProxy[self.thisIndex].processNodeSuccessorsLoadTable
+            self.processNodesArgs = {'solver':solver}
         if len(lpopts) == 0:
             self.lpopts = {}
         else:
@@ -1702,6 +1790,25 @@ class successorWorker(Chare):
             return to_keep, []
         else:
             return to_keep, witnessList
+
+    @coro
+    def processNodeSuccessorsLoadTable(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None,tags=None):
+        Ntab = xN if not (isinstance(adj,dict) and -1 in adj) else adj[-1]
+        cont = self.thisProxy[self.thisIndex].hashAndSend( \
+                        region_helpers.recodeRegNewN( \
+                            -xN + Ntab, \
+                            INTrep, \
+                            xN \
+                        ) + ( \
+                            face, \
+                            witness \
+                        ), \
+                        payload = payload, \
+                        adjUpdate = adj, \
+                        tags = tags, \
+                        ret=True \
+                    ).get()
+        return [set([]),None]
 
     @coro
     def processNodeSuccessorsFastLP(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None,tags=None):
