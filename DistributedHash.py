@@ -194,6 +194,9 @@ class HashWorker(Chare):
     def setCheckDispatch(self,updateDict):
         callIdx = 0
         for checkCall in ['init','update','check','tagInit','tagUpdate','tagCheckAll','tagCheckFail']:
+            if self.nodeCalls & (1 << callIdx) > 0:
+                delattr(self,checkCall+'Dispatch')
+                self.nodeCalls -= (1 << callIdx)
             if checkCall in updateDict:
                 call = getattr(self.nodeConstructor,updateDict[checkCall],None)
                 if callable(call):
