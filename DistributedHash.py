@@ -1137,13 +1137,21 @@ class HashWorker(Chare):
         if tableName is None:
             tableName = self.activeTableName
         self.levelList = []
-        self.tableStore[tableName] = {'table':{},'tags':defaultdict(dict)}
+        self.tableStore[tableName] = { \
+                        'table':{}, \
+                        'tags':defaultdict(dict), \
+                        'tagIDtoName':{}, \
+                        'tagNametoID':{}, \
+                        'maxTagID':[0], \
+                        'freeTagIDs':deque(), \
+                        'properties':{ky: None for ky in self.trackProperties} \
+                    }
         self.table = self.tableStore[tableName]['table']
         self.tags = self.tableStore[tableName]['tags']
     @coro
     def getTable(self, tableName=None):
-        table = self.table if tableName is None else self.tableStore[tableName]
-        return [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) \
+        table = self.table if tableName is None else self.tableStore[tableName]['table']
+        return [(ky.nodeBytes, ky.N, -1, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) \
                 for ky in table.keys()]
     @coro
     def getTaggedNodes(self,tableName=None,tags=None):
@@ -1153,22 +1161,22 @@ class HashWorker(Chare):
             tags = list(tagNametoID.keys())
         return list(itertools.chain.from_iterable( \
                 [ \
-                    [(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) \
+                    [(ky.nodeBytes, ky.N, -1, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) \
                     for ky in Ttags[tagNametoID[tg]]] \
                     for tg in tags
                 ] \
                 ))
     @coro
     def getTableHash(self,tableName=None):
-        table = self.table if tableName is None else self.tableStore[tableName]
-        return {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in table.keys()}
+        table = self.table if tableName is None else self.tableStore[tableName]['table']
+        return {ky.asImmutableKey():(ky.nodeBytes, ky.N, -1, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) for ky in table.keys()}
     def getTaggedNodesHash(self,tableName=None,tags=None):
         Ttags = self.tags if tableName is None else self.tableStore[tableName]['tags']
         tagNametoID = self.tagNametoID if tableName is None else self.tableStore[tableName]['tagNametoID']
         if tags is None:
             tags = list(tagNametoID.keys())
         return { \
-                tg: {ky.asImmutableKey():(ky.nodeBytes, ky.N, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) \
+                tg: {ky.asImmutableKey():(ky.nodeBytes, ky.N, -1, ky.face, ky.witness, ky.adj, ky.tags, ky.payload) \
                 for ky in Ttags[tagNametoID[tg]]} \
                     for tg in tags \
             }
