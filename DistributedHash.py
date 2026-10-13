@@ -260,10 +260,10 @@ class HashWorker(Chare):
     @coro
     def activateTable(self,tableName):
         if self.localListenerActive or self.localQueryListenterActive or self.mainListenerActive or self.disableTableChanges or self.enumListenerActive:
-            print(f'Table operations are in progress. Changing tables is not supported')
+            raise ValueError(f'Table operations are in progress. Changing tables is not supported')
             return False
         if not tableName in self.tableStore:
-            print(f'Table {tableName} does not exist')
+            raise ValueError(f'Table {tableName} does not exist')
             return False
         else:
             for p in self.trackProperties:
