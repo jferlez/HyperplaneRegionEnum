@@ -633,6 +633,56 @@ class Poset(Chare):
         self.populated = True
         return checkVal
 
+    # NOTE: must be pre-initialized using the same calls as populatePoset! (e.g. initAndSetFromConstraints and setMethod)
+    @coro
+    def updateNode(self, nodeBytes,face=None,witness=None,adjUpdate=None,tags=None,payload=None, opts={}, setCheckDispatch=None ):
+        if setCheckDispatch is not None:
+            prevDispatchTable = self.distHashTable.getCheckDispatch(ret=True).get()
+            self.distHashTable.setCheckDispatch(setCheckDispatch,awaitable=True).get()
+        if isinstance(tags,set):
+            tags = self.distHashTable.convertTagNamesToIDs(tags,ret=True).get()
+
+        initFut = Future()
+        self.distHashTable.initListening(initFut,queryReturnInfo=self.queryReturnInfo,awaitable=True).get()
+        initFut.get()
+        self.succGroupFull.startListening(awaitable=True).get()
+
+        # Find the size encoding of the specified region first
+        stripNum = 0
+        if self.flippedConstraints.baseN is not None:
+            for idx in range(0,self.flippedConstraints.N - self.flippedConstraints.baseN + 1):
+                newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, nodeBytes, self.flippedConstraints.N)
+                retVal = self.succGroup[self.posetPElist[0]].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
+                if retVal[0] > 0:
+                    stripNum = idx
+                    break
+
+        # print(f'boolIdxNoFlip = {boolIdxNoFlip}')
+        self.successorProxies[0].hashAndSend( \
+                    region_helpers.recodeRegNewN( \
+                        -stripNum,
+                        nodeBytes, \
+                        self.flippedConstraints.N \
+                    ) + \
+                    ( \
+                        tuple() if face is None else face, \
+                        witness \
+                    ), \
+                    adjUpdate=adjUpdate, \
+                    tags=tags if isinstance(tags,set) else None, \
+                    payload=payload, \
+                    vertex=None, \
+                ret=True).get()
+
+        self.distHashTable.awaitPending(usePosetChecking=self.usePosetChecking, awaitable=True).get()
+        # Send a final termination signal:
+        self.succGroup.sendAll(-2,awaitable=True).get()
+        self.succGroup.closeQueryChannels(awaitable=True).get()
+        self.succGroup.flushMessages(ret=True).get()
+
+        if setCheckDispatch is not None:
+            self.distHashTable.setCheckDispatch(prevDispatchTable,awaitable=True).get()
+
     @coro
     def insertHyperplane(self,newA, newb, normalize=1.0, opts={}):
         self.verbose = 1
