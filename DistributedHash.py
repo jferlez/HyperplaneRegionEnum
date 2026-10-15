@@ -458,11 +458,30 @@ class HashWorker(Chare):
         if tag not in self.tableStore[tableName]['tagNametoID']:
             raise ValueError(f'ERROR: tag {tag} cannot be renamed because it doesn\'t exists!')
         tags = self.tableStore[tableName]['tags']
+        tagNametoID = self.tableStore[tableName]['tagNametoID']
         retVal = []
-        for ky in tags[tag]:
+        for ky in tags[tagNametoID[tag]]:
             retVal.append((ky.nodeBytes, ky.N, -1, ky.face, ky.witness, ky.adj, ky.tags, ky.payload))
             break
         return retVal
+    @coro
+    def convertTagNamesToIDs(self, tags, tableName=None):
+        if tableName is None:
+            tagNametoID = self.tagNametoID
+            tagIDtoName = self.tagIDtoName
+            freeTagIDs = self.freeTagIDs
+            maxTagID = self.maxTagID
+        elif tableName in self.tableStore:
+            tagNametoID = self.tableStore[tableName]['tagNametoID']
+            tagIDtoName = self.tableStore[tableName]['tagIDtoName']
+            freeTagIDs = self.tableStore[tableName]['freeTagIDs']
+            maxTagID = self.tableStore[tableName]['maxTagID']
+        else:
+            raise ValueError(f'ERROR: table name {tableName} does not exist!')
+        if not tags <= set(tagNametoID.keys()):
+            raise ValueError(f'ERROR: tags {tags} contain contains non-existent tags!')
+        return { tagNametoID[tg] for tg in tags }
+
     # TODO: implement delete tag, which should iterate over all nodes, and remove the correct tag ids
     @coro
     def deleteAllTags(self,tableName=None):
@@ -1561,6 +1580,10 @@ class DistHash(Chare):
     @coro
     def getTags(self,tableName=None):
         retVal = self.hWorkersFull.getTags(tableName=tableName,ret=True).get()[0]
+        return retVal
+    @coro
+    def convertTagNamesToIDs(self, tags, tableName=None):
+        retVal = self.hWorkersFull.convertTagNamesToIDs(tags, tableName=tableName,ret=True).get()[0]
         return retVal
     @coro
     def deleteAllTags(self,tableName=None):
