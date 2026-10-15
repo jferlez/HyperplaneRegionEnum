@@ -394,33 +394,81 @@ class HashWorker(Chare):
         return frozenset(self.tableStore.keys())
 
     @coro
-    def getTags(self):
-        return list(self.tagNametoID.keys())
+    def getTags(self,tableName=None):
+        if tableName is None:
+            tagNametoID = self.tagNametoID
+        elif tableName in self.tableStore:
+            tagNametoID = self.tableStore[tableName]['tagNametoID']
+        else:
+            raise ValueError(f'ERROR: table name {tableName} does not exist!')
+        return list(tagNametoID.keys())
     @coro
     def addTag(self,tag):
-        if tag in self.tagNametoID:
-            raise ValueError(f'ERROR: tag {tag} already exists!')
-        if len(self.freeTagIDs) > 0:
-            newTagID = self.freeTagIDs.pop()
+        if tableName is None:
+            tagNametoID = self.tagNametoID
+            tagIDtoName = self.tagIDtoName
+            freeTagIDs = self.freeTagIDs
+            maxTagID = self.maxTagID
+        elif tableName in self.tableStore:
+            tagNametoID = self.tableStore[tableName]['tagNametoID']
+            tagIDtoName = self.tableStore[tableName]['tagIDtoName']
+            freeTagIDs = self.tableStore[tableName]['freeTagIDs']
+            maxTagID = self.tableStore[tableName]['maxTagID']
         else:
-            newTagID = self.maxTagID[0]
-            self.maxTagID[0] += 1
-        self.tagIDtoName[newTagID] = tag
-        self.tagNametoID[tag] = newTagID
+            raise ValueError(f'ERROR: table name {tableName} does not exist!')
+        if tag in tagNametoID:
+            raise ValueError(f'ERROR: tag {tag} already exists!')
+        if len(freeTagIDs) > 0:
+            newTagID = freeTagIDs.pop()
+        else:
+            newTagID = maxTagID[0]
+            maxTagID[0] += 1
+        tagIDtoName[newTagID] = tag
+        tagNametoID[tag] = newTagID
         return True
     @coro
-    def renameTag(self, tag, newTag):
-        if tag not in self.tagNametoID:
+    def renameTag(self, tag, newTag, tableName=None):
+        if tableName is None:
+            tagNametoID = self.tagNametoID
+            tagIDtoName = self.tagIDtoName
+            freeTagIDs = self.freeTagIDs
+            maxTagID = self.maxTagID
+        elif tableName in self.tableStore:
+            tagNametoID = self.tableStore[tableName]['tagNametoID']
+            tagIDtoName = self.tableStore[tableName]['tagIDtoName']
+            freeTagIDs = self.tableStore[tableName]['freeTagIDs']
+            maxTagID = self.tableStore[tableName]['maxTagID']
+        else:
+            raise ValueError(f'ERROR: table name {tableName} does not exist!')
+        if tag not in tagNametoID:
             raise ValueError(f'ERROR: tag {tag} cannot be renamed because it doesn\'t exists!')
-        if newTag in self.tagNametoID:
+        if newTag in tagNametoID:
             raise ValueError(f'ERROR: new tag name {newTag} already exists!')
-        tagID = self.tagNametoID[tag]
-        del self.tagNametoID[tag]
-        self.tagNametoID[newTag] = tagID
-        self.tagIDtoName[tagID] = newTag
+        tagID = tagNametoID[tag]
+        del tagNametoID[tag]
+        tagNametoID[newTag] = tagID
+        tagIDtoName[tagID] = newTag
         return True
     # TODO: implement delete tag, which should iterate over all nodes, and remove the correct tag ids
-
+    @coro
+    def deleteAllTags(self,tableName=None):
+        if tableName is None:
+            tableName = self.activeTableName
+        if tableName not in self.tableStore:
+            raise ValueError(f'ERROR: table name {tableName} does not exist!')
+        self.tableStore[tableName]['tags'] = defaultdict(dict)
+        self.tableStore[tableName]['tagNametoID'] = {}
+        self.tableStore[tableName]['tagIDtoName'] = {}
+        self.tableStore[tableName]['freeTagIDs'] = deque()
+        self.tableStore[tableName]['maxTagID'] = [0]
+        if tableName == self.activeTableName:
+            self.tags = self.tableStore[tableName]['tags']
+            self.tagNametoID = self.tableStore[tableName]['tagNametoID']
+            self.tagIDtoName = self.tableStore[tableName]['tagIDtoName']
+            self.freeTagIDs = self.tableStore[tableName]['freeTagIDs']
+            self.maxTagID = self.tableStore[tableName]['maxTagID']
+        for nd in self.tableStore[tableName]['table']:
+            nd['ptr'].tags = set()
 
     @coro
     def setTrackedProperty(self,p,val):
@@ -1489,17 +1537,20 @@ class DistHash(Chare):
         retVal = self.hWorkersFull.deleteTable(tableName,ret=True).get()
         return all(retVal)
     @coro
-    def addTag(self,tag):
-        retVal = self.hWorkersFull.addTag(tag,ret=True).get()
+    def addTag(self,tag,tableName=None):
+        retVal = self.hWorkersFull.addTag(tag,tableName=tableName,ret=True).get()
         return retVal
     @coro
-    def renameTag(self,tag, newTag):
-        retVal = self.hWorkersFull.renameTag(tag,newTag,ret=True).get()
+    def renameTag(self,tag, newTag, tableName=None):
+        retVal = self.hWorkersFull.renameTag(tag,newTag,tableName=tableName,ret=True).get()
         return retVal
     @coro
-    def getTags(self):
-        retVal = self.hWorkersFull.getTags(ret=True).get()[0]
+    def getTags(self,tableName=None):
+        retVal = self.hWorkersFull.getTags(tableName=tableName,ret=True).get()[0]
         return retVal
+    @coro
+    def deleteAllTags(self,tableName=None):
+        self.hWorkersFull.deleteAllTags(tableName=tableName,awaitable=True).get()
     @coro
     def setTrackedProperty(self,p,val):
         self.hWorkersFull(p,val,awaitable=True).get()

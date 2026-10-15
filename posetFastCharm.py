@@ -331,16 +331,19 @@ class Poset(Chare):
     def getTableNames(self):
         return self.distHashTable.getTableNames(ret=True).get()
     @coro
-    def getTags(self):
-        return self.distHashTable.getTags(ret=True).get()[0]
+    def getTags(self,tableName=None):
+        return self.distHashTable.getTags(tableName=tableName,ret=True).get()[0]
     @coro
-    def addTag(self,tag):
-        retVal = self.distHashTable.addTag(tag,ret=True).get()
+    def addTag(self,tag,tableName=None):
+        retVal = self.distHashTable.addTag(tag,tableName=tableName,ret=True).get()
         return retVal
     @coro
-    def renameTag(self,tag,newTag):
-        retVal = self.distHashTable.renameTag(tag,newTag,ret=True).get()
+    def renameTag(self,tag,newTag,tableName=None):
+        retVal = self.distHashTable.renameTag(tag,newTag,tableName=tableName,ret=True).get()
         return retVal
+    @coro
+    def deleteAllTags(self,tableName=None):
+        self.distHashTable.deleteAllTags(tableName=tableName,awaitable=True).get()
     @coro
     def loadTable(self,tablefile,tableName=None,clearTable=True):
         if not isinstance(tablefile,dict):
