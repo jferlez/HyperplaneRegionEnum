@@ -332,7 +332,7 @@ class Poset(Chare):
         return self.distHashTable.getTableNames(ret=True).get()
     @coro
     def getTags(self,tableName=None):
-        return self.distHashTable.getTags(tableName=tableName,ret=True).get()[0]
+        return self.distHashTable.getTags(tableName=tableName,ret=True).get()
     @coro
     def addTag(self,tag,tableName=None):
         retVal = self.distHashTable.addTag(tag,tableName=tableName,ret=True).get()
