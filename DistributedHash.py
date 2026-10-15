@@ -449,6 +449,20 @@ class HashWorker(Chare):
         tagNametoID[newTag] = tagID
         tagIDtoName[tagID] = newTag
         return True
+    @coro
+    def getFirstInstancesByTag(self, tag, tableName=None):
+        if tableName is None:
+            tableName = self.activeTableName
+        if tableName not in self.tableStore:
+            raise ValueError(f'ERROR: table name {tableName} does not exist!')
+        if tag not in self.tableStore[tableName]['tagNametoID']:
+            raise ValueError(f'ERROR: tag {tag} cannot be renamed because it doesn\'t exists!')
+        tags = self.tableStore[tableName]['tags']
+        retVal = []
+        for ky in tags[tag]:
+            retVal.append((ky.nodeBytes, ky.N, -1, ky.face, ky.witness, ky.adj, ky.tags, ky.payload))
+            break
+        return retVal
     # TODO: implement delete tag, which should iterate over all nodes, and remove the correct tag ids
     @coro
     def deleteAllTags(self,tableName=None):
@@ -1551,6 +1565,11 @@ class DistHash(Chare):
     @coro
     def deleteAllTags(self,tableName=None):
         self.hWorkersFull.deleteAllTags(tableName=tableName,awaitable=True).get()
+    @coro
+    def getFirstInstancesByTag(self, tag, tableName=None):
+        return list(itertools.chain.from_iterable( \
+                    self.hWorkersFull.getFirstInstancesByTag(tag,tableName=tableName,ret=True).get() \
+                ))
     @coro
     def setTrackedProperty(self,p,val):
         self.hWorkersFull(p,val,awaitable=True).get()
