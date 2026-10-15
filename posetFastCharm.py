@@ -47,6 +47,10 @@ class PosetNode(DistributedHash.Node):
             for ky in adj.keys():
                 self.adj[ky] = adj[ky]
 
+    def updateTags(self, tagIDtoName, tagNametoID, lsb,msb,nodeBytes,N, originPe, face, witness, adj, tags, *args):
+        self.tags = copy(tags)
+        return self.tags
+
     # Do not override these methods:
     def checkForInsert(self):
         return True
