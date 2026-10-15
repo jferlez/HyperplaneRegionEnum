@@ -403,7 +403,7 @@ class HashWorker(Chare):
             raise ValueError(f'ERROR: table name {tableName} does not exist!')
         return list(tagNametoID.keys())
     @coro
-    def addTag(self,tag):
+    def addTag(self,tag,tableName=None):
         if tableName is None:
             tagNametoID = self.tagNametoID
             tagIDtoName = self.tagIDtoName
