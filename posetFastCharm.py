@@ -450,7 +450,10 @@ class Poset(Chare):
         self.sendFaces = False
         self.queryReturnInfo = False
         self.maxLevels = self.N + 1
-        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces','queryReturnInfo','maxLevels']
+        self.useRebase = False
+        self.tol = 1e-8
+        self.rTol = 1e-8
+        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces','queryReturnInfo','maxLevels','useRebase','tol','rTol']
         for ky in defaultSettings:
             if ky in opts:
                 setattr(self,ky,opts[ky])
@@ -460,15 +463,20 @@ class Poset(Chare):
             return None
         # payload = None if payload == tuple() or payload == [] else payload
 
+        if self.flippedConstraints.rebasePt is None and self.useRebase:
+            print(f'WARNING: rebase requested but no rebase point set. Proceeding from default root node.')
+            opts['useRebase'] = False
+            self.useRebase = False
+
 
         #print(f'verbose is {self.verbose}')
         self.succGroup.setMethod(**opts)
 
         if 'hashStore' in opts and opts['hashStore'] == 'vertex':
             self.hashStoreMode = 2
-            tol = opts['tol'] if 'tol' in opts else 1e-9
-            rTol = opts['rTol'] if 'rTol' in opts else 1e-9
-            self.distHashTable.updateNodeEqualityFn(nodeType='vertex', tol=tol, rTol=rTol, H=self.constraints, awaitable=True).get()
+            self.tol = opts['tol'] if 'tol' in opts else 1e-9
+            self.rTol = opts['rTol'] if 'rTol' in opts else 1e-9
+            self.distHashTable.updateNodeEqualityFn(nodeType='vertex', tol=self.tol, rTol=self.rTol, H=self.constraints, awaitable=True).get()
         else:
             self.distHashTable.updateNodeEqualityFn(nodeType='standard', awaitable=True).get()
             self.hashStoreMode = 0
@@ -476,9 +484,23 @@ class Poset(Chare):
         self.distHashTable.resetLevelCount(awaitable=True).get()
         #self.succGroup.testSend()
 
+        if self.flippedConstraints.root != tuple():
+            raise ValueError(f'ERROR: populatePoset only works with flipConstraints root = (,)')
+
         checkVal = True
         level = 0
-        thisLevel = [(self.flippedConstraints.root,tuple())]
+        rootTup = tuple() if not self.useRebase else sorted(list(self.flippedConstraints.rebaseSet))
+        if witness is not None:
+            regH = self.flippedConstraints.getRegionConstraints(rootTup,allN=False)
+            if np.any( -regH[:,1:] @ witness > regH[:,0].reshape(-1,1) + self.tol + self.rTol * np.abs(regH[:,0].reshape(-1,1)) ):
+                raise ValueError(f'ERROR: witness does not satisfy contraints for root region.')
+
+        rootBool, rootTup, _ = region_helpers.recodeRegNewN( \
+                                    0, \
+                                    rootTup , \
+                                    self.flippedConstraints.N \
+                                )
+        # thisLevel = [(self.flippedConstraints.root,tuple())]
         posetLen = 1
         self.levelSizes = [1]
         timedOut = False
@@ -489,13 +511,13 @@ class Poset(Chare):
         initFut.get()
         self.succGroupFull.startListening(awaitable=True).get()
 
-        boolIdxNoFlip = bytearray(b'\x00') * (self.flippedConstraints.wholeBytes + (1 if self.flippedConstraints.tailBits != 0 else 0))
-        for unflipIdx in range(len(thisLevel[0][0])-1,-1,-1):
-            boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
+        # boolIdxNoFlip = bytearray(b'\x00') * (self.flippedConstraints.wholeBytes + (1 if self.flippedConstraints.tailBits != 0 else 0))
+        # for unflipIdx in range(len(thisLevel[0][0])-1,-1,-1):
+        #     boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] = boolIdxNoFlip[thisLevel[0][0][unflipIdx]//8] | (1<<(thisLevel[0][0][unflipIdx] % 8))
         # print(f'boolIdxNoFlip = {boolIdxNoFlip}')
         self.successorProxies[0].hashAndSend([ \
-                                        boolIdxNoFlip, \
-                                        thisLevel[0][0], \
+                                        rootBool, \
+                                        rootTup, \
                                         self.flippedConstraints.N, \
                                         tuple() if face is None else face, \
                                         self.flippedConstraints.pt if witness is None else witness \
@@ -506,7 +528,7 @@ class Poset(Chare):
                                     vertex=(None if self.hashStoreMode != 2 else (self.flippedConstraints.pt,tuple())), \
                                 ret=True).get()
         thisLevel = [( \
-                      boolIdxNoFlip if self.hashStoreMode == 0 else thisLevel[0][0], \
+                      rootBool if self.hashStoreMode == 0 else rootTup, \
                       self.flippedConstraints.N, \
                       0, \
                       tuple() if face is None else face, \
@@ -982,6 +1004,8 @@ class Poset(Chare):
             aug.rebasePt = deepcopy(rebasePt)
         self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
         self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
+        # Reset useRebase to False
+        self.succGroup.setProperty('useRebase', False , awaitable=True).get()
 
     @coro
     def removeHyperplanes(self, hyperList, allN=False, includeDup=False, opts={}):
@@ -1238,7 +1262,7 @@ class successorWorker(Chare):
     def getTimeout(self):
         return self.timedOut
 
-    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,clearTable='speed',sendWitness=False,verbose=1):
+    def setMethod(self,method='fastLP',solver='glpk',useQuery=False,lpopts={},reverseSearch=False,hashStore='bits',tol=1e-9,rTol=1e-9,sendFaces=False,clearTable='speed',sendWitness=False,verbose=1,useRebase=False):
         for d in self.lpObjs.keys():
             self.lpObjs[d].initSolver(solver=solver, opts={'dim':(d)})
         self.rsLP.initSolver(solver=solver, opts={'dim':(self.constraints.shape[1]-1)})
@@ -1252,6 +1276,7 @@ class successorWorker(Chare):
         self.sendWitness = True if sendWitness else None
         self.verbose = verbose
         self.method = method
+        self.useRebase = useRebase
         if hashStore == 'bits':
             self.hashStoreMode = 0
         elif hashStore == 'list':
