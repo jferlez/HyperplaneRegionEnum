@@ -441,7 +441,7 @@ class Poset(Chare):
     # opts dictionary keys 'clearTable' and 'retrieveFaces' set parameters in populatePoset itself; any
     # other keys are passed as keyword arguments to setMethod
     @coro
-    def populatePoset(self,face=None,witness=None,adjUpdate=None,tags=None,payload=None, opts={} ):
+    def populatePoset(self,face=None,witness=None,adjUpdate=None,tags=None,payload=None, setCheckDispatch=None, opts={} ):
         if self.populated:
             return
         self.clearTable = 'speed'
@@ -500,6 +500,11 @@ class Poset(Chare):
                                     rootTup , \
                                     self.flippedConstraints.N \
                                 )
+
+        if setCheckDispatch is not None:
+            prevDispatchTable = self.distHashTable.getCheckDispatch(ret=True).get()
+            self.distHashTable.setCheckDispatch(setCheckDispatch,awaitable=True).get()
+
         # thisLevel = [(self.flippedConstraints.root,tuple())]
         posetLen = 1
         self.levelSizes = [1]
@@ -653,6 +658,10 @@ class Poset(Chare):
             print('Poset computation timed out...')
         # return [i.iINT for i in self.hashTable.keys()]
         self.populated = True
+
+        if setCheckDispatch is not None:
+            self.distHashTable.setCheckDispatch(prevDispatchTable,awaitable=True).get()
+
         return checkVal
 
     # NOTE: must be pre-initialized using the same calls as populatePoset! (e.g. initAndSetFromConstraints and setMethod)
