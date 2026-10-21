@@ -714,6 +714,32 @@ class Poset(Chare):
             self.distHashTable.setCheckDispatch(prevDispatchTable,awaitable=True).get()
 
     @coro
+    def retrieveNode(self, nodeBytes):
+        initFut = Future()
+        self.distHashTable.initListening(initFut,queryReturnInfo=True,awaitable=True).get()
+        initFut.get()
+        self.succGroupFull.startListening(awaitable=True).get()
+
+        # Find the size encoding of the specified region first
+        stripNum = 0
+        retVal = (-1,)
+        if self.flippedConstraints.baseN is not None:
+            for idx in range(0,self.flippedConstraints.N - self.flippedConstraints.baseN + 1):
+                newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, nodeBytes, self.flippedConstraints.N)
+                retVal = self.succGroup[self.posetPElist[0]].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
+                if retVal[0] > 0:
+                    break
+        self.distHashTable.awaitPending(usePosetChecking=self.usePosetChecking, awaitable=True).get()
+        # Send a final termination signal:
+        self.succGroup.sendAll(-2,awaitable=True).get()
+        self.succGroup.closeQueryChannels(awaitable=True).get()
+        self.succGroup.flushMessages(ret=True).get()
+        if retVal[0] > 0 and len(retVal) == 6:
+            return {'face':retVal[1], 'witness':retVal[2], 'adjUpdate':retVal[3], 'tags':retVal[4], 'payload':retVal[5]}
+        else:
+            return None
+
+    @coro
     def insertHyperplane(self,newA, newb, normalize=1.0, opts={}):
         self.verbose = 1
         defaultSettings = ['verbose']
