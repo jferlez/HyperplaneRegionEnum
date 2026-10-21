@@ -665,13 +665,12 @@ class Poset(Chare):
         return checkVal
 
     # NOTE: must be pre-initialized using the same calls as populatePoset! (e.g. initAndSetFromConstraints and setMethod)
+    # takes tagIDs in the tags argument to match other semantics
     @coro
     def updateNode(self, nodeBytes,face=None,witness=None,adjUpdate=None,tags=None,payload=None, opts={}, setCheckDispatch=None ):
         if setCheckDispatch is not None:
             prevDispatchTable = self.distHashTable.getCheckDispatch(ret=True).get()
             self.distHashTable.setCheckDispatch(setCheckDispatch,awaitable=True).get()
-        if isinstance(tags,set):
-            tags = self.distHashTable.convertTagNamesToIDs(tags,ret=True).get()
 
         initFut = Future()
         self.distHashTable.initListening(initFut,queryReturnInfo=self.queryReturnInfo,awaitable=True).get()
