@@ -40,6 +40,7 @@ class Node():
         # tags=None behavior should be different for update methods
         self.tags = set() if tags is None else tags
         self.payload = args[0] if len(args) > 0 else None
+        self.allowUpdateReseed = False
 
     def copy(self):
         cl = type(self)
@@ -1122,7 +1123,9 @@ class HashWorker(Chare):
                                 # self.parentProxy.sendFeedbackMessage(charm.numPes()+1)
                                 self.levelDone = True
                         elif self.nodeCalls & 2:
-                            self.updateDispatch(self.table[newNode]['ptr'],*val)
+                            allowUpdateReseed = self.updateDispatch(self.table[newNode]['ptr'],*val)
+                            if allowUpdateReseed is not None and allowUpdateReseed:
+                                self.levelList.append(self.table[newNode]['ptr'])
                             if self.nodeCalls & 16:
                                 # Add updated node to a tag list
                                 oldTagIDSet = deepcopy(self.table[newNode]['ptr'].tags)

@@ -46,9 +46,10 @@ class PosetNode(DistributedHash.Node):
         if adj and isinstance(adj,dict):
             for ky in adj.keys():
                 self.adj[ky] = adj[ky]
+        return False
 
     def updateTags(self, tagIDtoName, tagNametoID, lsb,msb,nodeBytes,N, originPe, face, witness, adj, tags, *args):
-        self.tags = copy(tags)
+        self.tags = copy(tags) if tags is not None else set()
         return self.tags
 
     # Do not override these methods:
@@ -75,6 +76,7 @@ class PosetNode(DistributedHash.Node):
                 self.face = set([ky for ky in self.adj if ky != -1])
         # print(f'    :-:-:-:-:    {charm.myPe()} {nodeBytes}: Updating original face information {origFace} to {self.face} {self.adj}')
         # self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
+        return False
     def adjFaceCreate(self):
         if not isinstance(self.adj,dict) or len(self.adj) == 0:
             self.adj = {f:self.N for f in self.face}
