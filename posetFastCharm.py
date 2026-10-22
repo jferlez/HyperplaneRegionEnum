@@ -495,7 +495,7 @@ class Poset(Chare):
         if witness is not None:
             regH = self.flippedConstraints.getRegionConstraints(rootTup,allN=False)
             if np.any( -regH[:,1:] @ witness > regH[:,0].reshape(-1,1) + self.tol + self.rTol * np.abs(regH[:,0].reshape(-1,1)) ):
-                raise ValueError(f'ERROR: witness does not satisfy contraints for root region.')
+                raise ValueError(f'ERROR: witness {witness} does not satisfy contraints for root region {rootTup}.')
 
         rootBool, rootTup, _ = region_helpers.recodeRegNewN( \
                                     0, \
