@@ -674,6 +674,8 @@ class Poset(Chare):
             prevDispatchTable = self.distHashTable.getCheckDispatch(ret=True).get()
             self.distHashTable.setCheckDispatch(setCheckDispatch,awaitable=True).get()
 
+        self.distHashTable.resetLevelCount(awaitable=True).get()
+
         initFut = Future()
         self.distHashTable.initListening(initFut,queryReturnInfo=self.queryReturnInfo,awaitable=True).get()
         initFut.get()
@@ -712,6 +714,11 @@ class Poset(Chare):
         self.succGroup.closeQueryChannels(awaitable=True).get()
         self.succGroup.flushMessages(ret=True).get()
 
+        checkVal = self.distHashTable.levelDone(ret=True).get()
+        if not checkVal:
+            level = self.N+2
+        listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
+
         if setCheckDispatch is not None:
             self.distHashTable.setCheckDispatch(prevDispatchTable,awaitable=True).get()
 
@@ -736,6 +743,12 @@ class Poset(Chare):
         self.succGroup.sendAll(-2,awaitable=True).get()
         self.succGroup.closeQueryChannels(awaitable=True).get()
         self.succGroup.flushMessages(ret=True).get()
+
+        checkVal = self.distHashTable.levelDone(ret=True).get()
+        if not checkVal:
+            level = self.N+2
+        listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
+
         if retVal[0] > 0 and len(retVal) == 6:
             return {'face':retVal[1], 'witness':retVal[2], 'adjUpdate':retVal[3], 'tags':retVal[4], 'payload':retVal[5]}
         else:
