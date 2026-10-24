@@ -48,7 +48,7 @@ class PosetNode(DistributedHash.Node):
                 self.adj[ky] = adj[ky]
         return False
 
-    def updateTags(self, tagIDtoName, tagNametoID, lsb,msb,nodeBytes,N, originPe, face, witness, adj, tags, *args):
+    def updateTags(self, lsb,msb,nodeBytes,N, originPe, face, witness, adj, tags, *args):
         self.tags = copy(tags) if tags is not None else set()
         return self.tags
 

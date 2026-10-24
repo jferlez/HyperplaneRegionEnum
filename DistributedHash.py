@@ -24,7 +24,7 @@ tableStoreProperties = ['table',  'tagNametoID', 'tagIDtoName', 'maxTagID', 'fre
 
 class Node():
 
-    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, lsb,msb,nodeBytes,N, originPe, face, witness, adj, tags, *args):
+    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, tagIDtoName, tagNametoID, lsb,msb,nodeBytes,N, originPe, face, witness, adj, tags, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
@@ -36,6 +36,8 @@ class Node():
         self.face = set(face)
         self.witness = witness
         self.nodeEqualityFn = nodeEqualityFn
+        self.tagIDtoName = tagIDtoName
+        self.tagNametoID = tagNametoID
         self.adj = {} if adj is None else adj
         # tags=None behavior should be different for update methods
         self.tags = set() if tags is None else tags
@@ -990,7 +992,7 @@ class HashWorker(Chare):
                             tags = self.tableStore[self.tableNameLUT[tabIdx]]['tags']
                         if (not charm.myPe() in self.overlapPElist) or (not selfQuery or charm.myPe() == chIdx):
                             answeredSelf = True
-                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val[2:])
+                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, self.tagIDtoName, self.tagNametoID, *val[2:])
                         if not tabIdx in self.tableNameLUT:
                             print(f'||||||   ERROR: table index not found {self.tableNameLUT}')
                             self.queryChannelsHashEnd[chIdx].send((-1,))
@@ -1086,12 +1088,12 @@ class HashWorker(Chare):
                         if self.negStatusCnt == self.msgBufCnt:
                             self.levelDone = True
                     elif type(val) == tuple and len(val) >= 3:
-                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, *val)
+                        newNode = self.nodeConstructor(self.localVarGroup, charm.myPe(), self, self.nodeEqualityFn, self.tagIDtoName, self.tagNametoID, *val)
                         if self.nodeCalls & 1:
                             self.initDispatch(newNode)
                             if self.nodeCalls & 8:
                                 # tagInitDispatch should set the tags property of the node
-                                newTags = self.tagInitDispatch(newNode,self.tagIDtoName,self.tagNametoID)
+                                newTags = self.tagInitDispatch(newNode)
                                 if newTags is not None:
                                     for tg in newTags:
                                         self.tags[tg][newNode] = {'ptr':newNode}
@@ -1102,7 +1104,7 @@ class HashWorker(Chare):
                             self.levelList.append(newNode)
                             if self.nodeCalls & 32:
                                 # This allows for a node to be tagged exactly once
-                                newTags = self.tagCheckAllDispatch(newNode,self.tagIDtoName,self.tagNametoID)
+                                newTags = self.tagCheckAllDispatch(newNode)
                                 if newTags is not None:
                                     for tg in newTags:
                                         self.tags[tg][newNode] = {'ptr':newNode}
@@ -1110,7 +1112,7 @@ class HashWorker(Chare):
                             # Check node here:
                             if self.nodeCalls & 4 and not self.checkDispatch(newNode): # If result of node check is False return False on all the workerDone Futures
                                 if self.nodeCalls & 64:
-                                    newTags = self.tagCheckFailDispatch(self.table[newNode]['ptr'],self.tagIDtoName,self.tagNametoID,*val)
+                                    newTags = self.tagCheckFailDispatch(self.table[newNode]['ptr'],*val)
                                     if newTags is not None:
                                         for tg in newTags:
                                             self.tags[tg][self.table[newNode]['ptr']] = {'ptr':self.table[newNode]['ptr']}
@@ -1129,7 +1131,7 @@ class HashWorker(Chare):
                             if self.nodeCalls & 16:
                                 # Add updated node to a tag list
                                 oldTagIDSet = deepcopy(self.table[newNode]['ptr'].tags)
-                                newTagIDSet = self.tagUpdateDispatch(self.table[newNode]['ptr'],self.tagIDtoName,self.tagNametoID,*val)
+                                newTagIDSet = self.tagUpdateDispatch(self.table[newNode]['ptr'],*val)
                                 # it is tagUpdateDispatch's responsibility to update the 'internal' tag property of the node
                                 # so we only have to fix the 'external' tables
                                 if newTagIDSet is not None:
