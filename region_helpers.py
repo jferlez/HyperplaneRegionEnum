@@ -417,6 +417,7 @@ class flipConstraints:
         v = self.allConstraints[:self.allN, 1:] @ self.rebasePt + self.allConstraints[:self.allN, 0].reshape(-1,1)
         self.rebaseSetAllN = frozenset(np.nonzero(v.flatten() < -self.tol)[0].tolist())
 
+    # Note that this function also converts rebased regions back to the "original" base
     def rebaseRegion(self, nodeBytesInt, allN=False):
         if self.rebasePt is None:
             return None
