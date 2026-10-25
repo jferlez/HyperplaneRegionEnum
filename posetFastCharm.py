@@ -1026,12 +1026,30 @@ class Poset(Chare):
         solver = localOpts['solver'] if 'solver' in localOpts else 'glpk'
         lpopts = localOpts['lpopts'] if 'lpopts' in localOpts else None
 
-        self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
+        self.thisProxy.tableApplyMethod(opts=localOpts,rebasePt=rebasePt,awaitable=True).get()
+
+    @coro
+    def tableApplyMethod(self,opts={},rebasePt=None,checkDispatchTable=None):
+
+        localOpts = deepcopy(opts)
+
+        self.verbose = 1
+        defaultSettings = ['verbose']
+        for ky in defaultSettings:
+            if ky in opts:
+                setattr(self,ky,opts[ky])
+        opts['verbose'] = self.verbose
+
+        prevDispatchTable = self.distHashTable.getCheckDispatch(ret=True).get()
+        if checkDispatchTable is None:
+            self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
+        else:
+            self.distHashTable.setCheckDispatch(checkDispatchTable,awaitable=True).get()
 
 
         self.succGroup.setMethod(**localOpts)
 
-        self.succGroup.setProperty('iPtLift', rebasePt, awaitable=True).get()
+        self.succGroup.setProperty('rebasePt', rebasePt, awaitable=True).get()
         self.succGroup.setProperty('useRebase', False if rebasePt is None else True, awaitable=True).get()
 
         ##### Now test the canonicalization features...
@@ -1051,7 +1069,8 @@ class Poset(Chare):
         checkVal = self.distHashTable.levelDone(ret=True).get()
         listenerCount = self.distHashTable.awaitShutdown(ret=True).get()
         #####
-        self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
+        if prevDispatchTable is not None:
+            self.distHashTable.setCheckDispatch(prevDispatchTable,awaitable=True).get()
 
         aug = self.flippedConstraints.serialize()
         aug.baseN = None
@@ -1061,6 +1080,7 @@ class Poset(Chare):
         self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
         # Reset useRebase to False
         self.succGroup.setProperty('useRebase', False , awaitable=True).get()
+        self.succGroup.setProperty('rebasePt', None, awaitable=True).get()
 
     @coro
     def removeHyperplanes(self, hyperList, allN=False, includeDup=False, opts={}):
@@ -2383,9 +2403,9 @@ class successorWorker(Chare):
         witnessList = []
         # payload = None if payload == tuple() or payload == [] else payload
 
-        if not self.iPtLift is None and isinstance(self.iPtLift,np.ndarray) and self.iPtLift.shape == (d,1):
+        if not self.rebasePt is None and isinstance(self.rebasePt,np.ndarray) and self.rebasePt.shape == (d,1):
             self.flippedConstraints.setRebase(self.iPtLift)
-            self.iPtLift = None
+            self.rebasePt = None
             self.useRebase = True
 
         boolIdxNoFlip, INTrep, _ = region_helpers.recodeRegNewN(0, INTrep , N) # should be identity for INTrep
