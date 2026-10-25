@@ -442,7 +442,7 @@ class Poset(Chare):
     # opts dictionary keys 'clearTable' and 'retrieveFaces' set parameters in populatePoset itself; any
     # other keys are passed as keyword arguments to setMethod
     @coro
-    def populatePoset(self,face=None,witness=None,adjUpdate=None,tags=None,payload=None, setCheckDispatch=None, opts={} ):
+    def populatePoset(self,face=None,witness=None,adjUpdate=None,tags=None,payload=None, setCheckDispatch=None, useRebase=False, opts={} ):
         if self.populated:
             return
         self.clearTable = 'speed'
@@ -454,7 +454,7 @@ class Poset(Chare):
         self.useRebase = False
         self.tol = 1e-8
         self.rTol = 1e-8
-        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces','queryReturnInfo','maxLevels','useRebase','tol','rTol']
+        defaultSettings = ['clearTable','retrieveFaces','verbose','sendFaces','queryReturnInfo','maxLevels','tol','rTol']
         for ky in defaultSettings:
             if ky in opts:
                 setattr(self,ky,opts[ky])
@@ -463,6 +463,8 @@ class Poset(Chare):
             print(f'ERROR: \'clearTable\' flag is incompatible with \'sendFaces\'.')
             return None
         # payload = None if payload == tuple() or payload == [] else payload
+        if useRebase:
+            self.useRebase = True
 
         if self.flippedConstraints.rebasePt is None and self.useRebase:
             print(f'WARNING: rebase requested but no rebase point set. Proceeding from default root node.')
