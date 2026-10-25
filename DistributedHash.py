@@ -77,7 +77,7 @@ class Node():
         else:
             return self.nodeBytes
 
-    def tagTableRestore(self, tagIDtoName, tagNametoID):
+    def tagTableRestore(self):
         return self.tags
 
 # Vertex Node equality check
