@@ -20,6 +20,11 @@ XFER_CHUNK_SIZE = 1000
 
 QUERYOP_DELETE = 1
 
+class IgnoreArgClass:
+    pass
+
+ignoreArg = IgnoreArgClass()
+
 tableStoreProperties = ['table',  'tagNametoID', 'tagIDtoName', 'maxTagID', 'freeTagIDs']
 
 class Node():
@@ -44,11 +49,15 @@ class Node():
         self.payload = args[0] if len(args) > 0 else None
         self.allowUpdateReseed = False
 
-    def copy(self):
+    def copy(self,tagIDtoName=ignoreArg,tagNametoID=ignoreArg):
+        if isinstance(tagIDtoName,IgnoreArgClass):
+            tagIDtoName = self.tagIDtoName
+        if isinstance(tagNametoID,IgnoreArgClass):
+            tagNametoID = self.tagIDtoName
         cl = type(self)
         return cl( \
-                  self.localProxy, self.storePe, self.parentChare, self.nodeEqualityFn, self.lsbHash, \
-                  self.msbHash, copy(self.nodeBytes),self.N, self.originPe, deepcopy(self.face), deepcopy(self.witness), deepcopy(self.adj), deepcopy(self.payload) \
+                  self.localProxy, self.storePe, self.parentChare, self.nodeEqualityFn, tagIDtoName, tagNametoID, \
+                  self.lsbHash, self.msbHash, copy(self.nodeBytes),self.N, self.originPe, deepcopy(self.face), deepcopy(self.witness), deepcopy(self.adj), deepcopy(self.payload) \
                 )
 
     def __hash__(self):
@@ -309,10 +318,7 @@ class HashWorker(Chare):
                     self.tableNameMapMax += 1
                     self.tableNameMapFree.append(self.tableNameMapMax)
             self.tableStore[dest] = { \
-                                        'table': { \
-                                                (nTab:=val['ptr'].copy()) : {'checked':val['checked'],'ptr':nTab} \
-                                                for ky,val in self.tableStore[src]['table'].items()
-                                               }, \
+                                        'table': {}, \
                                         'tags':defaultdict(dict), \
                                         'tagIDtoName':deepcopy(self.tableStore[src]['tagIDtoName']), \
                                         'tagNametoID':deepcopy(self.tableStore[src]['tagNametoID']), \
@@ -320,6 +326,12 @@ class HashWorker(Chare):
                                         'freeTagIDs':deepcopy(self.tableStore[src]['freeTagIDs']), \
                                         'properties':{ ky: None for ky in self.trackProperties } \
                                     }
+            newTagIDtoName = self.tableStore[dest]['tagIDtoName']
+            newTagNametoID = self.tableStore[dest]['tagNametoID']
+            self.tableStore[dest]['table'] = { \
+                                                (nTab:=val['ptr'].copy(tagIDtoName=newTagIDtoName,tagNametoID=newTagNametoID)) : {'checked':val['checked'],'ptr':nTab} \
+                                                for ky,val in self.tableStore[src]['table'].items()
+                                               }
             for tg in self.tableStore[src]['tags'].keys():
                 self.tableStore[dest]['tags'][tg] = { \
                                                     ( nTab:=self.tableStore[dest]['table'][ky] ) : {'ct':deepcopy(val['ct']), 'ptr':nTab} \
