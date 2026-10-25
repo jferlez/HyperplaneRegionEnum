@@ -907,10 +907,13 @@ class Poset(Chare):
                 stripNum = idx
                 break
 
-        aug.root = tuple(newBaseRegFullTup)
+        # aug.root = tuple(newBaseRegFullTup)
         aug.setRebase(rebasePt)
 
-        print(f' --------- {retVal}')
+        if self.verbose > 5:
+            print(f' --------- {retVal}')
+        if retVal[0] < 0:
+            raise Exception(f'ERROR: unable to to find root region in table!')
         newAdj = deepcopy(retVal[3])
         if self.verbose > 5:
             print(f',,,,,,   newAdj = {newAdj}')
@@ -995,19 +998,21 @@ class Poset(Chare):
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
 
         self.populated = False
-        self.thisProxy.populatePoset(face=set(),witness=rebasePt,adjUpdate={-1:aug.N-stripNum},payload=deepcopy(retVal[5]),opts=localOpts,awaitable=True).get()
+        self.thisProxy.populatePoset( \
+                face=set(), \
+                witness=rebasePt, \
+                adjUpdate={-1:aug.N-stripNum}, \
+                payload=deepcopy(retVal[5]), \
+                opts=localOpts, \
+                useRebase=True, \
+                awaitable=True).get()
 
         # Now that we're all done, restore default dispatch for check/update
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
+        return True
 
     @coro
     def canonicalizeTable(self,opts={},rebasePt=None):
-        self.verbose = 1
-        defaultSettings = ['verbose']
-        for ky in defaultSettings:
-            if ky in opts:
-                setattr(self,ky,opts[ky])
-        opts['verbose'] = self.verbose
 
         localOpts = deepcopy(opts)
         localOpts['method'] = 'canonicalizeTable'
