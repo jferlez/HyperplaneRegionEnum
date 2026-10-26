@@ -517,8 +517,8 @@ class HashWorker(Chare):
             self.tagIDtoName = self.tableStore[tableName]['tagIDtoName']
             self.freeTagIDs = self.tableStore[tableName]['freeTagIDs']
             self.maxTagID = self.tableStore[tableName]['maxTagID']
-        for nd in self.tableStore[tableName]['table']:
-            nd['ptr'].tags = set()
+        for nd,val in self.tableStore[tableName]['table'].items():
+            val['ptr'].tags = set()
 
     @coro
     def setTrackedProperty(self,p,val):
