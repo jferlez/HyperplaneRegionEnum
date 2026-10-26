@@ -29,7 +29,8 @@ tableStoreProperties = ['table',  'tagNametoID', 'tagIDtoName', 'maxTagID', 'fre
 
 class Node():
 
-    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, tagIDtoName, tagNametoID, lsb,msb,nodeBytes,N, originPe, face, witness, adj, tags, *args):
+    def __init__(self,localProxy, storePe, parentChare, nodeEqualityFn, tagIDtoName, tagNametoID, lsb,msb,nodeBytes,N, \
+            originPe, face, witness, adj, tags, *args):
         self.lsbHash = lsb
         self.msbHash = msb
         self.nodeBytes = nodeBytes
@@ -57,7 +58,8 @@ class Node():
         cl = type(self)
         return cl( \
                   self.localProxy, self.storePe, self.parentChare, self.nodeEqualityFn, tagIDtoName, tagNametoID, \
-                  self.lsbHash, self.msbHash, copy(self.nodeBytes),self.N, self.originPe, deepcopy(self.face), deepcopy(self.witness), deepcopy(self.adj), deepcopy(self.payload) \
+                  self.lsbHash, self.msbHash, copy(self.nodeBytes),self.N, self.originPe, deepcopy(self.face), deepcopy(self.witness), \
+                  deepcopy(self.adj), deepcopy(self.tags), deepcopy(self.payload) \
                 )
 
     def __hash__(self):
