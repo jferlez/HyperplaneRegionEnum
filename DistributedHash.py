@@ -1572,6 +1572,10 @@ class DistHash(Chare):
         return retVal[0]
     @coro
     def getTabIdx(self,tableName=None):
+        if tableName is None:
+            tableName = self.thisProxy.getActiveTable(ret=True).get()
+        if not self.thisProxy.isTable(tableName,ret=True).get():
+            raise ValueError(f'ERROR: table name \'{tableName}\' does not exist!')
         retVal = self.hWorkersFull.getTabIdx(tableName=tableName,ret=True).get()
         assert len(retVal) > 0, f'Error'
         assert all([v==retVal[0] for v in retVal]), f'Error: inconsistent table idx {retVal}'
