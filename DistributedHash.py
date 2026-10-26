@@ -336,7 +336,7 @@ class HashWorker(Chare):
                                                }
             for tg in self.tableStore[src]['tags'].keys():
                 self.tableStore[dest]['tags'][tg] = { \
-                                                    ( nTab:=self.tableStore[dest]['table'][ky] ) : {'ct':deepcopy(val['ct']), 'ptr':nTab} \
+                                                    ( nTab:=self.tableStore[dest]['table'][ky]['ptr'] ) : {'ct':deepcopy(val['ct']), 'ptr':nTab} \
                                                     for ky,val in self.tableStore[src]['tags'][tg].items() \
                                                     }
             for p in self.tableStore[src]['properties'].keys():
