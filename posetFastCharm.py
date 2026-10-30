@@ -998,6 +998,8 @@ class Poset(Chare):
         self.distHashTable.setCheckDispatch({'check':'checkForInsert','update':'updateForInsert'},awaitable=True).get()
 
         self.populated = False
+        posetCheckFlag = self.usePosetChecking
+        self.usePosetChecking = False
         self.thisProxy.populatePoset( \
                 face=set(), \
                 witness=rebasePt, \
@@ -1006,6 +1008,7 @@ class Poset(Chare):
                 opts=localOpts, \
                 useRebase=True, \
                 awaitable=True).get()
+        self.usePosetChecking = posetCheckFlag
 
         # Now that we're all done, restore default dispatch for check/update
         self.distHashTable.setCheckDispatch({'check':'check','update':'update'},awaitable=True).get()
