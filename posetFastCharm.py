@@ -739,6 +739,10 @@ class Poset(Chare):
                 retVal = self.succGroup[self.posetPElist[0]].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
                 if retVal[0] > 0:
                     break
+        else:
+            newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(0, nodeBytes, self.flippedConstraints.N)
+            retVal = self.succGroup[self.posetPElist[0]].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
+
         self.distHashTable.awaitPending(usePosetChecking=self.usePosetChecking, awaitable=True).get()
         # Send a final termination signal:
         self.succGroup.sendAll(-2,awaitable=True).get()
