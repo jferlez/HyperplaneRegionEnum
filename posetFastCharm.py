@@ -2032,7 +2032,7 @@ class successorWorker(Chare):
             return successors, sel, witnessList
 
     @coro
-    def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=None,solver='glpk',lpopts={},witness=None,xN=None,face=None,adj=None,tags=None):
+    def processNodeSuccessorsInsertHyperplane(self,INTrep,N,H,payload=None,solver='glpk',lpopts={'solver':'glpk'},witness=None,xN=None,face=None,adj=None,tags=None):
         # *****
         # This function takes as input the regions newly split by the inserted hyperplane.
         #
