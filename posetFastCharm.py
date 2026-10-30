@@ -788,8 +788,8 @@ class Poset(Chare):
         localOpts['maxLevels'] = aug.N + 2
         tol = opts['tol'] if 'tol' in opts else 1e-9
         rTol = opts['rTol'] if 'rTol' in opts else 1e-9
-        solver = localOpts['solver'] if 'solver' in localOpts else 'glpk'
-        lpopts = localOpts['lpopts'] if 'lpopts' in localOpts else None
+        solver = localOpts['solver'] if 'solver' in localOpts and localOpts['solver'] is not None else 'glpk'
+        lpopts = localOpts['lpopts'] if 'lpopts' in localOpts else {'solver':solver}
 
         # nrm = np.linalg.norm(np.hstack([-newA.flatten()])) / normalize
         # newA = -newA.copy().flatten() / nrm
