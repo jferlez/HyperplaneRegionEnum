@@ -121,7 +121,7 @@ class flipConstraints:
         except Exception as e:
             raise(ValueError('Input must be a list or list-castable object'))
 
-        assert max(hyperList) < (self.allN if allN else self.N), f'Elements of input must be less than {self.allN if allN else self.N}'
+        assert len(hyperList) == 0 or max(hyperList) < (self.allN if allN else self.N), f'Elements of input must be less than {self.allN if allN else self.N}'
 
         for k in range(self.allN if allN else self.N):
             idx = k if allN else self.nonRedundantHyperplanes[k]
