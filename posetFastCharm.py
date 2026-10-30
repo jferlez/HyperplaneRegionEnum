@@ -823,7 +823,7 @@ class Poset(Chare):
         projWb = np.zeros((aug.N-1, aug.d),dtype=np.float64)
         projWb[:,0] = np.abs(np.max(projFull[:,0])) + np.arange(1,projWb.shape[0]+1,1)
         projWb[diffHyperIdx,:] = projFull[:len(diffHyperIdx), :]
-        projFixed = projFull[diffFixedIdx, :]
+        projFixed = projFull[len(diffHyperIdx):, :]
 
         if projWb.shape[1] > 1: # Should be equivalent to self.tll.n >= 2
             pt = region_helpers.findInteriorPoint(projFixed,solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
