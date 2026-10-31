@@ -644,7 +644,7 @@ def recodeRegNewN(strip, reg, N):
         return reg, tuple(bytesToList(reg,*byteLenFromN(N))), N
     elif strip < 0:
         newN = N + strip
-        assert newN > 0, f'Can\'t remove {strip} hyperplane from a list of {N}'
+        assert newN >= 0, f'Can\'t remove {strip} hyperplane from a list of {N}'
         newWholeBytes, newTailBits = byteLenFromN(newN)
         newReg = reg[:(newWholeBytes + (1 if newTailBits > 0 else 0))]
         if newTailBits > 0:
