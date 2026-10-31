@@ -865,7 +865,7 @@ class Poset(Chare):
                                             rTol = rTol, \
                                             normalize = 1.0 \
                                         )
-        projFlipConstraints.maskHyperplanes(diffHyperIdx)
+        projFlipConstraints.maskHyperplanes(projFlipConstraints.collapseRegion(sorted(tuple(diffHyperIdx))))
 
         print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
 
