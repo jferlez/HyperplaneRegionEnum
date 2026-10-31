@@ -75,6 +75,9 @@ class PosetNode(DistributedHash.Node):
                 self.face = set([ky for ky in self.adj if ky != -1])
         # print(f'    :-:-:-:-:    {charm.myPe()} {nodeBytes}: Updating original face information {origFace} to {self.face} {self.adj}')
         # self.update(lsb, msb, nodeBytes, N, originPe, face, witness, adj, *args)
+        payload = args[0] if len(args) >= 1 and args[0] is not None else None
+        if self.payload is None and payload is not None:
+            self.payload = payload
         return False
     def adjFaceCreate(self):
         if not isinstance(self.adj,dict) or len(self.adj) == 0:
@@ -2116,15 +2119,18 @@ class successorWorker(Chare):
             adj = q[3]
             tags = q[4]
             oldPayload = q[5]
+            if self.verbose > 9:
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    DELETED NODE WITH OLDPAYLOAD: {oldPayload}')
         else:
             adj = None
+            oldPayload = payload
             if self.verbose > 9:
-                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    WARNING {charm.myPe()}: Unable to find successor region to delete! {neighborReg} {adj}')
+                print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    WARNING {charm.myPe()}: Unable to find successor region to delete!  {adj}')
                 print(f'    ----[[[{INTrepFull}, {charm.myPe()}]]]    query results = {q}; adjUpdate = {adj}')
         adj[-1] = N
         if self.verbose > 9:
             print(f' %%%%%%%% MADE IT HERE! %%%%%%%%')
-            print(f'........... N={N} {adj}')
+            print(f'........... N={N} {adj} {payload} {oldPayload}')
 
         Ntab = adj[-1]
         incommingFace = face
@@ -2357,7 +2363,7 @@ class successorWorker(Chare):
                                         witness \
                                     ), \
                                     adjUpdate=posFacesUpdate, \
-                                    payload=payload, \
+                                    payload=oldPayload, \
                                     ret=True \
                                 ).get()
 
@@ -2392,7 +2398,7 @@ class successorWorker(Chare):
                                         intPtNeg \
                                     ), \
                                     adjUpdate=negAdj, \
-                                    payload=payload, \
+                                    payload=oldPayload, \
                                     ret=True \
                                 ).get()
         if self.verbose > 9:
