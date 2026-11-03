@@ -276,7 +276,7 @@ class flipConstraints:
         retParHypers = []
         retVal = np.ones((self.N,),dtype=np.bool_)
         if pars is not None:
-            idenHypers = list(set(pars[0]) & self.hyperSet.uniqRowIdxSet.keys())
+            idenHypers = list(set(pars[0]) & set(self.hyperSet.uniqRowIdxSet.keys()))
             parHypers = {self.hyperSet.uniqRowIdxSet[i] for i in (set(pars[1]) & self.hyperSet.uniqRowIdxSet.keys())}
             for idx, i in enumerate(self.nonRedundantHyperplanes):
                 if len(idenHypers) > 0 and i == self.hyperSet.uniqRowIdxSet[idenHypers[0]]:
