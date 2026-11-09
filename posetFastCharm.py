@@ -803,9 +803,11 @@ class Poset(Chare):
         # newb = copy(newb).flatten() / nrm
         # From now on, we are going to work in CDD format...
         hyper = np.hstack([-newbt, newAt])
-        print(f'Old hyper = {hyper}')
+        if self.verbose > 9:
+            print(f'Old hyper = {hyper}')
         hyper = aug.constraints[aug.N-1,:]
-        print(f'New hyper = {hyper}')
+        if self.verbose > 9:
+            print(f'New hyper = {hyper}')
 
         # projWbOld, subIdxOld = region_helpers.projectConstraints(aug.constraints[:aug.N-1,:],hyper,tol=tol,rTol=rTol)
         # projFixedOld, _ = region_helpers.projectConstraints(aug.constraints[aug.N:,:],hyper,subIdx=subIdxOld,tol=tol,rTol=rTol)
@@ -875,7 +877,8 @@ class Poset(Chare):
         if self.verbose > 9:
             print(f'projFlipConstraints.constraints AFTER masking = {projFlipConstraints.constraints}')
 
-        print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
+        if self.verbose > 9:
+            print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
 
         newBaseRegFullTup = tuple(np.nonzero((-aug.constraints[:(aug.N-1),1:] @ ptLift - aug.constraints[:(aug.N-1),0].reshape(-1,1)).flatten() >= tol)[0])
         newBaseRegFull = region_helpers.tupToBytes(newBaseRegFullTup, *region_helpers.byteLenFromN(aug.N))
@@ -890,10 +893,11 @@ class Poset(Chare):
             self.oldFlippedConstraints = None
             return False
 
-        print(newBaseRegFullTup)
-        print(rebasePt)
+        if self.verbose > 9:
+            print(newBaseRegFullTup)
+            print(rebasePt)
 
-        print(np.allclose(aug.getRegionConstraints(tuple()) , aug.constraints))
+            print(np.allclose(aug.getRegionConstraints(tuple()) , aug.constraints))
 
         # Now we query the poset to find the correct encoding for the region we care about
         # This will be sent with adjUpdate[-1] to bootstrap the process of removing the old node encodings
@@ -912,9 +916,11 @@ class Poset(Chare):
             if self.verbose > 5:
                 print(f'    <><><><>    Trying  to recode {newBaseRegFull} to length {region_helpers.byteLenFromN(aug.N-idx)}')
             newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, newBaseRegFull, aug.N)
-            print((newBaseReg, newBaseRegTup, newBaseRegN))
+            if self.verbose > 5:
+                print((newBaseReg, newBaseRegTup, newBaseRegN))
             retVal = self.succGroup[self.posetPElist[0]].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
-            print(retVal)
+            if self.verbose > 5:
+                print(retVal)
             if retVal[0] > 0:
                 stripNum = idx
                 break
@@ -933,7 +939,8 @@ class Poset(Chare):
         for f in retVal[1]:
             if not f in newAdj:
                 newAdj[f] = self.flippedConstraints.baseN
-        print(newAdj)
+        if self.verbose > 9:
+            print(newAdj)
 
         # Insertion
         newBaseRegFullTup = tuple( \
