@@ -850,6 +850,7 @@ class Poset(Chare):
         if self.verbose > 9:
             print(hyper[1:].shape)
             print(pt)
+            print(f'subIdx = {subIdx}; diffHypers = {diffHypers}; diffHyperIdx = {diffHyperIdx}\nprojWb = {projWb}\nprojFull = {projFull}\nprojFixed = {projFixed}')
 
         ptLift = np.zeros((hyper.shape[0]-1,1),dtype=np.float64)
         ptLift[:subIdx,0] = pt[:subIdx,0]
@@ -868,7 +869,11 @@ class Poset(Chare):
                                             rTol = rTol, \
                                             normalize = 1.0 \
                                         )
+        if self.verbose > 9:
+            print(f'ptLift = {ptLift}; diffHyperIdx = {diffHyperIdx}; collapsed diffHyperIdx = {projFlipConstraints.collapseRegion(sorted(tuple(diffHyperIdx)))}\nprojFlipConstraints.constraints BEFORE masking = {projFlipConstraints.constraints}')
         projFlipConstraints.maskHyperplanes(projFlipConstraints.collapseRegion(sorted(tuple(diffHyperIdx))))
+        if self.verbose > 9:
+            print(f'projFlipConstraints.constraints AFTER masking = {projFlipConstraints.constraints}')
 
         print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
 
@@ -2172,6 +2177,7 @@ class successorWorker(Chare):
         if self.verbose > 9:
             print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   validFlipsList = {validFlipsList}; validFlipsListExpand = {validFlipsListExpand}; collapseRegion = {self.iFlipConstraints.collapseRegion( validFlipsList )} {self.iFlipConstraints.nonRedundantHyperplanes}')
             print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   collapsedFaces = {collapsedFaces}')
+            print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   projected region constraints = {self.iFlipConstraints.getRegionConstraints( projINTrep, allN=False  )}')
         splitFacesIdx, _ = self.thisProxy[self.thisIndex].concreteMinHRep( \
                                             self.iFlipConstraints.getRegionConstraints( projINTrep, allN=False  ), \
                                             None, \
