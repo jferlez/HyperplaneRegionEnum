@@ -125,7 +125,7 @@ class flipConstraints:
 
         for k in range(self.allN if allN else self.N):
             idx = k if allN else self.nonRedundantHyperplanes[k]
-            if not idx in hyperList:
+            if not k in hyperList:
                 self.redundantFlips[ idx ] = -1
         self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
         self.N = len(self.nonRedundantHyperplanes)
