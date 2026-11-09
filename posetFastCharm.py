@@ -2186,7 +2186,7 @@ class successorWorker(Chare):
                                         ).get()
         if self.verbose > 9:
             print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   {[(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[collapsedFaces[i]],self.iFlipConstraints.hyperSet.expandDuplicates(iexp)) for i in splitFacesIdx]}')
-        splitFaces = {(self.iFlipConstraints.nonRedundantHyperplanes[(iexp:=collapsedFaces[i])]): \
+        splitFaces = {(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[(collapsedFaces[i])]): \
                       self.iFlipConstraints.hyperSet.expandDuplicates(iexp) for i in splitFacesIdx}
                       # [validFlipsList[ii] for ii in self.iFlipConstraints.hyperSet.expandDuplicates(iexp)] for i in splitFacesIdx}
         if self.verbose > 9:
