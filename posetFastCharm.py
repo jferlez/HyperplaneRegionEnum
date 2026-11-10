@@ -1098,7 +1098,8 @@ class Poset(Chare):
         aug.baseN = None
         if rebasePt is not None:
             aug.rebasePt = deepcopy(rebasePt)
-        self.succGroup.initialize(aug.N, aug, None, awaitable=True).get()
+        self.succGroup.setProperty('flippedConstraints', aug.serialize() , awaitable=True).get()
+        self.succGroup.setProperty('constraints', aug.constraints.copy(), awaitable=True).get()
         self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
         # Reset useRebase to False
         self.succGroup.setProperty('useRebase', False , awaitable=True).get()
