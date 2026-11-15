@@ -830,9 +830,16 @@ class Poset(Chare):
         # This will allow the usual pattern of indexing to convert indicies for the projected constraints to the
         # original constraints
         projWb = np.zeros((aug.N-1, aug.d),dtype=np.float64)
-        projWb[:,0] = np.abs(np.max(projFull[:,0])) + np.arange(1,projWb.shape[0]+1,1)
-        projWb[diffHyperIdx,:] = projFull[:len(diffHyperIdx), :]
         projFixed = projFull[len(diffHyperIdx):, :]
+        if projFixed.shape[0] > 0 and aug.d > 1:
+            # Dummy rows are loosened copies of a projected fixed constraint: they are redundant (never a facet),
+            # distinct from each other, and have a non-zero normal (so they survive normalization without NaNs)
+            dummyScale = 1.0 + np.max(np.abs(projFull))
+            projWb[:,:] = projFixed[0,:].reshape(1,-1)
+            projWb[:,0] += dummyScale * (1.0 + np.arange(1,projWb.shape[0]+1,1))
+        else:
+            projWb[:,0] = np.abs(np.max(projFull[:,0])) + np.arange(1,projWb.shape[0]+1,1)
+        projWb[diffHyperIdx,:] = projFull[:len(diffHyperIdx), :]
 
         if projWb.shape[1] > 1: # Should be equivalent to self.tll.n >= 2
             pt = region_helpers.findInteriorPoint(projFixed,solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
@@ -897,7 +904,7 @@ class Poset(Chare):
             print(newBaseRegFullTup)
             print(rebasePt)
 
-            print(np.allclose(aug.getRegionConstraints(tuple()) , aug.constraints))
+            print(np.allclose(aug.getRegionConstraints(tuple(), allN=False) , aug.constraints))
 
         # Now we query the poset to find the correct encoding for the region we care about
         # This will be sent with adjUpdate[-1] to bootstrap the process of removing the old node encodings

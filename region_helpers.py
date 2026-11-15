@@ -213,6 +213,9 @@ class flipConstraints:
             selArr[remd,] = np.zeros((len(remd),),dtype=np.bool_)
             removedActive = np.any( self.redundantFlips[np.logical_not(selArr[:self.allN]),] > 0 )
             self.redundantFlips = self.redundantFlips[selArr[:self.allN],]
+            # Keep nA/nb consistent with allConstraints (insertHyperplane rebuilds allConstraints from them)
+            self.nA = self.nA[selArr[:self.allN],:]
+            self.nb = self.nb[selArr[:self.allN],:]
             rootTemp = sorted(list(set(rootTemp) - set(remd)))
             # If a hyperplane was added back in, make sure it is counted as a non-redundant hyperplane
             # when it replaces a previously active, non-redundant hyperplane
@@ -242,7 +245,9 @@ class flipConstraints:
         self.nonRedundantHyperplanes = np.nonzero(self.redundantFlips > 0)[0]
         self.root = tuple(rootTemp)
         self.N = len(self.nonRedundantHyperplanes)
-        self.constraints = np.vstack([ self.hyperSet.getRows()[self.nonRedundantHyperplanes,:], self.allConstraints[self.allN:,:]])
+        # NB: use allConstraints here (not hyperSet.getRows()): the vectorSet stores inserted hyperplanes in the
+        # orientation they were inserted with, which may differ in sign from the (flipped) rows of allConstraints
+        self.constraints = np.vstack([ self.allConstraints[self.nonRedundantHyperplanes,:], self.allConstraints[self.allN:,:]])
         self.nrms = np.vstack([ self.allNrms[self.nonRedundantHyperplanes,], self.allNrms[self.allN:,] ])
         self.wholeBytes = self.N // 8
         self.tailBits = self.N % 8
@@ -276,10 +281,13 @@ class flipConstraints:
         retParHypers = []
         retVal = np.ones((self.N,),dtype=np.bool_)
         if pars is not None:
-            idenHypers = list(set(pars[0]) & set(self.hyperSet.uniqRowIdxSet.keys()))
-            parHypers = {self.hyperSet.uniqRowIdxSet[i] for i in (set(pars[1]) & self.hyperSet.uniqRowIdxSet.keys())}
+            # NB: the elements of nonRedundantHyperplanes and of pars[0]/pars[1] are *row indices* of hyperSet
+            # (i.e. indices into allConstraints), whereas the values of uniqRowIdxSet are positions in the
+            # uniqRowIdx list; these only coincide when hyperSet contains no duplicate rows.
+            idenHypers = set(pars[0]) & set(self.hyperSet.uniqRowIdxSet.keys())
+            parHypers = set(pars[1]) & set(self.hyperSet.uniqRowIdxSet.keys())
             for idx, i in enumerate(self.nonRedundantHyperplanes):
-                if len(idenHypers) > 0 and i == self.hyperSet.uniqRowIdxSet[idenHypers[0]]:
+                if i in idenHypers:
                     retIdenHypers.append(idx)
                     retVal[idx] = False
                     # There should only be on instance of any given hyperplane represented in
@@ -329,7 +337,11 @@ class flipConstraints:
         # Test each parallel hyperplane to see if it is compatible with (on the correct side of)
         # the projection constraint
         testPt = -(hyperIn[0] / np.linalg.norm(hyperIn[1:])**2) * hyperIn[1:].reshape(-1,1)
-        unsatPars = np.any( ( -H[parHypers,1:] @ testPt > H[parHypers,0].reshape(-1,1) + self.tol ).flatten() )
+        # NB: without a region specification, the orientation of the (non-fixed) arrangement hyperplanes in H is
+        # that of the root region, which says nothing about feasibility: a hyperplane parallel to an existing
+        # arrangement hyperplane is still valid on *either* side of it. So only test the fixed constraints here.
+        parTest = parHypers if regSpec is not None else [p for p in parHypers if p >= self.N]
+        unsatPars = np.any( ( -H[parTest,1:] @ testPt > H[parTest,0].reshape(-1,1) + self.tol ).flatten() )
         H = H[diffHypers,:]
 
         extraDiffHypers = None
