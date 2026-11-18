@@ -2276,9 +2276,11 @@ class successorWorker(Chare):
                 stripNum = None
                 for idx in range(1,self.flippedConstraints.N - self.flippedConstraints.baseN + 1):
                     newBaseReg, newBaseRegTup, newBaseRegN = region_helpers.recodeRegNewN(-idx, neighborReg, self.flippedConstraints.N)
-                    print((newBaseReg, newBaseRegTup, newBaseRegN))
+                    if self.verbose > 9:
+                        print((newBaseReg, newBaseRegTup, newBaseRegN))
                     retVal = self.thisProxy[self.thisIndex].query([newBaseReg, newBaseRegTup, newBaseRegN],ret=True).get()
-                    print(retVal)
+                    if self.verbose > 9:
+                        print(retVal)
                     if retVal[0] > 0:
                         stripNum = idx
                         break
