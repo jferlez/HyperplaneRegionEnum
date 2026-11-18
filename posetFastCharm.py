@@ -450,7 +450,7 @@ class Poset(Chare):
             return
         self.clearTable = 'speed'
         self.retrieveFaces = False
-        self.verbose = 1
+        self.verbose = 0
         self.sendFaces = False
         self.queryReturnInfo = False
         self.maxLevels = self.N + 1
@@ -651,7 +651,7 @@ class Poset(Chare):
         statsFut = Future()
         self.succGroupFull.getStats(statsFut)
         stats = statsFut.get()
-        if self.verbose:
+        if self.verbose > 0:
             stats['levelSizes'] = self.levelSizes
             print('Total LPs used: ' + str(stats))
 
