@@ -412,7 +412,7 @@ class flipConstraints:
 
     # This helper method is only meant to be called in getRegionConstraints above
     def insertRedundant(self, nodeBytesInt):
-        print(nodeBytesInt)
+        # print(nodeBytesInt)
         if isinstance(nodeBytesInt,bytearray):
             nodeBytes = tuple(self.bytesToList(nodeBytesInt))
         else:
