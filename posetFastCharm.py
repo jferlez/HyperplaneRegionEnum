@@ -764,7 +764,7 @@ class Poset(Chare):
 
     @coro
     def insertHyperplane(self,newA, newb, normalize=1.0, opts={}):
-        self.verbose = 1
+        self.verbose = 0
         defaultSettings = ['verbose']
         for ky in defaultSettings:
             if ky in opts:
