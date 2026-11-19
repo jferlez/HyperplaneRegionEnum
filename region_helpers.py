@@ -90,8 +90,8 @@ class flipConstraints:
         self.redundantFlips[self.nonRedundantHyperplanes,] = np.ones_like(self.nonRedundantHyperplanes,dtype=np.int64)
         self.wholeBytes = self.N // 8
         self.tailBits = self.N % 8
-        self.wholeBytesAllN = self.wholeBytes
-        self.tailBitsAllN = self.tailBits
+        self.wholeBytesAllN = self.allN // 8
+        self.tailBitsAllN = self.allN % 8
         self.rebasePt = None
         self.baseN = None
 
@@ -164,11 +164,21 @@ class flipConstraints:
             self.normalize = None
 
         self.allN += 1
+        # These follow allN, whether or not the new hyperplane turns out to be redundant (i.e. a duplicate of
+        # an existing hyperplane or of a fixed constraint); the new hyperplane is redundant until shown otherwise
+        self.wholeBytesAllN = self.allN // 8
+        self.tailBitsAllN = self.allN % 8
+        self.redundantFlips = np.hstack([self.redundantFlips, np.array([-1],dtype=self.redundantFlips.dtype)])
 
         if debug:
             print(f'newHyperplane = {newHyperplane}; {self.fSet.isElem(newHyperplane)}')
 
-        if (not self.fSet is None and not self.fSet.isElem(newHyperplane)) and self.hyperSet.insertRow(newHyperplane):
+        # hyperSet must always have one row for each of the first allN rows of allConstraints (expandDuplicates
+        # and removeRow are called with those row indices), so the new row is inserted unconditionally:
+        # vectorSet.insertRow keeps duplicates. It is inserted with the orientation it has in allConstraints.
+        isNew = self.hyperSet.insertRow(newSign * newHyperplane)
+        isFixed = (self.fSet is not None) and self.fSet.isElem(newSign * newHyperplane)
+        if isNew and not isFixed:
             self.nonRedundantHyperplanes = np.array(self.nonRedundantHyperplanes.tolist() + [self.allN-1], dtype=np.int64)
             self.N = len(self.nonRedundantHyperplanes)
 
