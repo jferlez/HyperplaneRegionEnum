@@ -105,7 +105,9 @@ def runSeed(seed, clsName, nOps=25, verbose=False):
             i = int(rng.integers(len(model.rows)))
             return model.rows[i] * float(rng.choice([-1.0, 1.0, 2.0, -0.5])), model.kinds[i]
         a = rng.normal(size=d)
-        if abs(a[-1]) < 0.2: a[-1] = 0.5        # (a zero last coefficient is a separate limitation of vectorSet)
+        if abs(a[-1]) < 0.2: a[-1] = 0.5
+        if rng.random() < 0.3: a[-1] = 0.0      # hyperplane that does not involve the last coordinate
+        a = a / np.linalg.norm(a)
         if kind == 'fixed':
             j = int(rng.integers(d)); a = np.zeros(d); a[j] = float(rng.choice([-1.0, 1.0]))
             return np.hstack([[box], a]) * float(rng.choice([1.0, -2.0])), 'fixed'

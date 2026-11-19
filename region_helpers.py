@@ -12,6 +12,7 @@ except Exception as e:
     import vectorSet.vectorSet as vectorSet
 from itertools import chain
 import bisect
+import warnings
 
 class flipConstraints:
 
@@ -94,6 +95,32 @@ class flipConstraints:
         self.tailBitsAllN = self.allN % 8
         self.rebasePt = None
         self.baseN = None
+
+    # Called by pickle (and copy/deepcopy) instead of updating __dict__ directly. A pickle holds only the
+    # attributes of an object, never the code of its class, so an object that was pickled by an older version of
+    # this class comes back with the current methods and the old data; that data is brought up to date here.
+    # (The vectorSet objects hyperSet and fSet upgrade themselves in the same way.)
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.upgradeFromLegacy()
+
+    def upgradeFromLegacy(self):
+        allN = self.__dict__.get('allN', None)
+        redundantFlips = self.__dict__.get('redundantFlips', None)
+        if allN is None or redundantFlips is None:
+            return
+        # Older versions of insertHyperplane did not extend redundantFlips when the new hyperplane was a
+        # duplicate; the missing entries are those of the (redundant) hyperplanes that were inserted last
+        if len(redundantFlips) < allN:
+            self.redundantFlips = np.hstack([redundantFlips, np.full(allN - len(redundantFlips), -1, dtype=redundantFlips.dtype)])
+        # ... nor did they (or the base class constructor) keep the byte lengths of "allN" regions up to date
+        self.wholeBytesAllN = allN // 8
+        self.tailBitsAllN = allN % 8
+        hyperSet = self.__dict__.get('hyperSet', None)
+        if hyperSet is not None and hyperSet.N != allN:
+            # Older versions of insertHyperplane did not add duplicates of a fixed constraint to hyperSet
+            warnings.warn(f'flipConstraints (legacy object): hyperSet has {hyperSet.N} rows for {allN} hyperplanes; ' \
+                            + 'duplicates cannot be expanded or removed correctly for this object')
 
     def serialize(self):
         self.hyperSet.serialize()
