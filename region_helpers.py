@@ -91,6 +91,7 @@ class flipConstraints:
 
         self.allNrms = np.ones((self.allConstraints.shape[0],1),dtype=np.float64)
         if not normalize is None:
+            self._checkNormals(self.allConstraints, self.allN)
             self.allNrms = self.normalize / np.linalg.norm(self.allConstraints[:,1:],axis=1).reshape(-1,1)
             self.allConstraints = self.allNrms * self.allConstraints
         else:
@@ -128,6 +129,31 @@ class flipConstraints:
         self.tailBitsAllN = self.allN % 8
         self.rebasePt = None
         self.baseN = None
+
+    @staticmethod
+    def _checkNormals(rows, numHypers, inserted=False):
+        # A row [c, a] with a = 0 is the constraint "c >= 0": it holds everywhere or nowhere, and is not a
+        # hyperplane. Normalizing it divides by ||a|| = 0 and leaves the row [+-inf, nan, ..., nan] in the
+        # object, which fails much later and far from the cause (in the first LP that contains the row). Such
+        # rows come from CONSTANT functions, e.g. the level set {l(x) = bound} of a constant local linear
+        # function of a TLL, and have to be dealt with by the caller (TLLHypercubeReach does so for lower bound
+        # verification). Without normalization (normalize=None) zero normals are accepted as before.
+        # (A plain ValueError, not DegenerateHyperplane: callers catch the latter to skip a projection.)
+        with np.errstate(over='ignore', invalid='ignore'):
+            nrm = np.linalg.norm(rows[:,1:], axis=1)
+        bad = np.nonzero(~(nrm > 0) | ~np.isfinite(nrm))[0]
+        if len(bad) > 0:
+            hypers = [int(i) for i in bad if i < numHypers]
+            fixed = [int(i) - numHypers for i in bad if i >= numHypers]
+            raise ValueError( \
+                    'cannot normalize constraints with a zero (or non-finite) normal vector: ' \
+                    + ('the inserted hyperplane' if inserted else (f'hyperplane(s) {hypers[:10]}{" ..." if len(hypers) > 10 else ""}' if len(hypers) > 0 else '')) \
+                    + (' and ' if len(hypers) > 0 and len(fixed) > 0 else '') \
+                    + (f'fixed constraint(s) {fixed[:10]}{" ..." if len(fixed) > 10 else ""}' if len(fixed) > 0 else '') \
+                    + f'; first offending row [c, a] = {rows[bad[0],:].tolist()}. A zero normal is a constant constraint "c >= 0", not a' \
+                    + ' hyperplane (e.g. the level set of a constant function): remove such rows before creating the constraints object,' \
+                    + ' or create it with normalize=None.' \
+                )
 
     # Called by pickle (and copy/deepcopy) instead of updating __dict__ directly. A pickle holds only the
     # attributes of an object, never the code of its class, so an object that was pickled by an older version of
@@ -198,6 +224,9 @@ class flipConstraints:
     def insertHyperplane(self,newA,newb,debug=False):
         newSign = None
         newHyperplane = np.hstack([-newb, newA])
+        if not self.normalize is None:
+            # (before anything is changed, so that the object stays usable if this raises)
+            self._checkNormals(np.asarray(newHyperplane, dtype=np.float64).reshape(1,-1), 1, inserted=True)
         newSign = 1 if newA.reshape(1,-1) @ self.pt >= newb - self.tol else -1
         if np.abs(newA.reshape(1,-1) @ self.pt - newb) <= self.tol:
             updatePoint = True
