@@ -5,7 +5,18 @@ from glpk import glpk, GLPK
 import numpy as np
 from copy import copy, deepcopy
 
+try:
+    from scipy.optimize import linprog as scipyLinprog
+except ImportError:
+    scipyLinprog = None
+
 glpkDefaults = {'basis_fac':'btf+cgr'}
+# GLPK's simplex has no iteration limit by default, and on a degenerate LP it can cycle forever (a 19 x 5 LP with
+# two identical rows did, see tests/test_lp_cycling.py). So every solve gets a generous limit, and a solve that
+# ends without an answer (iteration limit, numerical instability, ...) is repeated without scaling, and then with
+# HiGHS if SciPy is available. None of this changes the result of a solve that GLPK finishes normally.
+glpkMaxItBase = 20000
+glpkMaxItPerRow = 50
 glpkSimplexDefaults = {'init_basis':'adv','method':'dualp','tol_bnd':1e-10,'tol_dj':1e-10,'presolve':False}
 glpkSimplexKeys = {'method','init_basis','steep','ratio','tol_bnd','tol_dj','tol_piv','obj_ll','obj_ul','presolve','exact'}
 glpkArgs = {'scale','maxit','timeout','basis_fac'}
@@ -81,28 +92,47 @@ class encapsulateLP():
             for ky in lpopts.keys():
                 if ky in glpkArgs:
                     glpkOpts[ky] = lpopts[ky]
-            res = glpk( \
-                        obj, \
-                        A_ub=A.copy(), \
-                        b_ub=b.copy(), \
-                        A_eq=None, \
-                        b_eq=None, \
-                        bounds=(None, None), \
-                        message_level=GLPK.GLP_MSG_OFF, \
-                        disp=False, \
-                        simplex_options=simplexOpts, \
-                        **glpkOpts \
-                    )
-            if 'x' in res:
-                x = np.array(res['x']).reshape(-1,1)
-            else:
-                x = None
-            if 'status' in res:
-                status = glpkStatus[res['status']]
-            elif 'ret_code' in res:
-                status = glpkRetCodes[res['ret_code']]
-            else:
-                status = 'unk'
+            if not 'maxit' in glpkOpts:
+                glpkOpts['maxit'] = glpkMaxItBase + glpkMaxItPerRow * (A.shape[0] + A.shape[1])
+            def solveGLPK(opts):
+                res = glpk( \
+                            obj, \
+                            A_ub=A.copy(), \
+                            b_ub=b.copy(), \
+                            A_eq=None, \
+                            b_eq=None, \
+                            bounds=(None, None), \
+                            message_level=GLPK.GLP_MSG_OFF, \
+                            disp=False, \
+                            simplex_options=simplexOpts, \
+                            **opts \
+                        )
+                xRes = np.array(res['x']).reshape(-1,1) if 'x' in res else None
+                if 'status' in res:
+                    statusRes = glpkStatus[res['status']]
+                elif 'ret_code' in res:
+                    statusRes = glpkRetCodes[res['ret_code']]
+                else:
+                    statusRes = 'unk'
+                return statusRes, xRes
+            conclusive = ('optimal', 'primal infeasible', 'dual infeasible')
+            status, x = solveGLPK(glpkOpts)
+            if not status in conclusive and glpkOpts.get('scale', True):
+                # e.g. 'iteration limit exceeded' (cycling): the same LP is often solved at once without scaling
+                self.lpRetries = getattr(self, 'lpRetries', 0) + 1
+                status, x = solveGLPK(dict(glpkOpts, scale=False))
+            if not status in conclusive and scipyLinprog is not None:
+                self.lpRetries = getattr(self, 'lpRetries', 0) + 1
+                try:
+                    res = scipyLinprog(np.asarray(obj, dtype=np.float64).flatten(), A_ub=np.asarray(A, dtype=np.float64), b_ub=np.asarray(b, dtype=np.float64).flatten(), bounds=[(None, None)] * A.shape[1], method='highs')
+                    if res.status == 0:
+                        status, x = 'optimal', np.array(res.x).reshape(-1,1)
+                    elif res.status == 2:
+                        status, x = 'primal infeasible', None
+                    elif res.status == 3:
+                        status, x = 'dual infeasible', None
+                except Exception:
+                    pass
 
         if status != 'optimal' and status != 'primal infeasible' and status != 'dual infeasible':
             if 'fallback' in lpopts:
