@@ -878,6 +878,17 @@ class Poset(Chare):
                                             rTol = rTol, \
                                             normalize = 1.0 \
                                         )
+        # pt is the centre of the slice of the fixed constraints, and it can lie exactly on one of the projected
+        # hyperplanes (e.g. x0 = x4 through the centre of a cube). In that case the constraints object above has
+        # picked one of the adjacent cells as its root region and has moved its own anchor point into the interior
+        # of that cell. The insertion has to start from THAT point: the region of the full arrangement that is
+        # identified from ptLift below must be the one whose slice is the root cell of projFlipConstraints, and a
+        # point on a hyperplane does not determine it.
+        if not is1d and not np.array_equal(projFlipConstraints.pt, pt):
+            pt = projFlipConstraints.pt
+            ptLift[:subIdx,0] = pt[:subIdx,0]
+            ptLift[(subIdx+1):,0] = pt[subIdx:,0]
+            ptLift[subIdx,0] = (-1/hyper[subIdx+1]) * (-(hyperSlice.reshape(1,-1) @ pt)[0,0] + hyper[0])
         if self.verbose > 9:
             print(f'ptLift = {ptLift}; diffHyperIdx = {diffHyperIdx}; collapsed diffHyperIdx = {projFlipConstraints.collapseRegion(sorted(tuple(diffHyperIdx)))}\nprojFlipConstraints.constraints BEFORE masking = {projFlipConstraints.constraints}')
         projFlipConstraints.maskHyperplanes(projFlipConstraints.collapseRegion(sorted(tuple(diffHyperIdx))))
@@ -2321,8 +2332,9 @@ class successorWorker(Chare):
                                 ret=True \
                             ).get()
 
-            for ky in spuriousSplitFaces:
-                del splitFaces[ky]
+        # (after the loop: deleting from splitFaces while iterating over it raises a RuntimeError)
+        for ky in spuriousSplitFaces:
+            del splitFaces[ky]
 
 
         # Now fix the face information for the current node

@@ -21,7 +21,40 @@ class flipConstraints:
             raise ValueError('normalize option must be None or a float > 0.0')
         v = nA @ pt
         v = v.flatten() - nb.flatten()
-        self.flipMapN = np.where(v<tol,-1,1)
+        # Tie rule (the same everywhere: insertHyperplane, setRebase and the region lookups of posetFastCharm): a
+        # point within tol of a hyperplane counts as being on its POSITIVE side as given, i.e. a hyperplane through
+        # the anchor point keeps the orientation it was specified with. (pt is then moved into the interior of the
+        # root region below, so that the anchor is never left on a hyperplane.)
+        self.flipMapN = np.where(v < -tol,-1,1)
+        ties = np.nonzero(np.abs(v) <= tol)[0]
+        if len(ties) > 1:
+            # With several hyperplanes through pt, the sides chosen by the tie rule need not have a point in
+            # common (three lines through a point in the plane leave 6 of the 8 sign patterns), and then there
+            # would be no root region. So make sure that they do; if not, orient the ties by a point next to pt
+            # instead, i.e. by a direction u in which pt is moved infinitesimally (deterministic, so that every
+            # object built from the same data agrees). Such a point is always in SOME region.
+            def rootRegion(signs):
+                rows = np.hstack([(-signs.reshape(-1,1) * nb.reshape(-1,1)), signs.reshape(-1,1) * nA])
+                if fA is not None and fb is not None:
+                    rows = np.vstack([rows, np.hstack([-fb.reshape(-1,1), fA])])
+                return findInteriorPoint(rows, tol=tol, rTol=rTol)
+            if rootRegion(self.flipMapN) is None:
+                rng = np.random.default_rng(len(ties) + 7919 * nA.shape[1])
+                for attempt in range(100):
+                    u = rng.normal(size=(nA.shape[1],))
+                    if fA is not None and fb is not None and attempt % 2 == 0:
+                        # (prefer directions that point from pt into the fixed polytope)
+                        inner = findInteriorPoint(np.hstack([-fb.reshape(-1,1), fA]), tol=tol, rTol=rTol)
+                        if inner is not None and np.linalg.norm(inner.flatten() - pt.flatten()) > tol:
+                            u = (inner.flatten() - pt.flatten()) + 0.5 * np.linalg.norm(inner.flatten() - pt.flatten()) * u / np.linalg.norm(u)
+                    side = nA[ties,:] @ u
+                    if np.min(np.abs(side)) <= 1e-6 * np.linalg.norm(u) * max(1.0, float(np.max(np.linalg.norm(nA[ties,:], axis=1)))):
+                        continue
+                    cand = self.flipMapN.copy()
+                    cand[ties] = np.where(side < 0, -1, 1)
+                    if rootRegion(cand) is not None:
+                        self.flipMapN = cand
+                        break
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
         self.flipMapSet = frozenset(self.flipMapSetNP)
         self.nA = np.diag(self.flipMapN) @ nA
@@ -459,6 +492,12 @@ class flipConstraints:
               )))
         return tuple(sel) #tuple(self.nonRedundantHyperplanes[nodeBytes,])
 
+    # A region is labeled by the hyperplanes that separate it from the anchor point (self.pt) of THIS object, so
+    # labels of two objects for the same arrangement are only comparable if their anchors lie in the same region.
+    # setRebase/rebaseRegion translate labels between this object's anchor and another reference point: e.g.
+    # obj.setRebase(other.pt) followed by obj.rebaseRegion(label w.r.t. other.pt) gives the label w.r.t. obj.pt
+    # (and vice versa: the translation flips the hyperplanes that separate the two points, so it is its own
+    # inverse). The rebase point must not lie on a hyperplane; an anchor point never does.
     def setRebase(self, rebasePoint):
         self.rebasePt = rebasePoint
         v = self.constraints[:self.N, 1:] @ self.rebasePt + self.constraints[:self.N, 0].reshape(-1,1)
