@@ -809,91 +809,100 @@ class Poset(Chare):
         if self.verbose > 9:
             print(f'New hyper = {hyper}')
 
-        # projWbOld, subIdxOld = region_helpers.projectConstraints(aug.constraints[:aug.N-1,:],hyper,tol=tol,rTol=rTol)
-        # projFixedOld, _ = region_helpers.projectConstraints(aug.constraints[aug.N:,:],hyper,subIdx=subIdxOld,tol=tol,rTol=rTol)
-
-        # This new method will correctly remove hyperplanes parallel to hyper before projection
-        # The result is that these projected constraints will lead to much better behaved LPs.
-        res = aug.projectConstraints( hyper )
-        if res is None:
-            print(f'Projection failed...')
-            return False
-        projFull, subIdx, diffHypers, extraDiffHypers = res
-        diffHyperIdx = []
-        diffFixedIdx = []
-        for i in diffHypers:
-            if i < aug.N-1:
-                diffHyperIdx.append(i)
-            if i >= aug.N:
-                diffFixedIdx.append(i)
-        # Fill projWb with dummy (constant) constraints for the parallel constraints removed by aug.projectConstraints
-        # This will allow the usual pattern of indexing to convert indicies for the projected constraints to the
-        # original constraints
-        projWb = np.zeros((aug.N-1, aug.d),dtype=np.float64)
-        projFixed = projFull[len(diffHyperIdx):, :]
-        if projFixed.shape[0] > 0 and aug.d > 1:
-            # Dummy rows are loosened copies of a projected fixed constraint: they are redundant (never a facet),
-            # distinct from each other, and have a non-zero normal (so they survive normalization without NaNs)
-            dummyScale = 1.0 + np.max(np.abs(projFull))
-            projWb[:,:] = projFixed[0,:].reshape(1,-1)
-            projWb[:,0] += dummyScale * (1.0 + np.arange(1,projWb.shape[0]+1,1))
+        is1d = (aug.d == 1)
+        if is1d:
+            # One input: the arrangement is a set of points on a line, and every "hyperplane" is parallel to the
+            # inserted one. There is no arrangement to project onto the inserted point (the projection below would
+            # remove every constraint), and none is needed: the inserted point lies in the interior of exactly one
+            # region, and it cannot cut a face of that region (a face is another point). So the region containing
+            # the point is the only one to split, and processNodeSuccessorsInsertHyperplane looks for no split faces.
+            subIdx = 0
+            projFlipConstraints = None
+            ptLift = np.array([[-hyper[0]/hyper[1]]],dtype=np.float64)
+            fixed = aug.constraints[aug.N:,:]
+            if not np.all(fixed[:,0] + fixed[:,1] * ptLift[0,0] > tol):
+                print(f'Inserted hyperplane doesn\'t intersect constraint set...')
+                self.flippedConstraints = self.oldFlippedConstraints
+                self.oldFlippedConstraints = None
+                return False
         else:
-            projWb[:,0] = np.abs(np.max(projFull[:,0])) + np.arange(1,projWb.shape[0]+1,1)
-        projWb[diffHyperIdx,:] = projFull[:len(diffHyperIdx), :]
+            # projWbOld, subIdxOld = region_helpers.projectConstraints(aug.constraints[:aug.N-1,:],hyper,tol=tol,rTol=rTol)
+            # projFixedOld, _ = region_helpers.projectConstraints(aug.constraints[aug.N:,:],hyper,subIdx=subIdxOld,tol=tol,rTol=rTol)
 
-        if projWb.shape[1] > 1: # Should be equivalent to self.tll.n >= 2
+            # This new method will correctly remove hyperplanes parallel to hyper before projection
+            # The result is that these projected constraints will lead to much better behaved LPs.
+            res = aug.projectConstraints( hyper )
+            if res is None:
+                print(f'Projection failed...')
+                return False
+            projFull, subIdx, diffHypers, extraDiffHypers = res
+            diffHyperIdx = []
+            diffFixedIdx = []
+            for i in diffHypers:
+                if i < aug.N-1:
+                    diffHyperIdx.append(i)
+                if i >= aug.N:
+                    diffFixedIdx.append(i)
+            # Fill projWb with dummy (constant) constraints for the parallel constraints removed by aug.projectConstraints
+            # This will allow the usual pattern of indexing to convert indicies for the projected constraints to the
+            # original constraints
+            projWb = np.zeros((aug.N-1, aug.d),dtype=np.float64)
+            projFixed = projFull[len(diffHyperIdx):, :]
+            if projFixed.shape[0] > 0:
+                # Dummy rows are loosened copies of a projected fixed constraint: they are redundant (never a facet),
+                # distinct from each other, and have a non-zero normal (so they survive normalization without NaNs)
+                dummyScale = 1.0 + np.max(np.abs(projFull))
+                projWb[:,:] = projFixed[0,:].reshape(1,-1)
+                projWb[:,0] += dummyScale * (1.0 + np.arange(1,projWb.shape[0]+1,1))
+            else:
+                projWb[:,0] = np.abs(np.max(projFull[:,0])) + np.arange(1,projWb.shape[0]+1,1)
+            projWb[diffHyperIdx,:] = projFull[:len(diffHyperIdx), :]
+
             pt = region_helpers.findInteriorPoint(projFixed,solver=solver,tol=tol,rTol=rTol,lpopts=lpopts)
             hyperSlice = np.hstack([-hyper[1:(subIdx+1)],-hyper[(subIdx+2):]]).reshape(-1,1)
-            is1d = False
-        else:
-            pt = np.array([[hyper[0]/-hyper[1]]],dtype=np.float64)
-            if not np.all(projFixed[:,0] >= -self.tol):
-                pt = None
-            hyperSlice = np.array([[0]],dtype=np.float64)
-            is1d = True
 
-        if pt is None:
-            print(f'Inserted hyperplane doesn\'t intersect constraint set...')
-            return False
+            if pt is None:
+                print(f'Inserted hyperplane doesn\'t intersect constraint set...')
+                return False
 
-        if self.verbose > 9:
-            print(hyper[1:].shape)
-            print(pt)
-            print(f'subIdx = {subIdx}; diffHypers = {diffHypers}; diffHyperIdx = {diffHyperIdx}\nprojWb = {projWb}\nprojFull = {projFull}\nprojFixed = {projFixed}')
+            if self.verbose > 9:
+                print(hyper[1:].shape)
+                print(pt)
+                print(f'subIdx = {subIdx}; diffHypers = {diffHypers}; diffHyperIdx = {diffHyperIdx}\nprojWb = {projWb}\nprojFull = {projFull}\nprojFixed = {projFixed}')
 
-        ptLift = np.zeros((hyper.shape[0]-1,1),dtype=np.float64)
-        ptLift[:subIdx,0] = pt[:subIdx,0]
-        ptLift[(subIdx+1):,0] = pt[subIdx:,0]
-        ptLift[subIdx,0] = (-1/hyper[subIdx+1]) * (-(hyperSlice.reshape(1,-1) @ pt)[0,0] + hyper[0])
-
-        # This will create a constraints object for the projected constraints
-        # (Notably: with duplicates hidden by the new functionality)
-        projFlipConstraints = region_helpers.flipConstraintsReducedMin( \
-                                            projWb[:,1:], \
-                                            -projWb[:,0].reshape(-1,1), \
-                                            pt, \
-                                            fA = projFixed[:,1:], \
-                                            fb = -projFixed[:,0].reshape(-1,1), \
-                                            tol = tol, \
-                                            rTol = rTol, \
-                                            normalize = 1.0 \
-                                        )
-        # pt is the centre of the slice of the fixed constraints, and it can lie exactly on one of the projected
-        # hyperplanes (e.g. x0 = x4 through the centre of a cube). In that case the constraints object above has
-        # picked one of the adjacent cells as its root region and has moved its own anchor point into the interior
-        # of that cell. The insertion has to start from THAT point: the region of the full arrangement that is
-        # identified from ptLift below must be the one whose slice is the root cell of projFlipConstraints, and a
-        # point on a hyperplane does not determine it.
-        if not is1d and not np.array_equal(projFlipConstraints.pt, pt):
-            pt = projFlipConstraints.pt
+            ptLift = np.zeros((hyper.shape[0]-1,1),dtype=np.float64)
             ptLift[:subIdx,0] = pt[:subIdx,0]
             ptLift[(subIdx+1):,0] = pt[subIdx:,0]
             ptLift[subIdx,0] = (-1/hyper[subIdx+1]) * (-(hyperSlice.reshape(1,-1) @ pt)[0,0] + hyper[0])
-        if self.verbose > 9:
-            print(f'ptLift = {ptLift}; diffHyperIdx = {diffHyperIdx}; collapsed diffHyperIdx = {projFlipConstraints.collapseRegion(sorted(tuple(diffHyperIdx)))}\nprojFlipConstraints.constraints BEFORE masking = {projFlipConstraints.constraints}')
-        projFlipConstraints.maskHyperplanes(projFlipConstraints.collapseRegion(sorted(tuple(diffHyperIdx))))
-        if self.verbose > 9:
-            print(f'projFlipConstraints.constraints AFTER masking = {projFlipConstraints.constraints}')
+
+            # This will create a constraints object for the projected constraints
+            # (Notably: with duplicates hidden by the new functionality)
+            projFlipConstraints = region_helpers.flipConstraintsReducedMin( \
+                                                projWb[:,1:], \
+                                                -projWb[:,0].reshape(-1,1), \
+                                                pt, \
+                                                fA = projFixed[:,1:], \
+                                                fb = -projFixed[:,0].reshape(-1,1), \
+                                                tol = tol, \
+                                                rTol = rTol, \
+                                                normalize = 1.0 \
+                                            )
+            # pt is the centre of the slice of the fixed constraints, and it can lie exactly on one of the projected
+            # hyperplanes (e.g. x0 = x4 through the centre of a cube). In that case the constraints object above has
+            # picked one of the adjacent cells as its root region and has moved its own anchor point into the interior
+            # of that cell. The insertion has to start from THAT point: the region of the full arrangement that is
+            # identified from ptLift below must be the one whose slice is the root cell of projFlipConstraints, and a
+            # point on a hyperplane does not determine it.
+            if not np.array_equal(projFlipConstraints.pt, pt):
+                pt = projFlipConstraints.pt
+                ptLift[:subIdx,0] = pt[:subIdx,0]
+                ptLift[(subIdx+1):,0] = pt[subIdx:,0]
+                ptLift[subIdx,0] = (-1/hyper[subIdx+1]) * (-(hyperSlice.reshape(1,-1) @ pt)[0,0] + hyper[0])
+            if self.verbose > 9:
+                print(f'ptLift = {ptLift}; diffHyperIdx = {diffHyperIdx}; collapsed diffHyperIdx = {projFlipConstraints.collapseRegion(sorted(tuple(diffHyperIdx)))}\nprojFlipConstraints.constraints BEFORE masking = {projFlipConstraints.constraints}')
+            projFlipConstraints.maskHyperplanes(projFlipConstraints.collapseRegion(sorted(tuple(diffHyperIdx))))
+            if self.verbose > 9:
+                print(f'projFlipConstraints.constraints AFTER masking = {projFlipConstraints.constraints}')
 
         if self.verbose > 9:
             print(np.abs(-hyper[1:].reshape(1,-1) @ ptLift - hyper[0]))
@@ -1027,7 +1036,7 @@ class Poset(Chare):
         self.localVarGroup.setConstraintsOnly(aug.serialize(),awaitable=True).get()
 
         self.succGroup.setProperty('iHyper', hyper, awaitable=True).get()
-        self.succGroup.setProperty('iFlipConstraints', projFlipConstraints.serialize(), awaitable=True).get()
+        self.succGroup.setProperty('iFlipConstraints', (projFlipConstraints.serialize() if projFlipConstraints is not None else None), awaitable=True).get()
         self.succGroup.setProperty('iSubIdx', subIdx, awaitable=True).get()
         self.succGroup.setProperty('iIs1d', is1d, awaitable=True).get()
         self.succGroup.setProperty('iPtLift', ptLift, awaitable=True).get()
@@ -2183,46 +2192,51 @@ class successorWorker(Chare):
             print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   rebasePt = {self.flippedConstraints.rebasePt.flatten()}')
             print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   ptLift   = {self.iPtLift.flatten()}')
 
-        # The rebasedINTrep should be -- by construction -- an 'expanded' region specification
-        # for the projected constraints.
-        # Hence, collapseRegion should give us a valid region specification in the projected
-        # hyperplane arrangement, ignoring degenerate *faces* in that arrangement. Thus, we
-        # can use lpMinHRep, combined with the expand duplicates method of vectorSet (talk
-        # about creating the right abstractions! 😄), to identify all full-dimensional faces of
-        # this region that are split by the inserted hyperplane.
-        projINTrep = self.iFlipConstraints.collapseRegion(rebasedINTrep)
-        if self.verbose > 9:
-            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   temp = {projINTrep}; rebasedINTrepSet = {rebasedINTrep}')
+        if self.iIs1d:
+            # One input: the inserted point cannot cut a face of the region it splits (see insertHyperplane),
+            # so no neighboring region is split, and there is no projected arrangement to consult
+            splitFaces = {}
+        else:
+            # The rebasedINTrep should be -- by construction -- an 'expanded' region specification
+            # for the projected constraints.
+            # Hence, collapseRegion should give us a valid region specification in the projected
+            # hyperplane arrangement, ignoring degenerate *faces* in that arrangement. Thus, we
+            # can use lpMinHRep, combined with the expand duplicates method of vectorSet (talk
+            # about creating the right abstractions! 😄), to identify all full-dimensional faces of
+            # this region that are split by the inserted hyperplane.
+            projINTrep = self.iFlipConstraints.collapseRegion(rebasedINTrep)
+            if self.verbose > 9:
+                print(f'----[[[{INTrepFull}, {charm.myPe()}]]]   temp = {projINTrep}; rebasedINTrepSet = {rebasedINTrep}')
 
-        # Now let's find which of the validFlips (unflipped hyperplanes starting from the
-        # region containing rebasePt of self.flippedConstraints) correspond to faces in the
-        # projected hyperplane arrangement -- these will be the full dimensional faces of
-        # the current region that are split by the inserted hyperplane
-        validFlipsListExpand = list(itertools.chain.from_iterable([self.iFlipConstraints.hyperSet.expandDuplicates(i) for i in validFlipsList]))
-        collapsedFaces = self.iFlipConstraints.collapseRegion( validFlipsListExpand )
-        if self.verbose > 9:
-            print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   validFlipsList = {validFlipsList}; validFlipsListExpand = {validFlipsListExpand}; collapseRegion = {self.iFlipConstraints.collapseRegion( validFlipsList )} {self.iFlipConstraints.nonRedundantHyperplanes}')
-            print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   collapsedFaces = {collapsedFaces}')
-            print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   projected region constraints = {self.iFlipConstraints.getRegionConstraints( projINTrep, allN=False  )}')
-        splitFacesIdx, _ = self.thisProxy[self.thisIndex].concreteMinHRep( \
-                                            self.iFlipConstraints.getRegionConstraints( projINTrep, allN=False  ), \
-                                            None, \
-                                            # These arguments are only used with self.useQuery=True, which is disabled
-                                            # automatically for insertHyperplane mode
-                                            bytearray(b''), \
-                                            tuple(), \
-                                            # This is the only argument that is relevant for the minHRep
-                                            collapsedFaces, \
-                                            solver = self.solver, \
-                                            ret = True \
-                                        ).get()
-        if self.verbose > 9:
-            print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   {[(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[collapsedFaces[i]],self.iFlipConstraints.hyperSet.expandDuplicates(iexp)) for i in splitFacesIdx]}')
-        splitFaces = {(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[(collapsedFaces[i])]): \
-                      self.iFlipConstraints.hyperSet.expandDuplicates(iexp) for i in splitFacesIdx}
-                      # [validFlipsList[ii] for ii in self.iFlipConstraints.hyperSet.expandDuplicates(iexp)] for i in splitFacesIdx}
-        if self.verbose > 9:
-            print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    splitFaces = {splitFaces}')
+            # Now let's find which of the validFlips (unflipped hyperplanes starting from the
+            # region containing rebasePt of self.flippedConstraints) correspond to faces in the
+            # projected hyperplane arrangement -- these will be the full dimensional faces of
+            # the current region that are split by the inserted hyperplane
+            validFlipsListExpand = list(itertools.chain.from_iterable([self.iFlipConstraints.hyperSet.expandDuplicates(i) for i in validFlipsList]))
+            collapsedFaces = self.iFlipConstraints.collapseRegion( validFlipsListExpand )
+            if self.verbose > 9:
+                print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   validFlipsList = {validFlipsList}; validFlipsListExpand = {validFlipsListExpand}; collapseRegion = {self.iFlipConstraints.collapseRegion( validFlipsList )} {self.iFlipConstraints.nonRedundantHyperplanes}')
+                print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   collapsedFaces = {collapsedFaces}')
+                print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   projected region constraints = {self.iFlipConstraints.getRegionConstraints( projINTrep, allN=False  )}')
+            splitFacesIdx, _ = self.thisProxy[self.thisIndex].concreteMinHRep( \
+                                                self.iFlipConstraints.getRegionConstraints( projINTrep, allN=False  ), \
+                                                None, \
+                                                # These arguments are only used with self.useQuery=True, which is disabled
+                                                # automatically for insertHyperplane mode
+                                                bytearray(b''), \
+                                                tuple(), \
+                                                # This is the only argument that is relevant for the minHRep
+                                                collapsedFaces, \
+                                                solver = self.solver, \
+                                                ret = True \
+                                            ).get()
+            if self.verbose > 9:
+                print(f'++++[[[{INTrepFull}, {charm.myPe()}]]]   {[(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[collapsedFaces[i]],self.iFlipConstraints.hyperSet.expandDuplicates(iexp)) for i in splitFacesIdx]}')
+            splitFaces = {(iexp:=self.iFlipConstraints.nonRedundantHyperplanes[(collapsedFaces[i])]): \
+                          self.iFlipConstraints.hyperSet.expandDuplicates(iexp) for i in splitFacesIdx}
+                          # [validFlipsList[ii] for ii in self.iFlipConstraints.hyperSet.expandDuplicates(iexp)] for i in splitFacesIdx}
+            if self.verbose > 9:
+                print(f'----[[[{INTrepFull}, {charm.myPe()}]]]    splitFaces = {splitFaces}')
         allSplitFaces = set()
         for h, dups in splitFaces.items():
             allSplitFaces |= set(dups)
