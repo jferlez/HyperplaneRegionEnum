@@ -21,40 +21,13 @@ class flipConstraints:
             raise ValueError('normalize option must be None or a float > 0.0')
         v = nA @ pt
         v = v.flatten() - nb.flatten()
-        # Tie rule (the same everywhere: insertHyperplane, setRebase and the region lookups of posetFastCharm): a
-        # point within tol of a hyperplane counts as being on its POSITIVE side as given, i.e. a hyperplane through
-        # the anchor point keeps the orientation it was specified with. (pt is then moved into the interior of the
-        # root region below, so that the anchor is never left on a hyperplane.)
+        # A hyperplane through pt (within tol) has no side that contains pt, so one is chosen for it by _tieSigns
+        # (the same rule as in insertHyperplane). pt is then moved into the interior of the root region below, so
+        # that the anchor is never left on a hyperplane.
         self.flipMapN = np.where(v < -tol,-1,1)
         ties = np.nonzero(np.abs(v) <= tol)[0]
-        if len(ties) > 1:
-            # With several hyperplanes through pt, the sides chosen by the tie rule need not have a point in
-            # common (three lines through a point in the plane leave 6 of the 8 sign patterns), and then there
-            # would be no root region. So make sure that they do; if not, orient the ties by a point next to pt
-            # instead, i.e. by a direction u in which pt is moved infinitesimally (deterministic, so that every
-            # object built from the same data agrees). Such a point is always in SOME region.
-            def rootRegion(signs):
-                rows = np.hstack([(-signs.reshape(-1,1) * nb.reshape(-1,1)), signs.reshape(-1,1) * nA])
-                if fA is not None and fb is not None:
-                    rows = np.vstack([rows, np.hstack([-fb.reshape(-1,1), fA])])
-                return findInteriorPoint(rows, tol=tol, rTol=rTol)
-            if rootRegion(self.flipMapN) is None:
-                rng = np.random.default_rng(len(ties) + 7919 * nA.shape[1])
-                for attempt in range(100):
-                    u = rng.normal(size=(nA.shape[1],))
-                    if fA is not None and fb is not None and attempt % 2 == 0:
-                        # (prefer directions that point from pt into the fixed polytope)
-                        inner = findInteriorPoint(np.hstack([-fb.reshape(-1,1), fA]), tol=tol, rTol=rTol)
-                        if inner is not None and np.linalg.norm(inner.flatten() - pt.flatten()) > tol:
-                            u = (inner.flatten() - pt.flatten()) + 0.5 * np.linalg.norm(inner.flatten() - pt.flatten()) * u / np.linalg.norm(u)
-                    side = nA[ties,:] @ u
-                    if np.min(np.abs(side)) <= 1e-6 * np.linalg.norm(u) * max(1.0, float(np.max(np.linalg.norm(nA[ties,:], axis=1)))):
-                        continue
-                    cand = self.flipMapN.copy()
-                    cand[ties] = np.where(side < 0, -1, 1)
-                    if rootRegion(cand) is not None:
-                        self.flipMapN = cand
-                        break
+        if len(ties) > 0:
+            self.flipMapN[ties] = self._tieSigns(nA[ties,:], pt, fA=fA, fb=fb, tol=tol, rTol=rTol)
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
         self.flipMapSet = frozenset(self.flipMapSetNP)
         self.nA = np.diag(self.flipMapN) @ nA
@@ -129,6 +102,53 @@ class flipConstraints:
         self.tailBitsAllN = self.allN % 8
         self.rebasePt = None
         self.baseN = None
+
+    # Orientation (+1: as given, -1: negated) of hyperplanes that pass through the point pt; A holds their normals,
+    # one per row.
+    #
+    # The side chosen for all of them is that of ONE point next to pt:  pt + e*(1, e, e^2, ...)  for an
+    # infinitesimal e > 0 (a lexicographic perturbation of pt). For that point, a.x - b has the sign of the first
+    # non-zero entry of the normal a, so each hyperplane is oriented such that this entry is positive. Hence:
+    #   * no hyperplane is left undecided (a normal has a non-zero entry), whatever its direction;
+    #   * the chosen sides always have a full-dimensional intersection, the cell that contains that point, however
+    #     many hyperplanes pass through pt (the sides "as given" need not: three lines through a point in the plane
+    #     leave 6 of the 8 sign patterns);
+    #   * the cell does not depend on how the hyperplanes are written: negating, scaling or reordering the rows,
+    #     or giving a hyperplane twice, selects the same cell.
+    # If pt lies on the boundary of the fixed constraints, the point above may be outside of them, so pt is first
+    # moved towards an interior point w of the fixed constraints:  pt + e*((w - pt) + e*(1, e, e^2, ...)). A
+    # hyperplane is then oriented by the sign of a.(w - pt), and by the rule above only if that is zero.
+    #
+    # An entry of a normal counts as zero if it is within rTol of zero relative to the largest entry of that normal
+    # (so that x0 - x4 = 0 computed as 1e-17*x0 + ... is not oriented by rounding noise). A zero normal (a
+    # constant "constraint", only possible without normalization) has no side to choose and is left as given.
+    #
+    # NB: this makes the choice well defined for one object. It does NOT make region labels comparable between
+    # objects: each object moves its own anchor afterwards, and insertHyperplane orients later hyperplanes by that
+    # moved anchor. Labels are translated between objects with setRebase/rebaseRegion.
+    @staticmethod
+    def _tieSigns(A, pt, fA=None, fb=None, tol=1e-9, rTol=1e-9):
+        A = np.asarray(A, dtype=np.float64).reshape(-1, np.asarray(pt).size)
+        signs = np.ones((A.shape[0],), dtype=np.int64)
+        if A.shape[0] == 0:
+            return signs
+        with np.errstate(invalid='ignore'):
+            scale = np.max(np.abs(A), axis=1)
+            significant = np.abs(A) > rTol * scale.reshape(-1,1)
+        hasNormal = np.any(significant, axis=1)
+        first = np.argmax(significant, axis=1)
+        lex = np.where(A[np.arange(A.shape[0]), first] < 0, -1, 1)
+        signs[hasNormal] = lex[hasNormal]
+        if fA is not None and fb is not None:
+            vf = (fA @ pt).flatten() - np.asarray(fb).flatten()
+            if np.any(vf <= tol):
+                inner = findInteriorPoint(np.hstack([-np.asarray(fb).reshape(-1,1), fA]), tol=tol, rTol=rTol)
+                if inner is not None:
+                    w = inner.flatten() - np.asarray(pt).flatten()
+                    side = A @ w
+                    decided = hasNormal & (np.abs(side) > rTol * np.linalg.norm(A, axis=1) * np.linalg.norm(w))
+                    signs[decided] = np.where(side[decided] < 0, -1, 1)
+        return signs
 
     @staticmethod
     def _checkNormals(rows, numHypers, inserted=False):
@@ -227,11 +247,13 @@ class flipConstraints:
         if not self.normalize is None:
             # (before anything is changed, so that the object stays usable if this raises)
             self._checkNormals(np.asarray(newHyperplane, dtype=np.float64).reshape(1,-1), 1, inserted=True)
-        newSign = 1 if newA.reshape(1,-1) @ self.pt >= newb - self.tol else -1
         if np.abs(newA.reshape(1,-1) @ self.pt - newb) <= self.tol:
+            # The new hyperplane passes through the anchor: pick its side as the constructor does (_tieSigns)
             updatePoint = True
+            newSign = int(self._tieSigns(newA.reshape(1,-1), self.pt, fA=self.fA, fb=self.fb, tol=self.tol, rTol=self.rTol)[0])
         else:
             updatePoint = False
+            newSign = 1 if newA.reshape(1,-1) @ self.pt >= newb else -1
         self.flipMapN = np.hstack([self.flipMapN, np.array([newSign],dtype=np.int64)])
         self.flipMapSetNP = np.nonzero(self.flipMapN < 0)[0]
         self.flipMapSet = frozenset(self.flipMapSetNP)

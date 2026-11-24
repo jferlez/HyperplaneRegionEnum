@@ -9,15 +9,22 @@ hyperplane passes through it. For a cube and hyperplanes like x0 = x4 that assum
 of the cube) lies on the hyperplane, each object picks a side, and moves its own anchor there.
 
 Checked here, for random arrangements and for arrangements with hyperplanes through the anchor:
-  1. tie rule: a single hyperplane through the anchor keeps the orientation it was given, both in the constructor
-     and in insertHyperplane;
+  1. tie rule (flipConstraints._tieSigns): a hyperplane through the anchor is oriented such that the first
+     non-zero entry of its normal is positive, i.e. towards the point  anchor + e*(1, e, e^2, ...), both in the
+     constructor and in insertHyperplane. The root region is therefore the same cell however the hyperplanes are
+     written (rows negated, scaled, reordered, duplicated);
   2. whatever the number of hyperplanes through the anchor, construction/insertion succeeds, and afterwards the
      anchor is strictly inside the root region (the region with the empty label). (With several hyperplanes
-     through one point, the sides chosen by the tie rule need not intersect, e.g. three lines in the plane.)
+     through one point, the sides "as given" need not intersect, e.g. three lines in the plane.)
   3. the label of a point, computed from the signs of the constraints, is the set of hyperplanes that separate
      the point from the anchor;
   4. for two objects A and B with the same hyperplanes but different anchors (and therefore different
      orientations and labels), A.setRebase(B.pt) followed by A.rebaseRegion(label in B) is the label in A.
+
+  5. special hyperplanes through the anchor: normals with leading zeros (axis-aligned), a leading entry that is
+     rounding noise, duplicates (also with the opposite orientation or another scale), 20 hyperplanes through
+     one point, a single input, zero normals (without normalization), and an anchor on the boundary of the fixed
+     constraints (on a face, with a hyperplane that coincides with that face, and at a vertex).
 
 Usage: python3 tests/test_anchor_ties.py [numSeeds]
 """
@@ -27,7 +34,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import region_helpers
 
 failures = []
+numChecks = 0
 def check(name, cond):
+    global numChecks
+    numChecks += 1
     if not cond:
         failures.append(name)
         print(f'FAIL  {name}')
@@ -42,10 +52,23 @@ def separating(obj, x, y):
     vy = obj.constraints[:obj.N, 0] + obj.constraints[:obj.N, 1:] @ y.flatten()
     return tuple(int(i) for i in np.nonzero(vx * vy < 0)[0])
 
-def sameSide(row, a, c0):
-    # True if the stored row [c0', a'] is a positive multiple of the given [c0, a]
-    k = int(np.argmax(np.abs(a)))
-    return (row[1 + k] > 0) == (a[k] > 0)
+def lexPositive(row):
+    # True if the first non-zero entry of the normal of the stored row [c0, a] is positive
+    a = row[1:]
+    nz = np.nonzero(np.abs(a) > 1e-9 * np.max(np.abs(a)))[0]
+    return len(nz) > 0 and a[nz[0]] > 0
+
+def anchorInside(obj):
+    v = obj.constraints[:obj.N, 0] + obj.constraints[:obj.N, 1:] @ obj.pt.flatten()
+    vf = obj.constraints[obj.N:, 0] + obj.constraints[obj.N:, 1:] @ obj.pt.flatten()
+    return (obj.N == 0 or float(np.min(v)) > obj.tol) and (len(vf) == 0 or float(np.min(vf)) > obj.tol)
+
+def sameRootRegion(objA, objB):
+    # The anchor of each object is strictly inside the root region of the other
+    def inside(obj, x):
+        v = obj.constraints[:obj.N, 0] + obj.constraints[:obj.N, 1:] @ x.flatten()
+        return obj.N == 0 or float(np.min(v)) > 0
+    return inside(objA, objB.pt) and inside(objB, objA.pt)
 
 numSeeds = int(sys.argv[1]) if len(sys.argv) > 1 else 40
 for cls in [region_helpers.flipConstraints, region_helpers.flipConstraintsReducedMin]:
@@ -63,10 +86,16 @@ for cls in [region_helpers.flipConstraints, region_helpers.flipConstraintsReduce
         # ---- hyperplanes through the anchor given to the constructor ----
         obj = cls(A.copy(), b.copy(), centre.copy(), fA=fA, fb=fb)
         allRows = obj.allConstraints[:obj.allN]
-        if nTie == 1:
-            check(f'{tag}: constructor keeps the orientation of a hyperplane through the anchor', sameSide(allRows[nGen], A[nGen], -b[nGen, 0]))
-        v = obj.constraints[:obj.N, 0] + obj.constraints[:obj.N, 1:] @ obj.pt.flatten()
-        check(f'{tag}: the anchor is strictly inside the root region', obj.N == 0 or float(np.min(v)) > obj.tol)
+        check(f'{tag}: constructor orients every hyperplane through the anchor by the first non-zero entry of its normal', all(lexPositive(allRows[i]) for i in range(nGen, nGen + nTie)))
+        check(f'{tag}: the anchor is strictly inside the root region', anchorInside(obj))
+        # the same arrangement written differently: rows negated, scaled, reordered, and some of them given twice
+        perm = rng.permutation(nGen + nTie)
+        scl = rng.choice([-1.0, 1.0], size=(nGen + nTie, 1)) * rng.uniform(0.2, 5.0, size=(nGen + nTie, 1))
+        A2 = np.vstack([(scl * A)[perm], -A[nGen:nGen + 1]]); b2 = np.vstack([(scl * b)[perm], -b[nGen:nGen + 1]])
+        obj2 = cls(A2.copy(), b2.copy(), centre.copy(), fA=fA, fb=fb)
+        check(f'{tag}: the root region does not depend on how the hyperplanes are written', obj2.N == obj.N and anchorInside(obj2) and sameRootRegion(obj, obj2))
+        objN = cls(A.copy(), b.copy(), centre.copy(), fA=fA, fb=fb, normalize=1.0)
+        check(f'{tag}: ... nor on normalization', anchorInside(objN) and sameRootRegion(obj, objN))
         check(f'{tag}: the anchor was moved off the hyperplanes', not np.array_equal(obj.pt, centre))
 
         # ---- the same hyperplanes inserted one at a time into an object without hyperplanes ----
@@ -75,9 +104,12 @@ for cls in [region_helpers.flipConstraints, region_helpers.flipConstraintsReduce
             ins.insertHyperplane(A[i].copy(), b[i].copy())
         insRows = ins.allConstraints[:ins.allN]
         # (only the first of them is a tie: it moves the anchor off the centre)
-        check(f'{tag}: insertHyperplane keeps the orientation of a hyperplane through the anchor', sameSide(insRows[nGen], A[nGen], -b[nGen, 0]))
-        v = ins.constraints[:ins.N, 0] + ins.constraints[:ins.N, 1:] @ ins.pt.flatten()
-        check(f'{tag}: the anchor is strictly inside the root region after insertions', ins.N == 0 or float(np.min(v)) > ins.tol)
+        check(f'{tag}: the anchor is strictly inside the root region after insertions', anchorInside(ins))
+        # a hyperplane inserted through the anchor (the first one into an empty object: its anchor is the centre)
+        for sgn in (1.0, -1.0):
+            one = cls(np.ones((0, d)), np.ones((0, 1)), centre.copy(), fA=fA, fb=fb)
+            one.insertHyperplane(sgn * A[nGen].copy(), sgn * b[nGen].copy())
+            check(f'{tag}: insertHyperplane orients a hyperplane through the anchor by the first non-zero entry of its normal (given with sign {sgn:+.0f})', lexPositive(one.allConstraints[0]) and anchorInside(one))
 
         # ---- an object for the same arrangement with its anchor in another region ----
         other = None
@@ -104,6 +136,59 @@ for cls in [region_helpers.flipConstraints, region_helpers.flipConstraintsReduce
         check(f'{tag}: rebaseRegion translates labels between objects with different anchors', ok4)
         obj.clearRebase(); other.clearRebase()
 
+# ---- special hyperplanes through the anchor ----
+def build(rows, pt, fA, fb, **kw):
+    rows = np.array(rows, dtype=np.float64)
+    return region_helpers.flipConstraints(rows[:, 1:].copy(), -rows[:, :1].copy(), np.array(pt, dtype=np.float64).reshape(-1, 1), fA=fA, fb=fb, **kw)
+
+def cube(d, lo=-1.0, hi=1.0):
+    return np.vstack([np.eye(d), -np.eye(d)]), np.hstack([lo * np.ones(d), -hi * np.ones(d)]).reshape(-1, 1)
+
+for kw in ({}, {'normalize': 1.0}):
+    tag = f'special ({"normalize=1.0" if kw else "no normalization"})'
+    fA3, fb3 = cube(3)
+    # (rows are [c, a]:  c + a.x >= 0)
+    o = build([[0, 0, 0, 1], [0, 0, 0, -1], [0, 0, -2, 0], [0, 0, 1, 1], [0, -1, 0, 0]], [0, 0, 0], fA3, fb3, **kw)
+    check(f'{tag}: axis-aligned normals with leading zeros', o.N == 4 and anchorInside(o) and all(lexPositive(r) for r in o.allConstraints[:o.allN]))
+    o = build([[0, 1e-17, 1, -1], [0, -1e-17, -1, 1], [0, 0, 3, -3]], [0, 0, 0], fA3, fb3, **kw)
+    check(f'{tag}: a leading entry that is rounding noise does not orient the hyperplane; the three copies are one hyperplane', o.N == 1 and anchorInside(o) and o.constraints[0, 2] > 0)
+    o = build([[0, 1, 2, 3], [0, -1, -2, -3], [0, 0.5, 1, 1.5], [0, -4, -8, -12]], [0, 0, 0], fA3, fb3, **kw)
+    check(f'{tag}: duplicates with opposite orientations and scales', o.N == 1 and anchorInside(o) and lexPositive(o.constraints[0]))
+    rng = np.random.default_rng(1)
+    for d in (2, 3, 5):
+        fAd, fbd = cube(d)
+        o = build(np.hstack([np.zeros((20, 1)), rng.normal(size=(20, d))]), np.zeros(d), fAd, fbd, **kw)
+        check(f'{tag}: 20 hyperplanes through the anchor, d = {d}', o.N == 20 and anchorInside(o))
+        # ... through an anchor that is not the origin, and with integer normals (many parallel faces of cells)
+        c = rng.uniform(-0.5, 0.5, size=(d,))
+        Aint = rng.integers(-2, 3, size=(20, d)).astype(np.float64); Aint = Aint[np.any(Aint != 0, axis=1)]
+        o = build(np.hstack([-(Aint @ c).reshape(-1, 1), Aint]), c, fAd, fbd, **kw)
+        check(f'{tag}: integer hyperplanes through an anchor off the origin, d = {d}', anchorInside(o) and all(lexPositive(r) for r in o.constraints[:o.N]))
+    fA1, fb1 = cube(1)
+    o = build([[0, 1], [0, -1], [0, 2.5], [-0.5, 1]], [0], fA1, fb1, **kw)
+    check(f'{tag}: a single input, the same point given three times', o.N == 2 and anchorInside(o) and o.pt[0, 0] > 0)
+    # anchor on a face of the fixed constraints (x0 = 1): a hyperplane that coincides with the face, one that is
+    # transversal to it, and one that only touches the cube there
+    fA2, fb2 = cube(2)
+    o = build([[-1, 1, 0], [0, 0, -1], [-1, 1, 0.0]], [1, 0], fA2, fb2, **kw)
+    check(f'{tag}: anchor on a face; a hyperplane equal to the face is oriented into the cube (and is redundant)', o.N == 1 and anchorInside(o) and o.pt[1, 0] > 0)
+    o = build([[1, -1, 0], [0, 0, 1]], [1, 0], fA2, fb2, **kw)
+    check(f'{tag}: anchor on a face; the face given with the other orientation', o.N == 1 and anchorInside(o))
+    # anchor at a vertex (1, 1): the diagonal through it, and a supporting line that touches only the vertex
+    o = build([[0, -1, 1], [-2, 1, 1], [-1, 1, 0]], [1, 1], fA2, fb2, **kw)
+    check(f'{tag}: anchor at a vertex of the cube', anchorInside(o) and o.pt[0, 0] > o.pt[1, 0])
+    # the same through insertHyperplane
+    o = region_helpers.flipConstraints(np.ones((0, 2)), np.ones((0, 1)), np.array([[1.0], [0.0]]), fA=fA2, fb=fb2, **kw)
+    o.insertHyperplane(np.array([0.0, -1.0]), np.array([0.0]))
+    check(f'{tag}: insertHyperplane through an anchor on a face', o.N == 1 and anchorInside(o) and o.pt[1, 0] > 0)
+
+# zero normals (constant "constraints") are only accepted without normalization; they have no side to choose
+fA2, fb2 = cube(2)
+o = build([[0.3, 0, 0], [0, 1, -1], [0, -1, -1]], [0, 0], fA2, fb2)
+v = o.constraints[:, 0] + o.constraints[:, 1:] @ o.pt.flatten()
+check('special: a zero normal next to two hyperplanes through the anchor is left as given', np.array_equal(o.allConstraints[0], [0.3, 0, 0]) and float(np.min(v)) > o.tol)
+check('special: _tieSigns leaves a zero normal as given and orients the others', region_helpers.flipConstraints._tieSigns(np.array([[0.0, 0.0], [0.0, -2.0], [3.0, -1.0]]), np.zeros((2, 1))).tolist() == [1, -1, 1])
+
 # The situation that broke the TLL compiler: on the cube [0,1]^5, x0 = x4 passes through the centre
 n = 5
 fA = np.vstack([np.eye(n), -np.eye(n)]); fb = np.hstack([np.zeros(n), -np.ones(n)]).reshape(-1, 1)
@@ -124,5 +209,5 @@ for _ in range(200):
     ok = ok and own.rebaseRegion(bit)[1] == label(own, x)
 check('cube: the bit of an inserted hyperplane is translated correctly to the hyperplane\'s own object', ok)
 
-print(f'{"ALL TESTS PASSED" if len(failures) == 0 else f"{len(failures)} TEST(S) FAILED"}')
+print(f'{numChecks} checks: {"ALL TESTS PASSED" if len(failures) == 0 else f"{len(failures)} TEST(S) FAILED"}')
 sys.exit(0 if len(failures) == 0 else 1)
