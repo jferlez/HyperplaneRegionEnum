@@ -1,6 +1,8 @@
 """
 Test (no charm4py) of the solvers and the fallback path of encapsulateLP.runLP, on an LP on which GLPK's simplex
 cycles forever with the settings of this package (dual-then-primal simplex, scaling on, bound tolerances 1e-10).
+The problem is scaled only by the scikit-glpk binding of the solver 'glpk' (encapsulateLP.glpkBinding), so the
+checks on this LP select that binding; through the cvxopt binding GLPK solves this LP (tests/test_glpk_binding.py).
 
 The LP (tests/lp_cycling_case.npz: minimize obj.x subject to A x <= b, 19 constraints, 5 variables, two identical
 rows) is an interior point search (region_helpers.findInteriorPointFull) that came up while the TLL compiler
@@ -34,6 +36,10 @@ def check(name, cond, detail=''):
     if not cond:
         failures.append(name)
 
+# (the LP below only cycles when it is scaled, which only this binding does)
+defaultGlpkBinding = encapsulateLP.glpkBinding
+encapsulateLP.glpkBinding = 'scikit'
+
 case = np.load(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lp_cycling_case.npz'))
 obj, A, b = case['obj'], case['A'], case['b']
 OPT = -0.06005259929
@@ -66,6 +72,9 @@ check('cycling LP, highs: optimal without a fallback solve', isOptimum(status, x
 
 status, x, lp, _ = solve({'solver': 'highs', 'maxiter': 0})
 check('cycling LP, highs stopped at once (maxiter 0): default fallback glpk also fails; each solver tried once', status == 'unk' and x is None and lp.lpFallbacks == 1 and lp.lpCount == 2, f'status {status}, {lp.lpFallbacks} fallbacks, {lp.lpCount} LPs')
+
+# (the remaining checks use the default binding of 'glpk')
+encapsulateLP.glpkBinding = defaultGlpkBinding
 
 # An LP that GLPK solves: the interior point LP of the unit cube in R^4, written out (max t s.t. H [x; t] <= h)
 n = 4
