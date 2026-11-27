@@ -16,7 +16,12 @@ import warnings
 
 class flipConstraints:
 
-    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9, normalize=None, debug=False):
+    # fSet: optionally, the vectorSet of the fixed constraints, i.e. vectorSet(np.hstack((-fb, fA))) for THESE fA and
+    # fb, if the caller has it already. Building that set is most of the cost of this constructor when there are
+    # many fixed constraints and few hyperplanes, and it is the same set for every object with the same fixed
+    # constraints (e.g. the cells of several functions on one region). The set is not copied: the objects that
+    # were given it share it, so none of them may change it.
+    def __init__(self, nA, nb, pt, fA=None, fb=None, tol=1e-9,rTol=1e-9, normalize=None, debug=False, fSet=None):
         if not normalize is None and not ( type(normalize) is float and normalize > 0.0 ):
             raise ValueError('normalize option must be None or a float > 0.0')
         v = nA @ pt
@@ -52,8 +57,15 @@ class flipConstraints:
                 raise ValueError('Supplied point must satisfy all specified \'fixed\' constraints -- i.e. fA @ pt >= fb !')
             self.fA = fA
             self.fb = fb
-            # create a vector set for the fixed constraints
-            self.fSet = vectorSet.vectorSet( np.hstack((-1*self.fb,self.fA)) )
+            # create a vector set for the fixed constraints (unless the caller supplied it)
+            if fSet is None:
+                self.fSet = vectorSet.vectorSet( np.hstack((-1*self.fb,self.fA)) )
+            else:
+                if not isinstance(fSet, vectorSet.vectorSet) or fSet.N != self.fA.shape[0] or fSet.d != self.fA.shape[1] + 1:
+                    raise ValueError('fSet must be the vectorSet of the fixed constraints, vectorSet(np.hstack((-fb, fA)))')
+                if fSet.serialized:
+                    fSet.deserialize()
+                self.fSet = fSet
             self.allConstraints = np.vstack( ( np.hstack((-1*self.nb,self.nA)), self.fSet.getUniqueRows() ) )
 
         else:
