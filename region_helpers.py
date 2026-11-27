@@ -95,7 +95,7 @@ class flipConstraints:
         # self.root = int.from_bytes(self.root, 'little')
         self.root = tuple()
         self.constraints = self.allConstraints
-        self.nonRedundantHyperplanes = np.array(self.hyperSet.uniqueRowIdx,dtype=np.int64) if self.fSet is None \
+        self.nonRedundantHyperplanes = np.array(self.hyperSet.uniqRowIdx,dtype=np.int64) if self.fSet is None \
                                                             else np.array(self.hyperSet.subtractSet(self.fSet),dtype=np.int64)
         self.N = len(self.nonRedundantHyperplanes)
         if debug and self.N < self.allN:
