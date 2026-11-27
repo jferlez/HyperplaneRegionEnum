@@ -14,6 +14,8 @@ Checked:
   * which binding is used: the default, lpopts['glpkBinding'], the module default, and the cases in which the
     cvxopt binding cannot do what is asked ('scale', 'init_basis', 'basis_fac', 'exact', ratio test 'flip', an LP
     with a non-finite entry, cvxopt without GLPK), which all go to scikit-glpk;
+  * an LP without constraint rows is answered by runLP itself, for every solver (GLPK would abort the process):
+    optimal at x = 0 for a zero objective, unbounded otherwise;
   * limits that do not fit in a C int are clamped (GLPK would abort the process), and an unknown binding raises;
   * the time per LP of both bindings (reported, not checked).
 
@@ -171,7 +173,25 @@ for label, (o2, a2, b2) in (('a NaN entry in A', (obj, np.where(np.arange(A.size
     except ValueError:
         outcome = 'ValueError'
     check(f'LP with {label}: not given to the cvxopt binding (scikit-glpk: {outcome})', calls['cvxopt'] == before['cvxopt'] and calls['scikit'] == before['scikit'] + 1, f'{calls}, {before}')
-# (An LP without rows also goes to scikit-glpk, as before. That is not checked here: GLPK aborts the process on it.)
+# An LP without constraint rows: GLPK aborts the whole process on it, so runLP answers it without a solver, and
+# the same way for every solver
+noRowsA = np.zeros((0, 3)); noRowsb = np.zeros((0,))
+for lpopts in ({'solver': 'glpk'}, {'solver': 'glpk', 'glpkBinding': 'scikit'}, {'solver': 'highs'}, {'solver': 'glpkCvxopt'}):
+    before = dict(calls)
+    status, x, lp, used, _ = solve(dict(lpopts), np.zeros(3), noRowsA, noRowsb)
+    check(f'LP without rows, zero objective, {lpopts}: optimal at x = 0 without a solver', status == 'optimal' and x is not None and x.shape == (3, 1) and not np.any(x) and lp.lpFallbacks == 0 and lp.lpCount == 1 and calls == before, f'{status}, {x}, {used}')
+    status, x, lp, used, _ = solve(dict(lpopts), np.array([0.0, -1.0, 0.0]), noRowsA, noRowsb)
+    check(f'LP without rows, non-zero objective, {lpopts}: dual infeasible (unbounded), no fallback solve', status == 'dual infeasible' and x is None and lp.lpFallbacks == 0 and calls == before, f'{status}, {x}, {used}')
+try:
+    usedFor({'solver': 'glpk'}, np.array([0.0, np.nan, 0.0]), noRowsA, noRowsb)
+    check('LP without rows, NaN in the objective: raises ValueError', False)
+except ValueError:
+    check('LP without rows, NaN in the objective: raises ValueError', True)
+try:
+    usedFor({'solver': 'nosuchsolver'}, np.zeros(3), noRowsA, noRowsb)
+    check('LP without rows, unknown solver: still raises ValueError', False)
+except ValueError as e:
+    check('LP without rows, unknown solver: still raises ValueError', 'unknown LP solver' in str(e), str(e))
 try:
     usedFor({'solver': 'glpk', 'glpkBinding': 'nosuchbinding'})
     check('unknown binding raises ValueError', False)

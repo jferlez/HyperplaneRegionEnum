@@ -43,7 +43,8 @@ glpkStatus = {1:'undefined',2:'feasible',3:'infeasible',4:'primal infeasible',5:
 #
 # glpkBinding is the binding that is used when lpopts has no 'glpkBinding' entry. The scikit binding is used
 # regardless whenever the other one cannot do what is asked: lpopts names one of glpkScikitOnlyKeys (or the
-# ratio test 'flip'), the problem has no rows or a non-finite entry, or cvxopt has no GLPK.
+# ratio test 'flip'), the problem has a non-finite entry, or cvxopt has no GLPK. (A problem without rows reaches
+# neither: see runLP.)
 glpkBinding = 'cvxopt' if cvxoptGlpk is not None else 'scikit'
 glpkBindings = {'cvxopt','scikit'}
 glpkScikitOnlyKeys = {'init_basis','exact','scale','basis_fac'}
@@ -134,6 +135,17 @@ class encapsulateLP():
     # each tried at most once per LP; 'fallback':None disables it. self.lpFallbacks counts the fallback solves.
     def runLP(self,obj,A,b,Ae=None,be=None,lpopts={'solver':'clp', 'fallback':{'solver':'glpk'}},msgID='',_tried=()):
         self.lpCount += 1
+        if np.shape(A)[0] == 0 and lpopts['solver'] in knownSolvers:
+            # An LP without constraints needs no solver, and must not reach one: GLPK aborts the whole process on a
+            # problem without rows (no exception, no traceback), through either binding. Without constraints every
+            # x is optimal for a zero objective (x = 0 is returned, which is also what HiGHS and CLP answer), and
+            # any other objective is unbounded.
+            objArr = np.asarray(obj,dtype=np.float64).flatten()
+            if not np.all(np.isfinite(objArr)):
+                raise ValueError(f'{msgID}: the objective of an LP must be finite')
+            if np.any(objArr != 0):
+                return 'dual infeasible', None
+            return 'optimal', np.zeros((objArr.size,1),dtype=np.float64)
         if lpopts['solver']=='glpkCvxopt':
             cvxArgs = [cvxopt.matrix(obj), cvxopt.matrix(A), cvxopt.matrix(b)]
             sol = cvxopt.solvers.lp(*cvxArgs,solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
